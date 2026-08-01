@@ -6,6 +6,11 @@ Every skill is a directory under [`skills/`](skills) containing a `SKILL.md`. Th
 agent supported by the [`skills` CLI](https://www.skills.sh) — GitHub Copilot CLI, Claude Code,
 Codex, Cursor, and others.
 
+The engineering workflow here is primarily inspired by
+[mattpocock/skills](https://github.com/mattpocock/skills), adapted and extended for this toolchain.
+These skills are in turn sourced into and used by
+[git-loopy](https://github.com/bradcstevens/git-loopy) — see [Provenance](#provenance).
+
 ## Install
 
 ```bash
@@ -114,6 +119,23 @@ scripts/link-skills.sh        # symlink all skills into ~/.copilot/skills for lo
 this repo into the agent skills directory, so a `git pull` is enough to pick up changes. It is not a
 supported installer; use `npx skills add` for that.
 
+## Provenance
+
+**Upstream inspiration — [mattpocock/skills](https://github.com/mattpocock/skills).** The
+engineering set here (the idea → ship flow, the grill/spec/tickets/implement/review chain, and the
+deep-module and domain vocabulary that runs underneath it) is primarily inspired by that repo, which
+is MIT licensed. Skills have been renamed, rewritten, and extended for this toolchain — most
+visibly, its `/ask` router is replaced by the state-reading [`next`](docs/next.md), and
+`/setup-matt-pocock-skills` by [`setup-agent-skills`](docs/setup-agent-skills.md). Anything Azure,
+Microsoft, or Copilot-CLI specific originates here rather than upstream.
+
+**Downstream consumer — [git-loopy](https://github.com/bradcstevens/git-loopy).** This repo is the
+source of record for the skills; git-loopy — the Ralph AFK coding loop starter kit for the GitHub
+Copilot CLI — sources them in and drives them from its autonomous implementation runners. Changes
+land here first and flow to git-loopy from there.
+
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). Portions are derived from
+[mattpocock/skills](https://github.com/mattpocock/skills), also MIT licensed; its copyright notice
+is retained in [LICENSE](LICENSE).
