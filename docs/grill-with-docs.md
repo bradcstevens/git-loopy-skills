@@ -47,4 +47,4 @@ What makes this variant its own skill is where the answers go. As the grill runs
 grill-with-docs → to-spec → to-tickets → implement → code-review
 ```
 
-It comes first, before anything is written down as a spec: it produces the shared understanding and settled vocabulary that [to-spec](./to-spec.md) then synthesises into a spec without re-interviewing you. Its close neighbours are [grilling](./grilling.md), the same interview without the docs, and [domain-modeling](./domain-modeling.md), the glossary-and-ADR discipline it drives. When you're unsure which skill or flow fits, [ask](./ask.md) routes you.
+It comes first, before anything is written down as a spec: it produces the shared understanding and settled vocabulary that [to-spec](./to-spec.md) then synthesises into a spec without re-interviewing you. Its close neighbours are [grilling](./grilling.md), the same interview without the docs, and [domain-modeling](./domain-modeling.md), the glossary-and-ADR discipline it drives. When you're unsure which skill or flow fits, [next](./next.md) routes you.

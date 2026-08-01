@@ -39,4 +39,4 @@ The prototype doesn't belong in the main branch: no tests, no error handling, no
 
 ## Where it fits
 
-`prototype` is a reach-for-it-anytime standalone: you drop into it to resolve a design question, then drop back out. Its answer often feeds the next step — a validated state model or UI direction becomes settled input for [to-spec](./to-spec.md) to write up, or an architectural decision worth recording via [domain-modeling](./domain-modeling.md). When you're unsure which skill or flow fits, [ask](./ask.md) routes you.
+`prototype` is a reach-for-it-anytime standalone: you drop into it to resolve a design question, then drop back out. Its answer often feeds the next step — a validated state model or UI direction becomes settled input for [to-spec](./to-spec.md) to write up, or an architectural decision worth recording via [domain-modeling](./domain-modeling.md). When you're unsure which skill or flow fits, [next](./next.md) routes you.

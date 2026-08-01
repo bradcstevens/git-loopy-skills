@@ -53,4 +53,4 @@ One shape breaks the tracer-bullet rule: a **wide refactor** — a single mechan
 grill-with-docs → to-spec → to-tickets → implement → code-review
 ```
 
-It sits between [to-spec](./to-spec.md), which hands it a settled spec with user stories to slice against, and [implement](./implement.md), which builds each ticket, driving [tdd](./tdd.md) internally to write the tests test-first, before its [code-review](./code-review.md) pass. Work the frontier one ticket per fresh context, clearing between them. When you're unsure which skill or flow fits, [ask](./ask.md) routes you.
+It sits between [to-spec](./to-spec.md), which hands it a settled spec with user stories to slice against, and [implement](./implement.md), which builds each ticket, driving [tdd](./tdd.md) internally to write the tests test-first, before its [code-review](./code-review.md) pass. Work the frontier one ticket per fresh context, clearing between them. When you're unsure which skill or flow fits, [next](./next.md) routes you.

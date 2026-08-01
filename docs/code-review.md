@@ -44,4 +44,4 @@ They run as parallel sub-agents so neither pollutes the other's context, and the
 grill-with-docs → to-spec → to-tickets → implement → code-review
 ```
 
-Its closest neighbour is [implement](./implement.md), which drives the build and calls this as its own review pass before committing; upstream, the spec it checks against is produced by [to-spec](./to-spec.md) and [to-tickets](./to-tickets.md). When you're unsure which skill or flow fits, [ask](./ask.md) routes you.
+Its closest neighbour is [implement](./implement.md), which drives the build and calls this as its own review pass before committing; upstream, the spec it checks against is produced by [to-spec](./to-spec.md) and [to-tickets](./to-tickets.md). When you're unsure which skill or flow fits, [next](./next.md) routes you.

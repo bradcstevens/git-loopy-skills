@@ -38,4 +38,4 @@ Then it stops and asks which one you want to explore. Pick one and it runs the [
 
 ## Where it fits
 
-`improve-codebase-architecture` is **periodic maintenance** — run it every few days, not as a step in a chain. Its neighbours are [codebase-design](./codebase-design.md), which owns the depth-and-seam vocabulary every candidate is written in, [grilling](./grilling.md), which walks the decision tree once you've chosen a candidate, and [domain-modeling](./domain-modeling.md), which keeps `CONTEXT.md` and the ADRs current as the redesign settles. When you're unsure which skill or flow fits, [ask](./ask.md) routes you.
+`improve-codebase-architecture` is **periodic maintenance** — run it every few days, not as a step in a chain. Its neighbours are [codebase-design](./codebase-design.md), which owns the depth-and-seam vocabulary every candidate is written in, [grilling](./grilling.md), which walks the decision tree once you've chosen a candidate, and [domain-modeling](./domain-modeling.md), which keeps `CONTEXT.md` and the ADRs current as the redesign settles. When you're unsure which skill or flow fits, [next](./next.md) routes you.

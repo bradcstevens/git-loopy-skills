@@ -13,7 +13,7 @@ Codex, Cursor, and others.
 npx skills add bradcstevens/git-loopy-skills
 
 # a single skill
-npx skills add bradcstevens/git-loopy-skills --skill=ask
+npx skills add bradcstevens/git-loopy-skills --skill=next
 
 # see what's here without installing anything
 npx skills add bradcstevens/git-loopy-skills --list
@@ -24,7 +24,7 @@ Cursor; `.claude/skills/` for Claude Code). Add `-g` to install globally for you
 `-a <agent>` to target one agent:
 
 ```bash
-npx skills add bradcstevens/git-loopy-skills --skill=ask -g -a github-copilot -y
+npx skills add bradcstevens/git-loopy-skills --skill=next -g -a github-copilot -y
 ```
 
 To pull down later changes:
@@ -37,8 +37,9 @@ npx skills update
 
 Two skills are worth installing first:
 
-- **[`/ask`](docs/ask.md)** — the router. Describe the situation you're in and it names the skill or
-  flow that fits, and the order to run them in.
+- **[`next`](docs/next.md)** — the router. It reads the live state of your work and names the one
+  action to take now, the skill that performs it, and the exact invocation. Model-invoked, so the
+  agent reaches for it on its own; you can also ask for `/next` directly.
 - **[`/setup-agent-skills`](docs/setup-agent-skills.md)** — run once per repo, before the first use
   of any other engineering skill. It records where your issues live, what your triage labels are
   called, and where domain docs sit; the rest of the skills read that config.
@@ -56,7 +57,6 @@ situation matches. The rest you invoke by name.
 
 | Skill | Invoke | What it does |
 | --- | --- | --- |
-| [ask](docs/ask.md) | `/ask` | Ask which skill or flow fits your situation. |
 | azure-mcaps-resource-deployment | automatic | This skill is a guide to setting the right tagging and API authentication settings with a Microsoft internal MCAPS subscription to support access to Microsoft Foundry and related resources for local develpment and automation. |
 | batch-grill-me | `/batch-grill-me` | A relentless interview that asks every frontier question at once, round by round. |
 | [code-review](docs/code-review.md) | automatic | Review the changes since a fixed point (commit, branch, tag, or merge-base) along two axes — Standards (does the code follow this repo's documented coding standards?) and Spec (does the code match what the originating issue/PRD asked for?). |
@@ -74,7 +74,7 @@ situation matches. The rest you invoke by name.
 | microsoft-code-reference | automatic | Look up Microsoft API references, find working code samples, and verify SDK code is correct. |
 | microsoft-docs | automatic | Understand Microsoft technologies by querying official documentation. |
 | microsoft-foundry | automatic | Deploy, evaluate, and manage Foundry agents end-to-end: Docker build, ACR push, hosted/prompt agent create, container start, batch eval, continuous eval, prompt optimizer workflows, agent.yaml, dataset curation from traces. |
-| next | automatic | Route workflow continuation from live project state. |
+| [next](docs/next.md) | automatic | Route workflow continuation from live project state. |
 | playwright-cli | automatic | Automates browser interactions for web testing, form filling, screenshots, and data extraction. |
 | [prototype](docs/prototype.md) | automatic | Build a throwaway prototype to answer a design question. |
 | [research](docs/research.md) | automatic | Investigate a question against high-trust primary sources and capture the findings as a Markdown file in the repo. |

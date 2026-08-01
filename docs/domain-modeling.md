@@ -43,4 +43,4 @@ Keeping it standalone means you can also reach for it directly — as a **refere
 
 ## Where it fits
 
-`domain-modeling` is a **reach-for-it-anytime standalone** that runs *underneath* other skills as often as at a fixed step. Its closest neighbour is [codebase-design](./codebase-design.md), because a shared language is what lets you name a deep module and its seam precisely; downstream, a settled glossary is exactly what [to-spec](./to-spec.md) synthesises into a spec written in the project's own words. When you're unsure which skill or flow fits, [ask](./ask.md) routes you.
+`domain-modeling` is a **reach-for-it-anytime standalone** that runs *underneath* other skills as often as at a fixed step. Its closest neighbour is [codebase-design](./codebase-design.md), because a shared language is what lets you name a deep module and its seam precisely; downstream, a settled glossary is exactly what [to-spec](./to-spec.md) synthesises into a spec written in the project's own words. When you're unsure which skill or flow fits, [next](./next.md) routes you.

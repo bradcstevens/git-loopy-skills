@@ -42,4 +42,4 @@ Keeping the technique in one place means you can also reach for it directly when
 
 ## Where it fits
 
-`grilling` is the interview **primitive** under the main build chain: [grill-with-docs](./grill-with-docs.md) runs it to sharpen context before [to-spec](./to-spec.md) writes the spec. When you're unsure which entry point fits, [ask](./ask.md) routes you.
+`grilling` is the interview **primitive** under the main build chain: [grill-with-docs](./grill-with-docs.md) runs it to sharpen context before [to-spec](./to-spec.md) writes the spec. When you're unsure which entry point fits, [next](./next.md) routes you.

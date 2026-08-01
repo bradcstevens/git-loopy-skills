@@ -40,4 +40,4 @@ The output is a set of files under `docs/agents/` — `issue-tracker.md`, `domai
 
 ## Where it fits
 
-`setup-agent-skills` is a **run-once setup** — the foundation the whole engineering set stands on, not a step you repeat. Its neighbours are the skills that read what it writes: [triage](./triage.md), because it applies the label vocabulary configured here, and [to-spec](./to-spec.md) / [to-tickets](./to-tickets.md), because they publish into the issue tracker configured here. Run it first; everything downstream assumes it has. When you're unsure which skill or flow fits, [ask](./ask.md) routes you.
+`setup-agent-skills` is a **run-once setup** — the foundation the whole engineering set stands on, not a step you repeat. Its neighbours are the skills that read what it writes: [triage](./triage.md), because it applies the label vocabulary configured here, and [to-spec](./to-spec.md) / [to-tickets](./to-tickets.md), because they publish into the issue tracker configured here. Run it first; everything downstream assumes it has. When you're unsure which skill or flow fits, [next](./next.md) routes you.

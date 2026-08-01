@@ -36,4 +36,4 @@ Around that core it keeps the loop tight — typecheck often, run single test fi
 grill-with-docs → to-spec → to-tickets → implement → code-review
 ```
 
-Reach for it after the work has been specced and sequenced, not before. Its key neighbours are [to-tickets](./to-tickets.md), which produces the tickets — each declaring its blocking edges — that it works through, and [tdd](./tdd.md), which it drives internally to write the tests at each seam before running its own [code-review](./code-review.md) pass and committing. When you're unsure which skill or flow fits, [ask](./ask.md) routes you.
+Reach for it after the work has been specced and sequenced, not before. Its key neighbours are [to-tickets](./to-tickets.md), which produces the tickets — each declaring its blocking edges — that it works through, and [tdd](./tdd.md), which it drives internally to write the tests at each seam before running its own [code-review](./code-review.md) pass and committing. When you're unsure which skill or flow fits, [next](./next.md) routes you.

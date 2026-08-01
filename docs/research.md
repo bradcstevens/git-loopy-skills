@@ -26,4 +26,4 @@ The defining move is that the reading runs as a **background agent**. You keep w
 
 ## Where it fits
 
-A reach-for-it-anytime standalone that feeds the thinking skills: the file it produces is something to grill, plan, or design against, so it sits upstream of work like [grilling](./grilling.md) and [to-spec](./to-spec.md) rather than in the build chain. For the whole map, see [ask](./ask.md).
+A reach-for-it-anytime standalone that feeds the thinking skills: the file it produces is something to grill, plan, or design against, so it sits upstream of work like [grilling](./grilling.md) and [to-spec](./to-spec.md) rather than in the build chain. For the whole map, see [next](./next.md).

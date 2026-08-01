@@ -56,4 +56,4 @@ That matters for agentic development: a good interface gives tests something dur
 grill-with-docs → to-spec → to-tickets → implement → code-review
 ```
 
-Reach for it after the plan and domain language are resolved, and before you break the work into implementation tickets. Its key neighbours are [grill-with-docs](./grill-with-docs.md), which sharpens the context so the spec is precise, and [to-tickets](./to-tickets.md), which turns the spec into a set of tickets for [implement](./implement.md) to build. When you're unsure which skill or flow fits, [ask](./ask.md) routes you.
+Reach for it after the plan and domain language are resolved, and before you break the work into implementation tickets. Its key neighbours are [grill-with-docs](./grill-with-docs.md), which sharpens the context so the spec is precise, and [to-tickets](./to-tickets.md), which turns the spec into a set of tickets for [implement](./implement.md) to build. When you're unsure which skill or flow fits, [next](./next.md) routes you.

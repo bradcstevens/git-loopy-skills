@@ -39,4 +39,4 @@ Once you're thinking in these two loads, most authoring decisions — split or d
 
 ## Where it fits
 
-This is a reach-for-it-anytime standalone reference — the meta-skill you consult while building the rest of the set, not a step in a chain. When you're unsure which skill or flow fits a task, [ask](./ask.md) routes you over the whole set.
+This is a reach-for-it-anytime standalone reference — the meta-skill you consult while building the rest of the set, not a step in a chain. When you're unsure which skill or flow fits a task, [next](./next.md) routes you over the whole set.
