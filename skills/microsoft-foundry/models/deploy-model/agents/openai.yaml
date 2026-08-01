@@ -1,0 +1,3 @@
+interface:
+  display_name: "Deploy Model"
+  short_description: "Route Azure OpenAI model deployment workflows"

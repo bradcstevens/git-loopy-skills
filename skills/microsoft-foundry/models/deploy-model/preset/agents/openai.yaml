@@ -1,0 +1,3 @@
+interface:
+  display_name: "Deploy Model to Optimal Region"
+  short_description: "Deploy Azure OpenAI models to optimal regions"

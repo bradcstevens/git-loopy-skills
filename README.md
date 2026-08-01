@@ -1,0 +1,117 @@
+# git-loopy skills
+
+Agent skills for git-loopy: an engineering workflow from idea to ship.
+
+Every skill is a directory under [`skills/`](skills) containing a `SKILL.md`. They install into any
+agent supported by the [`skills` CLI](https://www.skills.sh) — GitHub Copilot CLI, Claude Code,
+Codex, Cursor, and others.
+
+## Install
+
+```bash
+# every skill in this repo
+npx skills add bradcstevens/git-loopy-skills
+
+# a single skill
+npx skills add bradcstevens/git-loopy-skills --skill=ask
+
+# see what's here without installing anything
+npx skills add bradcstevens/git-loopy-skills --list
+```
+
+Installs land in the current project by default (`.agents/skills/` for GitHub Copilot, Codex and
+Cursor; `.claude/skills/` for Claude Code). Add `-g` to install globally for your user, and
+`-a <agent>` to target one agent:
+
+```bash
+npx skills add bradcstevens/git-loopy-skills --skill=ask -g -a github-copilot -y
+```
+
+To pull down later changes:
+
+```bash
+npx skills update
+```
+
+## Start here
+
+Two skills are worth installing first:
+
+- **[`/ask`](docs/ask.md)** — the router. Describe the situation you're in and it names the skill or
+  flow that fits, and the order to run them in.
+- **[`/setup-agent-skills`](docs/setup-agent-skills.md)** — run once per repo, before the first use
+  of any other engineering skill. It records where your issues live, what your triage labels are
+  called, and where domain docs sit; the rest of the skills read that config.
+
+The main flow runs idea → ship: `/grill-with-docs` → `/to-spec` → `/to-tickets` → `/implement` →
+`/code-review`. Everything else is either an on-ramp onto that flow or a standalone you reach for on
+its own.
+
+## Skills
+
+Skills marked `automatic` are model-invoked — the agent reaches for them on its own when the
+situation matches. The rest you invoke by name.
+
+<!-- skills:start -->
+
+| Skill | Invoke | What it does |
+| --- | --- | --- |
+| [ask](docs/ask.md) | `/ask` | Ask which skill or flow fits your situation. |
+| azure-mcaps-resource-deployment | automatic | This skill is a guide to setting the right tagging and API authentication settings with a Microsoft internal MCAPS subscription to support access to Microsoft Foundry and related resources for local develpment and automation. |
+| batch-grill-me | `/batch-grill-me` | A relentless interview that asks every frontier question at once, round by round. |
+| [code-review](docs/code-review.md) | automatic | Review the changes since a fixed point (commit, branch, tag, or merge-base) along two axes — Standards (does the code follow this repo's documented coding standards?) and Spec (does the code match what the originating issue/PRD asked for?). |
+| codebase-audit | automatic | Deep audit before GitHub push: removes junk files, dead code, security holes, and optimization issues. |
+| [codebase-design](docs/codebase-design.md) | automatic | Shared vocabulary for designing deep modules. |
+| create-readme | automatic | Create a README.md file for the project |
+| [diagnosing-bugs](docs/diagnosing-bugs.md) | automatic | Diagnosis loop for hard bugs and performance regressions. |
+| [domain-modeling](docs/domain-modeling.md) | automatic | Build and sharpen a project's domain model. |
+| grill-me | `/grill-me` | A relentless interview to sharpen a plan or design. |
+| [grill-with-docs](docs/grill-with-docs.md) | `/grill-with-docs` | A relentless interview to sharpen a plan or design, which also creates docs (ADR's and glossary) as we go. |
+| [grilling](docs/grilling.md) | automatic | Grill the user relentlessly about a plan, decision, or idea. |
+| [handoff](docs/handoff.md) | `/handoff` | Compact the current conversation into a handoff document for another agent to pick up. |
+| [implement](docs/implement.md) | `/implement` | Implement a piece of work based on a spec or set of tickets. |
+| [improve-codebase-architecture](docs/improve-codebase-architecture.md) | `/improve-codebase-architecture` | Scan a codebase for deepening opportunities, present them as a visual HTML report, then grill through whichever one you pick. |
+| microsoft-code-reference | automatic | Look up Microsoft API references, find working code samples, and verify SDK code is correct. |
+| microsoft-docs | automatic | Understand Microsoft technologies by querying official documentation. |
+| microsoft-foundry | automatic | Deploy, evaluate, and manage Foundry agents end-to-end: Docker build, ACR push, hosted/prompt agent create, container start, batch eval, continuous eval, prompt optimizer workflows, agent.yaml, dataset curation from traces. |
+| next | automatic | Route workflow continuation from live project state. |
+| playwright-cli | automatic | Automates browser interactions for web testing, form filling, screenshots, and data extraction. |
+| [prototype](docs/prototype.md) | automatic | Build a throwaway prototype to answer a design question. |
+| [resolving-merge-conflicts](docs/resolving-merge-conflicts.md) | automatic | Use when you need to resolve an in-progress git merge/rebase conflict. |
+| [setup-agent-skills](docs/setup-agent-skills.md) | `/setup-agent-skills` | Configure this repo for the engineering skills — set up its issue tracker, triage label vocabulary, and domain doc layout. |
+| [teach](docs/teach.md) | `/teach` | Teach the user a new skill or concept, within this workspace. |
+| [to-questionnaire](docs/to-questionnaire.md) | `/to-questionnaire` | Turn a decision you can't fully answer into a questionnaire for someone else to fill in. |
+| [to-spec](docs/to-spec.md) | `/to-spec` | Turn the current conversation into a spec and publish it to the project issue tracker — no interview, just synthesis of what you've already discussed. |
+| [to-tickets](docs/to-tickets.md) | `/to-tickets` | Break a plan, spec, or the current conversation into a set of tracer-bullet tickets, each declaring its blocking edges, published to the configured tracker — edges as text in one file per ticket locally, or native blocking links on a real tracker. |
+| [triage](docs/triage.md) | `/triage` | Move issues and external PRs through a state machine of triage roles — categorise, verify, grill if needed, and write agent-ready briefs. |
+| [wayfinder](docs/wayfinder.md) | `/wayfinder` | Plan a huge chunk of work — more than one agent session can hold — as a shared map of decision tickets on your issue tracker, and resolve them one at a time until the way to the destination is clear. |
+| [writing-for-agents](docs/writing-for-agents.md) | automatic | Writing documents for agents. |
+| writing-great-skills | `/writing-great-skills` | Reference for writing and editing skills well — the vocabulary and principles that make a skill predictable. |
+
+<!-- skills:end -->
+
+## Repo layout
+
+```
+skills/<name>/SKILL.md    the skill itself — this is what `npx skills add` installs
+skills/<name>/agents/     per-agent interface and policy overrides
+docs/<name>.md            the long-form write-up: what it does, when to reach for it, where it fits
+scripts/                  maintainer tooling (see below)
+```
+
+## Development
+
+```bash
+scripts/validate-skills.sh    # check frontmatter, naming and docs links
+node scripts/build-readme.mjs # regenerate the skill index above
+scripts/list-skills.sh        # list every SKILL.md path
+scripts/link-skills.sh        # symlink all skills into ~/.copilot/skills for local testing
+```
+
+`scripts/link-skills.sh` is a maintainer convenience for working on skills in place — it symlinks
+this repo into the agent skills directory, so a `git pull` is enough to pick up changes. It is not a
+supported installer; use `npx skills add` for that.
+
+## License
+
+[MIT](LICENSE)

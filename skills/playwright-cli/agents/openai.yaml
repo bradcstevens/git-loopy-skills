@@ -1,0 +1,3 @@
+interface:
+  display_name: "Playwright CLI"
+  short_description: "Automate browser interactions with Playwright"

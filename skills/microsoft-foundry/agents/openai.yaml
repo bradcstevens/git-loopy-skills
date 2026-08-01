@@ -1,0 +1,3 @@
+interface:
+  display_name: "Microsoft Foundry"
+  short_description: "Deploy, evaluate, and manage Foundry agents"
