@@ -1,0 +1,5 @@
+interface:
+  display_name: "Copilot Handoff"
+  short_description: "Hand off to a background Copilot CLI session"
+policy:
+  allow_implicit_invocation: false
