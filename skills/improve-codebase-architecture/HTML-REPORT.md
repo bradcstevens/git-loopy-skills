@@ -81,9 +81,10 @@ One palette, no light variant. Use these classes rather than inventing new ones:
 
 Saturated 500/600 fills read as glare on dark. Use tinted overlays (`bg-emerald-500/10`) for badge and callout backgrounds instead of solid fills.
 
+
 ## Header
 
-Repo name, date, and a compact legend: solid box = module, dashed line = seam, red arrow = leakage, thick light-bordered box = deep module. No introduction paragraph — straight into the candidates.
+Repo name, date, and a compact legend: solid box = module, dashed line = seam, red arrow = leakage, thick dark box = deep module. No introduction paragraph — straight into the candidates.
 
 ## Candidate card
 
@@ -92,13 +93,13 @@ The diagrams carry the weight. Prose is sparse, plain, and uses the glossary ter
 Each candidate is one `<article>`:
 
 - **Title** — short, names the deepening (e.g. "Collapse the Order intake pipeline").
-- **Badge row** — recommendation strength (`Strong` = `bg-emerald-500/10 text-emerald-300 border-emerald-500/30`, `Worth exploring` = amber equivalent, `Speculative` = `bg-slate-700/40 text-slate-300 border-slate-600`), plus a tag for the dependency category (`in-process`, `local-substitutable`, `ports & adapters`, `mock`).
-- **Files** — monospaced list, `font-mono text-sm text-slate-400`.
+- **Badge row** — recommendation strength (`Strong` = emerald, `Worth exploring` = amber, `Speculative` = slate), plus a tag for the dependency category (`in-process`, `local-substitutable`, `ports & adapters`, `mock`).
+- **Files** — monospaced list, `font-mono text-sm`.
 - **Before / After diagram** — the centrepiece. Two columns, side by side. See patterns below.
 - **Problem** — one sentence. What hurts.
 - **Solution** — one sentence. What changes.
 - **Wins** — bullets, ≤6 words each. e.g. "Tests hit one interface", "Pricing logic stops leaking", "Delete 4 shallow wrappers".
-- **ADR callout** (if applicable) — one line in `bg-amber-500/10 border border-amber-500/30 text-amber-200`.
+- **ADR callout** (if applicable) — one line in an amber-tinted box.
 
 No paragraphs of explanation. If the diagram needs a paragraph to be understood, redraw the diagram.
 
@@ -108,16 +109,16 @@ Pick the pattern that fits the candidate. Mix them. Don't make every diagram loo
 
 ### Mermaid graph (the workhorse for dependencies / call flow)
 
-Use a Mermaid `flowchart` or `graph` when the point is "X calls Y calls Z, and look at the mess." Wrap it in a Tailwind-styled card so it doesn't feel parachuted in. Style with classDef to colour leakage edges red and the deep module a lighter slate fill with a bright border. Sequence diagrams work well for "before: 6 round-trips; after: 1."
+Use a Mermaid `flowchart` or `graph` when the point is "X calls Y calls Z, and look at the mess." Wrap it in a Tailwind-styled card so it doesn't feel parachuted in. Style with classDef to colour leakage edges red and the deep module dark. Sequence diagrams work well for "before: 6 round-trips; after: 1."
 
 ```html
-<div class="rounded-lg border border-slate-800 bg-slate-900 p-4">
+<div class="rounded-lg border border-slate-200 bg-white p-4">
   <pre class="mermaid">
     flowchart LR
       A[OrderHandler] --> B[OrderValidator]
       B --> C[OrderRepo]
       C -.leak.-> D[PricingClient]
-      classDef leak stroke:#f87171,stroke-width:2px,fill:#1e293b,color:#fecaca;
+      classDef leak stroke:#dc2626,stroke-width:2px;
       class C,D leak
   </pre>
 </div>
@@ -125,7 +126,7 @@ Use a Mermaid `flowchart` or `graph` when the point is "X calls Y calls Z, and l
 
 ### Hand-built boxes-and-arrows (when Mermaid's layout fights you)
 
-Modules as `<div>`s with borders and labels. Arrows as inline SVG `<line>` or `<path>` elements — set `stroke="#94a3b8"` (never `currentColor` defaults that resolve to black) — positioned absolutely over a relative container. Reach for this when you want the "after" diagram to feel like one thick light-bordered deep module with dimmed internals (`text-slate-600`) — Mermaid won't render that with the right weight.
+Modules as `<div>`s with borders and labels. Arrows as inline SVG `<line>` or `<path>` elements positioned absolutely over a relative container. Reach for this when you want the "after" diagram to feel like one thick-bordered deep module with greyed-out internals — Mermaid won't render that with the right weight.
 
 ### Cross-section (good for layered shallowness)
 
@@ -137,17 +138,14 @@ Two rectangles per module — one for interface surface area, one for implementa
 
 ### Call-graph collapse
 
-Before: a tree of function calls rendered as nested boxes. After: the same tree collapsed into one box, with the now-internal calls shown dimmed inside it (`text-slate-600`, `opacity-50` — dimming means *darker* here, not lighter).
+Before: a tree of function calls rendered as nested boxes. After: the same tree collapsed into one box, with the now-internal calls shown faded inside it.
 
 ## Style guidance
 
-- Dark mode only. No `dark:` variants, no toggle, no light fallback — write the dark values directly.
-- Lean editorial, not corporate-dashboard. Generous whitespace. Serif optional for headings (`font-serif` works well with slate).
-- Depth comes from border and surface steps (`slate-950` → `slate-900` → `slate-800`), not shadows. Drop shadows are invisible on dark; use `ring-1 ring-slate-800` if a card needs lift.
-- Colour sparingly: one accent (emerald) plus red for leakage and amber for warnings — all at the 300/400 end of the scale so they stay legible on `slate-950`.
-- Never emit a bare `bg-white`, `bg-stone-50`, `text-black`, or `text-slate-900`. Inline SVG and Mermaid `classDef` fills are the usual places light values sneak back in — check both.
+- Lean editorial, not corporate-dashboard. Generous whitespace. Serif optional for headings (`font-serif` works well with stone/slate).
+- Colour sparingly: one accent (emerald or indigo) plus red for leakage and amber for warnings.
 - Keep diagrams ~320px tall so before/after sits comfortably side by side without scrolling.
-- Use `text-xs uppercase tracking-wider text-slate-400` for module labels inside diagrams — they should read as schematic, not as UI.
+- Use `text-xs uppercase tracking-wider` for module labels inside diagrams — they should read as schematic, not as UI.
 - The only scripts are the Tailwind CDN and the Mermaid ESM import. The report is otherwise static — no app code, no interactivity beyond Mermaid's own rendering.
 
 ## Top recommendation section

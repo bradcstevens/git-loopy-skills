@@ -63,7 +63,7 @@ situation matches. The rest you invoke by name.
 | Skill | Invoke | What it does |
 | --- | --- | --- |
 | batch-grill-me | `/batch-grill-me` | A relentless interview that asks every frontier question at once, round by round. |
-| [code-review](docs/code-review.md) | automatic | Review the changes since a fixed point (commit, branch, tag, or merge-base) along two axes — Standards (does the code follow this repo's documented coding standards?) and Spec (does the code match what the originating issue/PRD asked for?). |
+| [code-review](docs/code-review.md) | automatic | Review the changes since a fixed point (commit, branch, tag, or merge-base) along two axes — Standards (does the code follow this repo's documented coding standards?) and Spec (does the code match what the originating issue/spec asked for?). |
 | codebase-audit | automatic | Deep audit before GitHub push: removes junk files, dead code, security holes, and optimization issues. |
 | [codebase-design](docs/codebase-design.md) | automatic | Shared vocabulary for designing deep modules. |
 | create-readme | automatic | Create a README.md file for the project |
@@ -91,6 +91,7 @@ situation matches. The rest you invoke by name.
 | [to-tickets](docs/to-tickets.md) | `/to-tickets` | Break a plan, spec, or the current conversation into a set of tracer-bullet tickets, each declaring its blocking edges, published to the configured tracker — edges as text in one file per ticket locally, or native blocking links on a real tracker. |
 | [triage](docs/triage.md) | `/triage` | Move issues and external PRs through a state machine of triage roles — categorise, verify, grill if needed, and write agent-ready briefs. |
 | [wayfinder](docs/wayfinder.md) | `/wayfinder` | Plan a huge chunk of work — more than one agent session can hold — as a shared map of decision tickets on your issue tracker, and resolve them one at a time until the way to the destination is clear. |
+| wizard | automatic | Generate an interactive bash wizard that walks a human through steps only they can perform. |
 | [writing-for-agents](docs/writing-for-agents.md) | automatic | Writing documents for agents. |
 | writing-great-skills | `/writing-great-skills` | Reference for writing and editing skills well — the vocabulary and principles that make a skill predictable. |
 
