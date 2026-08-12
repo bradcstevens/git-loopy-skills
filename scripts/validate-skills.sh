@@ -19,6 +19,13 @@ err() {
 count=0
 while IFS= read -r skill_md; do
   dir="$(dirname "$skill_md")"
+
+  # A git-ignored skill directory is local-only: it lives in a working copy but
+  # is not part of this repo, so it is not ours to validate.
+  if git check-ignore -q "$dir/" 2>/dev/null; then
+    continue
+  fi
+
   count=$((count + 1))
 
   if [ "$(head -1 "$skill_md")" != "---" ]; then

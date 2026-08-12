@@ -1,2 +1,4 @@
 node_modules
-.copilot/skills/azure-mcaps-resource-deployment/
+
+# Local-only skills: present in a working copy, never published from this repo.
+skills/azure-mcaps-resource-deployment/

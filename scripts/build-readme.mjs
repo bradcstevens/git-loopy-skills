@@ -3,6 +3,7 @@
 // Run with --check to fail instead of writing (used by CI).
 
 import { readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
+import { spawnSync } from "node:child_process";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -36,9 +37,34 @@ function summarise(description) {
   return lead.replace(/\|/g, "\\|").trim();
 }
 
-const skills = readdirSync(join(repo, "skills"), { withFileTypes: true })
+// A git-ignored skill directory is local-only: it lives in a working copy but is
+// not part of this repo, so it must stay out of the published index.
+function ignoredSkills(names) {
+  if (names.length === 0) return new Set();
+  const result = spawnSync("git", ["check-ignore", "--stdin"], {
+    cwd: repo,
+    input: names.map((name) => `skills/${name}/\n`).join(""),
+    encoding: "utf8",
+  });
+  // Exit 0 means some paths are ignored, 1 means none are. Anything else (git
+  // missing, not a repo) is not a signal, so fall back to indexing everything.
+  if (result.error || (result.status !== 0 && result.status !== 1)) return new Set();
+  const ignored = result.stdout
+    .split("\n")
+    .filter(Boolean)
+    .map((line) => line.replace(/^skills\//, "").replace(/\/$/, ""));
+  return new Set(ignored);
+}
+
+const skillDirs = readdirSync(join(repo, "skills"), { withFileTypes: true })
   .filter((entry) => entry.isDirectory())
-  .map((entry) => readSkill(entry.name))
+  .map((entry) => entry.name);
+
+const localOnly = ignoredSkills(skillDirs);
+
+const skills = skillDirs
+  .filter((name) => !localOnly.has(name))
+  .map((name) => readSkill(name))
   .filter(Boolean)
   .sort((a, b) => a.name.localeCompare(b.name));
 

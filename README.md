@@ -62,7 +62,6 @@ situation matches. The rest you invoke by name.
 
 | Skill | Invoke | What it does |
 | --- | --- | --- |
-| azure-mcaps-resource-deployment | automatic | This skill is a guide to setting the right tagging and API authentication settings with a Microsoft internal MCAPS subscription to support access to Microsoft Foundry and related resources for local develpment and automation. |
 | batch-grill-me | `/batch-grill-me` | A relentless interview that asks every frontier question at once, round by round. |
 | [code-review](docs/code-review.md) | automatic | Review the changes since a fixed point (commit, branch, tag, or merge-base) along two axes — Standards (does the code follow this repo's documented coding standards?) and Spec (does the code match what the originating issue/PRD asked for?). |
 | codebase-audit | automatic | Deep audit before GitHub push: removes junk files, dead code, security holes, and optimization issues. |
