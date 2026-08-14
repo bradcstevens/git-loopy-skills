@@ -66,6 +66,7 @@ situation matches. The rest you invoke by name.
 | [code-review](docs/code-review.md) | automatic | Review the changes since a fixed point (commit, branch, tag, or merge-base) along two axes — Standards (does the code follow this repo's documented coding standards?) and Spec (does the code match what the originating issue/spec asked for?). |
 | codebase-audit | automatic | Deep audit before GitHub push: removes junk files, dead code, security holes, and optimization issues. |
 | [codebase-design](docs/codebase-design.md) | automatic | Shared vocabulary for designing deep modules. |
+| [continuation](docs/continuation.md) | automatic | Present git-loopy's published Continuation guidance, reconciled from durable records. |
 | [copilot-handoff](docs/copilot-handoff.md) | `/copilot-handoff` | Hand the current conversation off to a fresh background GitHub Copilot CLI session that picks up the work immediately. |
 | create-readme | automatic | Create a README.md file for the project |
 | [diagnosing-bugs](docs/diagnosing-bugs.md) | automatic | Diagnosis loop for hard bugs and performance regressions. |
@@ -80,7 +81,7 @@ situation matches. The rest you invoke by name.
 | microsoft-code-reference | automatic | Look up Microsoft API references, find working code samples, and verify SDK code is correct. |
 | microsoft-docs | automatic | Understand Microsoft technologies by querying official documentation. |
 | microsoft-foundry | automatic | Deploy, evaluate, and manage Foundry agents end-to-end: Docker build, ACR push, hosted/prompt agent create, container start, batch eval, continuous eval, prompt optimizer workflows, agent.yaml, dataset curation from traces. |
-| [next](docs/next.md) | automatic | Route workflow continuation from live project state. |
+| [next](docs/next.md) | automatic | Route the engineering workflow from live project state. |
 | playwright-cli | automatic | Automates browser interactions for web testing, form filling, screenshots, and data extraction. |
 | [prototype](docs/prototype.md) | automatic | Build a throwaway prototype to answer a design question. |
 | push | `/push` | Publish current work by staging intended changes, committing, pushing, and opening a pull request when needed. |
@@ -140,10 +141,11 @@ land here first and flow to git-loopy from there.
 
 Some skills carry git-loopy's **Workflow Continuation contract**: they hand a typed request to
 git-loopy's own `git-loopy continuation` command, so the next session reads a record of what
-happened rather than reconstructing one. Those are `code-review`, `grill-with-docs`, `implement`,
-`next`, `prototype`, `push`, `research`, `resolving-merge-conflicts`, `to-spec`, `to-tickets`,
+happened rather than reconstructing one. Those are `code-review`, `continuation`, `grill-with-docs`,
+`implement`, `prototype`, `push`, `research`, `resolving-merge-conflicts`, `to-spec`, `to-tickets`,
 `triage` and `wayfinder`. Eleven of them publish a record when they finish a transition they own;
-`next` is the reader — it reconciles those records into one recommendation and writes nothing.
+`continuation` is the reader — it reconciles those records into one recommendation and writes
+nothing.
 Each carries its request as a fenced JSON template behind a
 `<!-- continuation-request: NAME -->` marker, and git-loopy's test suite executes those exact
 templates against the real command — so a template edited here is a contract change there, and this
