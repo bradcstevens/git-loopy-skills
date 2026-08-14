@@ -1,0 +1,3 @@
+interface:
+  display_name: "Push"
+  short_description: "Commit, push, and open a pull request"

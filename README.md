@@ -83,6 +83,7 @@ situation matches. The rest you invoke by name.
 | [next](docs/next.md) | automatic | Route workflow continuation from live project state. |
 | playwright-cli | automatic | Automates browser interactions for web testing, form filling, screenshots, and data extraction. |
 | [prototype](docs/prototype.md) | automatic | Build a throwaway prototype to answer a design question. |
+| push | `/push` | Publish current work by staging intended changes, committing, pushing, and opening a pull request when needed. |
 | [research](docs/research.md) | automatic | Investigate a question against high-trust primary sources and capture the findings as a Markdown file in the repo. |
 | [resolving-merge-conflicts](docs/resolving-merge-conflicts.md) | automatic | Use when you need to resolve an in-progress git merge/rebase conflict. |
 | [setup-agent-skills](docs/setup-agent-skills.md) | `/setup-agent-skills` | Configure this repo for the engineering skills — set up its issue tracker, triage label vocabulary, and domain doc layout. |
@@ -136,6 +137,17 @@ Microsoft, or Copilot-CLI specific originates here rather than upstream.
 source of record for the skills; git-loopy — the Ralph AFK coding loop starter kit for the GitHub
 Copilot CLI — sources them in and drives them from its autonomous implementation runners. Changes
 land here first and flow to git-loopy from there.
+
+Some skills carry git-loopy's **Workflow Continuation contract**: they publish what they just did
+by handing a typed request to git-loopy's own `git-loopy continuation` command, so the next session
+reads a record rather than reconstructing one. Those are `code-review`, `grill-with-docs`,
+`implement`, `next`, `prototype`, `push`, `research`, `resolving-merge-conflicts`, `to-spec`,
+`to-tickets`, `triage` and `wayfinder`. Each carries its request as a fenced JSON template behind a
+`<!-- continuation-request: NAME -->` marker, and git-loopy's test suite executes those exact
+templates against the real command — so a template edited here is a contract change there, and this
+repo is still where it is authored. Without a git-loopy distribution installed, the rest of each
+skill stands on its own; only the publication step needs the command. The contract itself is
+specified in git-loopy's `docs/continuation-contract.md`.
 
 ## License
 
