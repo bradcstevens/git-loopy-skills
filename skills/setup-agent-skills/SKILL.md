@@ -56,6 +56,10 @@ If it is installed, ask exactly one question:
 
 The defaults are the five canonical roles, each label string equal to its name: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. On **yes**, write them as-is. Only if the user says no — usually because their tracker already uses other names (e.g. `bug:triage` for `needs-triage`) — collect the overrides so `triage` applies existing labels instead of creating duplicates.
 
+Two further labels are written either way, and are **not** part of that question: `parallel-safe` and `priority`. Neither is a triage role, neither is renameable — the runner reads those exact strings — and neither is ever inferred. `parallel-safe` asserts an issue is safe to work concurrently; `priority` asserts it should be worked ahead of older ones. Eligible issues are otherwise worked oldest first, by creation date, so a newly filed issue does not jump the queue unless a human labels it `priority`, and `priority` reorders only: it never substitutes for `ready-for-agent`, the AFK-ready body discriminator, or `parallel-safe`.
+
+Ensure both exist in the tracker. Inside a git-loopy project, `git-loopy init` creates whichever labels are absent and leaves existing ones untouched; otherwise use the create-or-update commands in [triage-labels.md](./triage-labels.md).
+
 **Section C — Domain docs.** Default to **single-context** — one `CONTEXT.md` + `docs/adr/` at the repo root. This fits almost every repo; write it without asking.
 
 Offer **multi-context** — a root `CONTEXT-MAP.md` pointing to per-context `CONTEXT.md` files — only when exploration found monorepo signals. Then confirm which layout they want.
