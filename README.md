@@ -138,15 +138,17 @@ source of record for the skills; git-loopy — the Ralph AFK coding loop starter
 Copilot CLI — sources them in and drives them from its autonomous implementation runners. Changes
 land here first and flow to git-loopy from there.
 
-Some skills carry git-loopy's **Workflow Continuation contract**: they publish what they just did
-by handing a typed request to git-loopy's own `git-loopy continuation` command, so the next session
-reads a record rather than reconstructing one. Those are `code-review`, `grill-with-docs`,
-`implement`, `next`, `prototype`, `push`, `research`, `resolving-merge-conflicts`, `to-spec`,
-`to-tickets`, `triage` and `wayfinder`. Each carries its request as a fenced JSON template behind a
+Some skills carry git-loopy's **Workflow Continuation contract**: they hand a typed request to
+git-loopy's own `git-loopy continuation` command, so the next session reads a record of what
+happened rather than reconstructing one. Those are `code-review`, `grill-with-docs`, `implement`,
+`next`, `prototype`, `push`, `research`, `resolving-merge-conflicts`, `to-spec`, `to-tickets`,
+`triage` and `wayfinder`. Eleven of them publish a record when they finish a transition they own;
+`next` is the reader — it reconciles those records into one recommendation and writes nothing.
+Each carries its request as a fenced JSON template behind a
 `<!-- continuation-request: NAME -->` marker, and git-loopy's test suite executes those exact
 templates against the real command — so a template edited here is a contract change there, and this
 repo is still where it is authored. Without a git-loopy distribution installed, the rest of each
-skill stands on its own; only the publication step needs the command. The contract itself is
+skill stands on its own; only the step that runs the command needs it. The contract itself is
 specified in git-loopy's `docs/continuation-contract.md`.
 
 ## License
