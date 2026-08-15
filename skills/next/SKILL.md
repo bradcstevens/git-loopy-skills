@@ -1,6 +1,6 @@
 ---
 name: next
-description: Route the engineering workflow from live project state. Use when a workflow skill concludes or the user asks what to do next.
+description: Route workflow continuation from live project state. Use when a workflow skill concludes or the user asks what to do next.
 ---
 
 # Route the Workflow
@@ -34,7 +34,6 @@ choose the first matching transition:
 | Current state | Next route |
 | --- | --- |
 | The repository is not configured for the engineering skills | `/setup-agent-skills` |
-| Durable **Continuation** records already cover this workstream | `/continuation` |
 | The current thread is near its useful context limit or must branch into a fresh session | `/handoff` |
 | The same conversation is at an intentional phase break and can continue from a summary | `/compact` |
 | An idea outside a codebase still needs sharpening | `/grill-me` |
@@ -86,11 +85,6 @@ Apply these flow rules:
   `/grill-with-docs`; the survey does not implement it.
 - Reach for `/domain-modeling` or `/codebase-design` directly only when the
   vocabulary or module shape is itself the unresolved gate.
-- `/continuation` presents the records git-loopy's Continuation contract already
-  published; this router derives its own answer from live state. Prefer
-  `/continuation` when a run has published records for the workstream, since it
-  reports what the owners recorded rather than a reconstruction. When it reports
-  Waiting, nothing has published and this router is the answer.
 
 This step is complete when every candidate is classified as ready, blocked, or
 complete.
@@ -109,7 +103,34 @@ it ready.
 This step is complete when the ordering follows all three rules and every
 blocked action carries a checkable readiness condition.
 
-## 4. Return the recommendation
+## 4. Size the runtime
+
+Every recommendation names the runtime that carries it: a model, a reasoning
+effort, and a context tier. Size all three from the demand of the chosen route.
+
+| Demand of the route | Model | `--effort` |
+| --- | --- | --- |
+| Open judgment — grilling, wayfinding, spec writing, design, hard diagnosis | strongest reasoning model available (`claude-opus-5`, `gpt-5.6-sol`) | `xhigh` |
+| Ordinary build and review — tickets, implementation, TDD, review, triage, research | strong general model (`claude-sonnet-5`, `gpt-5.5`) | `high` |
+| Mechanical and fully specified — push, compact, handoff, label and metadata work | fast model (`claude-haiku-4.5`, `gpt-5.4-mini`) | `medium` |
+
+Mark the action `AFK-safe` only when its target is fully specified and requires
+no new human judgment; otherwise mark it `HITL`. Raise effort one level for an
+`AFK-safe` action, since no human is mid-flight to catch a thin pass; `xhigh` is
+the ceiling for that raise. Reserve `max` for a route an `xhigh` pass has already
+failed. When the running CLI does not offer the named model, use `auto` and let
+the effort level carry the demand.
+
+Set `--context long_context` when the run must hold more at once than one
+default window holds — a repo-wide survey, a review over a large diff, a map or
+spec spanning many files. It bills at a higher tier, so `default` carries every
+other run.
+
+This step is complete when the action is marked `HITL` or `AFK-safe` and the
+model, effort, and context tier are each named and each traces to the demand of
+the recommended route.
+
+## 5. Return the recommendation
 
 Use this shape:
 
@@ -118,6 +139,7 @@ Use this shape:
 Target: <linked issue, PR, map, spec, branch, document, or current conversation>
 State: <Ready | Blocked by ...>
 Context: <Continue here | Fresh session>
+Runtime: `--model <model> --effort <level> --context <default | long_context>`
 Why now: <one sentence grounded in live state>
 
 Prompt:
@@ -130,10 +152,10 @@ Write the prompt as one physical line beginning with the exact skill invocation.
 Use straight ASCII quotes and spaces, and keep all labels and explanation outside
 the code fence. For `/compact`, use `/compact` with no argument. Match `Context`
 to the flow rules above. For `/handoff`, use `Continue here` and say that its
-output opens the fresh session.
+output opens the fresh session. Give `Runtime` as the three flags verbatim, so a
+launcher such as `/handoff` splices them straight into its background agent.
 
-Mark an action `AFK-safe` only when its target is fully specified and requires no
-new human judgment. Otherwise mark it `HITL`. For a terminal workstream, return:
+For a terminal workstream, return:
 
 ```markdown
 **Complete:** <why no further workflow skill is needed>.
@@ -141,4 +163,5 @@ new human judgment. Otherwise mark it `HITL`. For a terminal workstream, return:
 
 Routing is complete when every active candidate has been classified and every
 recommendation names a live target, an exact invocation, a one-line terminal
-command in its own code fence, the correct context, and any blocker.
+command in its own code fence, the correct context, a sized runtime, and any
+blocker.
