@@ -186,6 +186,15 @@ Prompt:
 ```text
 /<route> "<concise imperative naming the target and desired outcome>"
 ```
+
+Command:
+```bash
+PROMPT=$(cat <<'PROMPT_EOF'
+/<route> "<concise imperative naming the target and desired outcome>"
+PROMPT_EOF
+)
+copilot --yolo -n "<descriptive name>" --model "<model>" --effort "<level>" --context "<default | long_context>" -p "$PROMPT"
+```
 ````
 
 Write the prompt as one physical line beginning with the exact skill invocation.
@@ -200,6 +209,24 @@ from the target's own record: the worktree to work in, the files it shares with
 work in flight, and what to do about each. The target's record travels with the
 target; what this session learned travels only in the prompt.
 
+The `Command` block is the whole recommendation as one selection the user can
+copy and run. Repeat the prompt inside it byte for byte between the quoted
+heredoc markers, and splice the same three runtime flags in verbatim. A `/next`
+prompt wraps its target in double quotes and its prose carries apostrophes, and
+`<<'PROMPT_EOF'` is what carries both through to `-p "$PROMPT"` as one argument
+where an inline `-p "..."` would end the string at the prompt's own first quote.
+Name the session with `-n` in a few words drawn from the action, because a
+launched session has no terminal to identify it and that name is how the user
+returns to it with `copilot --yolo --resume="<descriptive name>"`. The command
+runs the session in the user's own terminal; `/handoff` launches the same pair
+in the background instead.
+
+Emit the `Command` block only when `Context` names a fresh session — a
+`Continue here` recommendation is a prompt for this conversation and has no
+session to launch. When the context is `Fresh session in a new worktree`, the
+command still runs from the current directory, because the prompt it carries
+opens with the `git worktree add` that moves the agent before it writes.
+
 For `/handoff`, use `Continue here` and say that its output opens the fresh
 session. Give `Runtime` as the three flags verbatim, so a launcher such as
 `/handoff` splices them straight into its background agent.
@@ -212,4 +239,5 @@ For a terminal workstream, return:
 
 Routing is complete when every active candidate has been classified and every
 recommendation names a live target, an exact invocation, a prompt in its own
-code fence, the correct context, a sized runtime, and any blocker.
+code fence, a copyable `copilot` command whenever the route opens a fresh
+session, the correct context, a sized runtime, and any blocker.
