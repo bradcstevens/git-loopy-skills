@@ -184,25 +184,27 @@ Why now: <one sentence grounded in live state>
 
 Prompt:
 ```text
-/<route> "<concise imperative naming the target and desired outcome>"
+/<route> <concise imperative naming the target and desired outcome>
 ```
 
 Command:
 ```bash
 PROMPT=$(cat <<'PROMPT_EOF'
-/<route> "<concise imperative naming the target and desired outcome>"
+/<route> <concise imperative naming the target and desired outcome>
 PROMPT_EOF
 )
 copilot --yolo -n "<descriptive name>" --model "<model>" --effort "<level>" --context "<default | long_context>" -p "$PROMPT"
 ```
 ````
 
-Write the prompt as one physical line beginning with the exact skill invocation.
-Use straight ASCII quotes and spaces, and keep all labels and explanation outside
-the code fence. For `/compact`, use `/compact` with no argument. Match `Context`
-to the flow rules above, choosing `Fresh session in a new worktree` when another
-agent holds the primary worktree — and open the prompt with the `git worktree
-add` that clears it, so the agent moves itself before it writes.
+Write the prompt **paste-safe**: one physical line of plain ASCII that opens with
+the exact skill invocation and names its target in bare words, so the shell
+receives a single argument whether the prompt reaches it through the heredoc
+below or a hand-typed `-p "..."`. Keep every label and explanation outside the
+code fence. For `/compact`, pass no argument. Match `Context` to the flow rules
+above, choosing `Fresh session in a new worktree` when another agent holds the
+primary worktree — and open the prompt with the `git worktree add` that clears
+it, so the agent moves itself before it writes.
 
 Carry into the prompt every constraint that came from live state and is absent
 from the target's own record: the worktree to work in, the files it shares with
@@ -211,13 +213,11 @@ target; what this session learned travels only in the prompt.
 
 The `Command` block is the whole recommendation as one selection the user can
 copy and run. Repeat the prompt inside it byte for byte between the quoted
-heredoc markers, and splice the same three runtime flags in verbatim. A `/next`
-prompt wraps its target in double quotes and its prose carries apostrophes, and
-`<<'PROMPT_EOF'` is what carries both through to `-p "$PROMPT"` as one argument
-where an inline `-p "..."` would end the string at the prompt's own first quote.
-Name the session with `-n` in a few words drawn from the action, because a
-launched session has no terminal to identify it and that name is how the user
-returns to it with `copilot --yolo --resume="<descriptive name>"`. The command
+heredoc markers, which carry its apostrophes and `#` through to `-p "$PROMPT"`
+as one argument, and splice the same three runtime flags in verbatim. Name the
+session with `-n` in a few words drawn from the action, because a launched
+session has no terminal to identify it and that name is how the user returns to
+it with `copilot --yolo --resume="<descriptive name>"`. The command
 runs the session in the user's own terminal; `/handoff` launches the same pair
 in the background instead.
 
@@ -238,6 +238,6 @@ For a terminal workstream, return:
 ```
 
 Routing is complete when every active candidate has been classified and every
-recommendation names a live target, an exact invocation, a prompt in its own
-code fence, a copyable `copilot` command whenever the route opens a fresh
+recommendation names a live target, an exact invocation, a paste-safe prompt in
+its own code fence, a copyable `copilot` command whenever the route opens a fresh
 session, the correct context, a sized runtime, and any blocker.

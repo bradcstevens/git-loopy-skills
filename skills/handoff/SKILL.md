@@ -14,14 +14,14 @@ PROMPT=$(cat <<'PROMPT_EOF'
 <the prompt from /next, verbatim>
 PROMPT_EOF
 )
-nohup copilot --yolo -n "<descriptive name>" --model "<model>" --effort "<level>" --context "<default | long_context>" -p "$PROMPT" > "$LOG" 2>&1 &
+nohup copilot --yolo --no-ask-user -n "<descriptive name>" --model "<model>" --effort "<level>" --context "<default | long_context>" -p "$PROMPT" > "$LOG" 2>&1 &
 ```
 
-The quoted heredoc is what carries the prompt intact. A `/next` prompt wraps its
-target in double quotes and its prose carries apostrophes; both survive
-`<<'PROMPT_EOF'` and reach the agent as one argument, where an inline `-p "..."`
-would end the string at the prompt's own first quote. The log lands outside the
-repository, clear of any worktree another agent owns.
+Paste the `/next` prompt between the markers unaltered: `<<'PROMPT_EOF'` carries
+its apostrophes and `#` through to the agent as one argument. `--no-ask-user`
+keeps a background agent working on its own, because a question it raises reaches
+nobody. The log lands outside the repository, clear of any worktree another agent
+owns.
 
 When `/next` returned `Fresh session in a new worktree`, still launch from the
 current directory: its prompt opens with the `git worktree add` that moves the
@@ -29,7 +29,9 @@ agent before it writes.
 
 Confirm the agent is alive before reporting it — a few seconds on, `$LOG` shows
 its first tool calls. `nohup ... &` reports success whether the session started
-or died on a rejected flag, so the log is the only evidence either way.
+or died on a rejected flag, so the log is the only evidence either way: an
+`error:` line at the top of it means the flags never parsed, so correct them and
+relaunch.
 
 Always pass `-n`/`--name` with a descriptive name (e.g. `-n "Fix login bug"`) — a detached session has no terminal to identify it, so the name is how the user finds it again by `copilot --yolo --resume` and `/session`. Give the user that command:
 
