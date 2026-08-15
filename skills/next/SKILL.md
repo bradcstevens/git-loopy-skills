@@ -144,13 +144,13 @@ table, which balances speed against quality per task type:
 
 | Task type | Model | `--effort` |
 | --- | --- | --- |
-| `planning` | strongest reasoning model available (`claude-opus-5`, `gpt-5.6-sol`) | `xhigh` |
-| `review` | strongest reasoning model available | `xhigh` |
-| `bugfix` | strong general model (`claude-sonnet-5`, `gpt-5.5`) | `high` |
-| `implementation` | strong general model | `high` |
-| `test` | strong general model | `medium` |
-| `docs` | strong general model | `low` |
-| `chore` | fast model (`claude-haiku-4.5`, `gpt-5.4-mini`) | `none` |
+| `planning` | strongest reasoning model available (`claude-opus-5`) | `xhigh` |
+| `review` | strongest reasoning model available (`gpt-5.6-sol`) | `xhigh` |
+| `bugfix` | strong general model (`claude-sonnet-5`, `gpt-5.6-terra`) | `high` |
+| `implementation` | strong general model (`gpt-5.6-terra`) | `high` |
+| `test` | strong general model (`gpt-5.6-terra`) | `medium` |
+| `docs` | strong general model (`gpt-5.6-luna`) | `low` |
+| `chore` | fast model (`claude-haiku-4.5`) | `none` |
 
 Mark the action `AFK-safe` only when its target is fully specified and requires
 no new human judgment; otherwise mark it `HITL`. Raise an `AFK-safe` action's
