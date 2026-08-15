@@ -8,7 +8,7 @@ npx skills add bradcstevens/git-loopy-skills --skill=teach
 npx skills update teach
 ```
 
-[Source](https://github.com/bradcstevens/git-loopy-skills/tree/main/skills/productivity/teach)
+[Source](https://github.com/bradcstevens/git-loopy-skills/tree/main/skills/teach)
 
 ## What it does
 

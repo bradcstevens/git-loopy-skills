@@ -8,7 +8,7 @@ npx skills add bradcstevens/git-loopy-skills --skill=to-questionnaire
 npx skills update to-questionnaire
 ```
 
-[Source](https://github.com/bradcstevens/git-loopy-skills/tree/main/skills/productivity/to-questionnaire)
+[Source](https://github.com/bradcstevens/git-loopy-skills/tree/main/skills/to-questionnaire)
 
 ## What it does
 

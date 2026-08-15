@@ -67,21 +67,20 @@ situation matches. The rest you invoke by name.
 | codebase-audit | automatic | Deep audit before GitHub push: removes junk files, dead code, security holes, and optimization issues. |
 | [codebase-design](docs/codebase-design.md) | automatic | Shared vocabulary for designing deep modules. |
 | [continuation](docs/continuation.md) | automatic | Present git-loopy's published Continuation guidance, reconciled from durable records. |
-| [copilot-handoff](docs/copilot-handoff.md) | `/copilot-handoff` | Hand the current conversation off to a fresh background GitHub Copilot CLI session that picks up the work immediately. |
 | create-readme | automatic | Create a README.md file for the project |
 | [diagnosing-bugs](docs/diagnosing-bugs.md) | automatic | Diagnosis loop for hard bugs and performance regressions. |
 | [domain-modeling](docs/domain-modeling.md) | automatic | Build and sharpen a project's domain model. |
 | grill-me | `/grill-me` | A relentless interview to sharpen a plan or design. |
 | [grill-with-docs](docs/grill-with-docs.md) | `/grill-with-docs` | A relentless interview to sharpen a plan or design, which also creates docs (ADR's and glossary) as we go. |
 | [grilling](docs/grilling.md) | automatic | Grill the user relentlessly about a plan, decision, or idea. |
-| [handoff](docs/handoff.md) | `/handoff` | Compact the current conversation into a handoff document for another agent to pick up. |
+| [handoff](docs/handoff.md) | `/handoff` | Pass the runtime and prompt output of a `/next` skill run to a fresh background agent that picks up the work immediately. |
 | [implement](docs/implement.md) | `/implement` | Implement a piece of work based on a spec or set of tickets. |
 | [improve-codebase-architecture](docs/improve-codebase-architecture.md) | `/improve-codebase-architecture` | Scan a codebase for deepening opportunities, present them as a visual HTML report, then grill through whichever one you pick. |
 | [loop-me](docs/loop-me.md) | `/loop-me` | Grill me about specs for the workflows I want to build, within this workspace. |
 | microsoft-code-reference | automatic | Look up Microsoft API references, find working code samples, and verify SDK code is correct. |
 | microsoft-docs | automatic | Understand Microsoft technologies by querying official documentation. |
 | microsoft-foundry | automatic | Deploy, evaluate, and manage Foundry agents end-to-end: Docker build, ACR push, hosted/prompt agent create, container start, batch eval, continuous eval, prompt optimizer workflows, agent.yaml, dataset curation from traces. |
-| [next](docs/next.md) | automatic | Route the engineering workflow from live project state. |
+| [next](docs/next.md) | automatic | Route workflow continuation from live project state. |
 | playwright-cli | automatic | Automates browser interactions for web testing, form filling, screenshots, and data extraction. |
 | [prototype](docs/prototype.md) | automatic | Build a throwaway prototype to answer a design question. |
 | push | `/push` | Publish current work by staging intended changes, committing, pushing, and opening a pull request when needed. |

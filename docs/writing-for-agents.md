@@ -8,7 +8,7 @@ npx skills add bradcstevens/git-loopy-skills --skill=writing-for-agents
 npx skills update writing-for-agents
 ```
 
-[Source](https://github.com/bradcstevens/git-loopy-skills/tree/main/skills/productivity/writing-for-agents)
+[Source](https://github.com/bradcstevens/git-loopy-skills/tree/main/skills/writing-for-agents)
 
 ## What it does
 

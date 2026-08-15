@@ -8,7 +8,7 @@ npx skills add bradcstevens/git-loopy-skills --skill=grilling
 npx skills update grilling
 ```
 
-[Source](https://github.com/bradcstevens/git-loopy-skills/tree/main/skills/productivity/grilling)
+[Source](https://github.com/bradcstevens/git-loopy-skills/tree/main/skills/grilling)
 
 ## What it does
 
