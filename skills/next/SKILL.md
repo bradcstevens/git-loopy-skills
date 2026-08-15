@@ -23,8 +23,15 @@ issues and their relationships to find the active maps, specs, tickets, and PRs.
 Use live records rather than session summaries because concurrent sessions may
 have changed them.
 
+Then account for what is already **in flight**, which no tracker records: the
+worktrees (`git worktree list`), the uncommitted files in each, and the runner
+or agent process holding one. A git-loopy run names the issue it bound in the
+newest `.git-loopy/logs/` file and works in the worktree it was started from.
+Work recommended into a directory another agent is writing collides with it.
+
 This step is complete when every candidate action has current state and blocker
-information from its durable source.
+information from its durable source, and every worktree is accounted for by the
+process that holds it.
 
 ## 2. Find the earliest unresolved gate
 
@@ -91,44 +98,77 @@ complete.
 
 ## 3. Rank the actions
 
+An action another agent already holds is spoken for: the holder is its state,
+and a second agent on the same target duplicates or corrupts the work. Leave it
+out of the candidate set and rank what remains.
+
 Rank ready actions before blocked actions. Within each group, prefer:
 
 1. The workstream continued by this session.
 2. The action that clears the most downstream blockers.
-3. The oldest tracker item, then the lexical target name, as stable tie-breakers.
+3. The action that shares no files with work in flight.
+4. The oldest tracker item, then the lexical target name, as stable tie-breakers.
+
+A shared file is a constraint to name, not a disqualification — an action that
+unblocks the queue still wins rule 2 and carries its overlap into the prompt.
 
 Return at most one action. A blocked action must name the condition that makes
 it ready.
 
-This step is complete when the ordering follows all three rules and every
-blocked action carries a checkable readiness condition.
+This step is complete when the ordering follows all four rules, every blocked
+action carries a checkable readiness condition, and any file the chosen action
+shares with work in flight is named.
 
 ## 4. Size the runtime
 
-Every recommendation names the runtime that carries it: a model, a reasoning
-effort, and a context tier. Size all three from the demand of the chosen route.
+Every recommendation names the **pair** that carries it — a model and a
+reasoning effort — plus a context tier.
 
-| Demand of the route | Model | `--effort` |
+Name the **task type** of the chosen route from git-loopy's closed taxonomy:
+`planning`, `review`, `implementation`, `test`, `docs`, `chore`, `bugfix`.
+
+Read the pair from the project's own calibration rather than deciding it:
+
+```bash
+git-loopy config list
+```
+
+Use the `task-type:<key>` line matching the route's task type. A key the map
+leaves unset falls back to the `model` and `reasoning_effort` the same output
+prints. Read the map even when it reports itself inert — that note is about
+git-loopy's own serial iterations, while this pair carries a Copilot CLI
+session the user launches.
+
+A repository without git-loopy, or a command that fails, falls back to this
+table, which balances speed against quality per task type:
+
+| Task type | Model | `--effort` |
 | --- | --- | --- |
-| Open judgment — grilling, wayfinding, spec writing, design, hard diagnosis | strongest reasoning model available (`claude-opus-5`, `gpt-5.6-sol`) | `xhigh` |
-| Ordinary build and review — tickets, implementation, TDD, review, triage, research | strong general model (`claude-sonnet-5`, `gpt-5.5`) | `high` |
-| Mechanical and fully specified — push, compact, handoff, label and metadata work | fast model (`claude-haiku-4.5`, `gpt-5.4-mini`) | `medium` |
+| `planning` | strongest reasoning model available (`claude-opus-5`, `gpt-5.6-sol`) | `xhigh` |
+| `review` | strongest reasoning model available | `xhigh` |
+| `bugfix` | strong general model (`claude-sonnet-5`, `gpt-5.5`) | `high` |
+| `implementation` | strong general model | `high` |
+| `test` | strong general model | `medium` |
+| `docs` | strong general model | `low` |
+| `chore` | fast model (`claude-haiku-4.5`, `gpt-5.4-mini`) | `none` |
 
 Mark the action `AFK-safe` only when its target is fully specified and requires
-no new human judgment; otherwise mark it `HITL`. Raise effort one level for an
-`AFK-safe` action, since no human is mid-flight to catch a thin pass; `xhigh` is
-the ceiling for that raise. Reserve `max` for a route an `xhigh` pass has already
-failed. When the running CLI does not offer the named model, use `auto` and let
-the effort level carry the demand.
+no new human judgment; otherwise mark it `HITL`. Raise an `AFK-safe` action's
+effort one level, capped at `xhigh`, **only when the pair came from the fallback
+table** — a configured route is already calibrated against unattended runs, so
+raising it counts the same allowance twice. Reserve `max` for a route an `xhigh`
+pass has already failed. When the running CLI does not offer the named model,
+use `auto` and let the effort level carry the demand.
 
 Set `--context long_context` when the run must hold more at once than one
 default window holds — a repo-wide survey, a review over a large diff, a map or
-spec spanning many files. It bills at a higher tier, so `default` carries every
-other run.
+spec spanning many files. git-loopy configures no context tier, so this
+judgment stays the skill's own; it bills at a higher tier, so `default` carries
+every other run.
 
 This step is complete when the action is marked `HITL` or `AFK-safe` and the
-model, effort, and context tier are each named and each traces to the demand of
-the recommended route.
+task type, model, effort, and context tier are each named, with the pair traced
+either to a `task-type:` line in the routing map or to the fallback table.
 
 ## 5. Return the recommendation
 
@@ -138,7 +178,7 @@ Use this shape:
 1. **<concrete action>** - `/<route>` - <HITL | AFK-safe>
 Target: <linked issue, PR, map, spec, branch, document, or current conversation>
 State: <Ready | Blocked by ...>
-Context: <Continue here | Fresh session>
+Context: <Continue here | Fresh session | Fresh session in a new worktree>
 Runtime: `--model <model> --effort <level> --context <default | long_context>`
 Why now: <one sentence grounded in live state>
 
@@ -151,9 +191,18 @@ Prompt:
 Write the prompt as one physical line beginning with the exact skill invocation.
 Use straight ASCII quotes and spaces, and keep all labels and explanation outside
 the code fence. For `/compact`, use `/compact` with no argument. Match `Context`
-to the flow rules above. For `/handoff`, use `Continue here` and say that its
-output opens the fresh session. Give `Runtime` as the three flags verbatim, so a
-launcher such as `/handoff` splices them straight into its background agent.
+to the flow rules above, choosing `Fresh session in a new worktree` when another
+agent holds the primary worktree — and open the prompt with the `git worktree
+add` that clears it, so the agent moves itself before it writes.
+
+Carry into the prompt every constraint that came from live state and is absent
+from the target's own record: the worktree to work in, the files it shares with
+work in flight, and what to do about each. The target's record travels with the
+target; what this session learned travels only in the prompt.
+
+For `/handoff`, use `Continue here` and say that its output opens the fresh
+session. Give `Runtime` as the three flags verbatim, so a launcher such as
+`/handoff` splices them straight into its background agent.
 
 For a terminal workstream, return:
 
@@ -162,6 +211,5 @@ For a terminal workstream, return:
 ```
 
 Routing is complete when every active candidate has been classified and every
-recommendation names a live target, an exact invocation, a one-line terminal
-command in its own code fence, the correct context, a sized runtime, and any
-blocker.
+recommendation names a live target, an exact invocation, a prompt in its own
+code fence, the correct context, a sized runtime, and any blocker.
