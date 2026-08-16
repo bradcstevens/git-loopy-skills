@@ -62,6 +62,35 @@ Publish the approved tickets. **How** depends on the tracker `/setup-matt-pocock
 - **Local files** → write one file per ticket under `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01` in dependency order (blockers first). Each file's "Blocked by" lists the numbers/titles it depends on. Use the per-ticket file template below — one ticket per file, never a single combined file.
 - **A real issue tracker (GitHub, Linear, …)** → publish one issue per ticket in dependency order (blockers first) so each ticket's blocking edges can reference real identifiers. Use the platform's native blocking / sub-issue relationship where it has one; otherwise set each ticket's "Blocked by" to the blocking issues. Apply the `ready-for-agent` triage label unless instructed otherwise — the tickets are agent-grabbable by construction.
 
+### Label each published ticket
+
+For a tracker that supports labels, make three separate decisions while creating each
+ticket. Read the exact label strings from the configured repository's triage-label
+documentation; do not invent label names or substitutes.
+
+1. Apply the configured AFK-ready triage label unless instructed otherwise.
+2. Apply exactly one `task-type:` label from the closed seven: `planning`, `review`,
+   `implementation`, `test`, `docs`, `chore`, or `bugfix`. Choose it by **dominant
+   risk**: the dimension whose failure is most expensive, not the one with the most
+   files.
+3. Decide independently whether to add the configured `parallel-safe` marker. It is
+   additive, alongside the triage and task-type labels, and applies only when the
+   ticket can land beside another ticket without colliding.
+
+Treat these hazards as release-blocking:
+
+- A ticket needs exactly one `task-type:` label. Multiple task-type labels fail
+  silently because the router selects the first match from an unordered list.
+- Never invent an eighth task type. An out-of-taxonomy `task-type:` label still looks
+  labelled, so the classifier will not correct it and routing falls through.
+- Do not infer a missing `parallel-safe` marker. There is no classifier for it; unlike
+  `task-type:`, which has a classifier fallback, its absence silently forfeits the
+  parallel lane.
+
+For local-file tickets, record the same selected task type and parallel-safety
+judgement in the ticket file so they can be applied when the ticket reaches a
+label-capable tracker.
+
 Work the **frontier**: any ticket whose blockers are all done. For a purely linear chain that means top to bottom.
 
 Do NOT close or modify any parent issue.
@@ -75,6 +104,10 @@ Do NOT close or modify any parent issue.
 **Blocked by:** the numbers/titles of the tickets that gate this one, or "None — can start immediately".
 
 **Status:** ready-for-agent
+
+**Task type:** one exact `task-type:` label from the configured closed taxonomy.
+
+**Parallel safety:** `parallel-safe`, or "not parallel-safe".
 
 - [ ] Acceptance criterion 1
 - [ ] Acceptance criterion 2
