@@ -51,7 +51,8 @@ Two skills are worth installing first:
 
 The main flow runs idea → ship: `/grill-with-docs` → `/to-spec` → `/to-tickets` → `/implement` →
 `/code-review`. Everything else is either an on-ramp onto that flow or a standalone you reach for on
-its own.
+its own. [**Skill connections**](docs/skill-connections.md) maps the whole set — which skills route
+to which, which nest inside another's session, and the sequence diagrams for each workflow.
 
 ## Skills
 
@@ -122,6 +123,35 @@ scripts/link-skills.sh        # symlink all skills into ~/.copilot/skills for lo
 `scripts/link-skills.sh` is a maintainer convenience for working on skills in place — it symlinks
 this repo into the agent skills directory, so a `git pull` is enough to pick up changes. It is not a
 supported installer; use `npx skills add` for that.
+
+## Shell wrappers
+
+Some skills are worth a shell function so they can be launched straight from a prompt with model,
+effort and context pinned. `scripts/generate-shell-env.sh` writes `git-loopy.env` at the repo
+root — a sourceable file that exports the pinned defaults and defines one function per wrapper.
+It touches nothing outside this repository: no rc files, no `$HOME`. The generated file is
+git-ignored, so it belongs to a working copy rather than to the repo.
+
+```bash
+scripts/generate-shell-env.sh          # write ./git-loopy.env
+scripts/generate-shell-env.sh --print  # write to stdout instead
+source git-loopy.env                   # load the wrappers into the current shell
+```
+
+Then, for the rest of that shell session:
+
+```bash
+wayfinder                       # open a session on the /wayfinder skill
+wayfinder <loose idea>          # chart a new map
+wayfinder <map> [ticket]        # work through an existing map
+to-spec                         # synthesize the conversation into a spec
+to-tickets [spec]               # slice a spec into tracer-bullet tickets
+```
+
+The wrappers call `co` when it is defined and fall back to the `copilot` binary otherwise, so the
+file loads in both zsh and bash. `GIT_LOOPY_MODEL`, `GIT_LOOPY_EFFORT` and `GIT_LOOPY_CONTEXT` are
+exported with the pinned defaults (`claude-opus-5`, `xhigh`, `long_context`) and can be overridden
+before sourcing or per invocation; `GIT_LOOPY_CLI` overrides which CLI is launched.
 
 ## Provenance
 
