@@ -522,3 +522,5 @@ the evidence comment are already durable, so an exit-`1` result carrying `"code"
 "repair_required"` means the transition happened but its record did not. Say so plainly,
 quote the message, and stop — do not retry blindly, and never hand-write the record the
 command refused to write.
+
+At the conclusion of a `/push` session, run the `/next` skill.
