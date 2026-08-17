@@ -45,7 +45,7 @@ Two skills are worth installing first:
 - **[`next`](docs/next.md)** — the router. It reads the live state of your work and names the one
   action to take now, the skill that performs it, and the exact invocation. Model-invoked, so the
   agent reaches for it on its own; you can also ask for `/next` directly.
-- **[`/setup-agent-skills`](docs/setup-agent-skills.md)** — run once per repo, before the first use
+- **[`/setup-git-loopy-skills`](docs/setup-git-loopy-skills.md)** — run once per repo, before the first use
   of any other engineering skill. It records where your issues live, what your triage labels are
   called, and where domain docs sit; the rest of the skills read that config.
 
@@ -88,7 +88,7 @@ situation matches. The rest you invoke by name.
 | push | `/push` | Publish current work by staging intended changes, committing, pushing, and opening a pull request when needed. |
 | [research](docs/research.md) | automatic | Investigate a question against high-trust primary sources and capture the findings as a Markdown file in the repo. |
 | [resolving-merge-conflicts](docs/resolving-merge-conflicts.md) | automatic | Use when you need to resolve an in-progress git merge/rebase conflict. |
-| [setup-agent-skills](docs/setup-agent-skills.md) | `/setup-agent-skills` | Configure this repo for the engineering skills — set up its issue tracker, triage label vocabulary, and domain doc layout. |
+| [setup-agent-skills](docs/setup-git-loopy-skills.md) | `/setup-git-loopy-skills` | Configure this repo for the engineering skills — set up its issue tracker, triage label vocabulary, and domain doc layout. |
 | [tdd](docs/tdd.md) | automatic | Test-driven development. |
 | [teach](docs/teach.md) | `/teach` | Teach the user a new skill or concept, within this workspace. |
 | [to-questionnaire](docs/to-questionnaire.md) | `/to-questionnaire` | Turn a decision you can't fully answer into a questionnaire for someone else to fill in. |
@@ -161,7 +161,7 @@ engineering set here (the idea → ship flow, the grill/spec/tickets/implement/r
 deep-module and domain vocabulary that runs underneath it) is primarily inspired by that repo, which
 is MIT licensed. Skills have been renamed, rewritten, and extended for this toolchain — most
 visibly, its `/ask` router is replaced by the state-reading [`next`](docs/next.md), and
-`/setup-matt-pocock-skills` by [`setup-agent-skills`](docs/setup-agent-skills.md). Anything Azure,
+`/setup-git-loopy-skills` by [`setup-agent-skills`](docs/setup-git-loopy-skills.md). Anything Azure,
 Microsoft, or Copilot-CLI specific originates here rather than upstream.
 
 **Downstream consumer — [git-loopy](https://github.com/bradcstevens/git-loopy).** This repo is the

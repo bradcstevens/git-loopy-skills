@@ -18,7 +18,7 @@ Each round asks the whole **frontier**: every decision whose prerequisites are a
 
 ### Prefer one question at a time?
 
-If the old one-at-a-time rhythm suited you better, keep it. Add a line to your global `CLAUDE.md`:
+If the old one-at-a-time rhythm suited you better, keep it. Add a line to your global `AGENT.md`:
 
 ```
 When grilling, ask one question at a time.

@@ -12,13 +12,13 @@ npx skills update writing-for-agents
 
 ## What it does
 
-`writing-for-agents` is the reference you write agent-facing documents against — skills, `AGENTS.md` / `CLAUDE.md`, and any doc an agent reaches by a pointer. The packaging differs; the writing does not: the same levers make each one predictable, so the agent takes the same *process* every run rather than producing the same output.
+`writing-for-agents` is the reference you write agent-facing documents against — skills, `AGENTS.md`, and any doc an agent reaches by a pointer. The packaging differs; the writing does not: the same levers make each one predictable, so the agent takes the same *process* every run rather than producing the same output.
 
 Formerly `writing-great-skills`. The rename tracks what the reference always was underneath: almost none of it is skill-specific. The universal core — context pointers, the two loads, the information hierarchy, completion criteria, leading words, pruning — applies to any document an agent consumes; the genuinely skill-only mechanics (frontmatter, the model- vs user-invoked choice, router skills) are disclosed to a linked `SKILL-MECHANICS.md` you read only when the document you're writing is a skill.
 
 ## When to reach for it
 
-The agent reaches for it on its own whenever you're creating or editing a skill, or modifying `AGENTS.md` or `CLAUDE.md` — and you can still type `/writing-for-agents` to pull it up directly.
+The agent reaches for it on its own whenever you're creating or editing a skill, or modifying `AGENTS.md` — and you can still type `/writing-for-agents` to pull it up directly.
 
 ## The two loads
 

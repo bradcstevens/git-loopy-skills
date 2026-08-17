@@ -24,7 +24,7 @@ Reach for it when your issue tracker has raw, unevaluated reports and you want t
 
 ## Prerequisites
 
-`triage` reads and writes your issue tracker, so [setup-agent-skills](./setup-agent-skills.md) must have configured the tracker and the label mapping first. The role names above are **canonical** — the actual label strings in your tracker may differ, and that mapping is what setup provides. The config also decides whether external PRs count as a request surface, and who counts as external.
+`triage` reads and writes your issue tracker, so [setup-agent-skills](./setup-git-loopy-skills.md) must have configured the tracker and the label mapping first. The role names above are **canonical** — the actual label strings in your tracker may differ, and that mapping is what setup provides. The config also decides whether external PRs count as a request surface, and who counts as external.
 
 ## A PR is an issue with attached code
 

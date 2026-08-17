@@ -16,7 +16,7 @@ Every edge in this document is one of four kinds. Read the arrows with these in 
 | **Routes to** | One session ends, another begins — usually a fresh context | `/to-tickets` → `/implement` |
 | **Runs inside** | Nested in the caller's session; owns no transition and publishes nothing | `/implement` → `/tdd` |
 | **Publishes to** | Records a durable transition that a later session reads back | `/code-review` → `/continuation` |
-| **Reads config from** | Depends on files another skill wrote | `/next` → `/setup-agent-skills` |
+| **Reads config from** | Depends on files another skill wrote | `/next` → `/setup-git-loopy-skills` |
 
 Two skills are hubs. [`next`](./next.md) is the **router** — it reads live state (tracker, branch,
 diff, worktrees) and names one action. [`continuation`](./continuation.md) is the **reader** — it
@@ -31,7 +31,7 @@ a transition they own: `code-review`, `grill-with-docs`, `implement`, `prototype
 
 ```mermaid
 flowchart LR
-    setup["/setup-agent-skills"]
+    setup["/setup-git-loopy-skills"]
 
     subgraph ROUTE["Routing and continuity"]
         next["/next"]
@@ -141,7 +141,6 @@ sequenceDiagram
     U->>NX: a rough idea
     NX-->>U: route, runtime, paste-safe prompt
 
-    rect rgb(232, 244, 255)
     Note over GD,TT: one unbroken context
     U->>GD: sharpen it, a round of questions at a time
     GD->>CN: publish the grilled decision
@@ -149,9 +148,7 @@ sequenceDiagram
     TS->>CN: publish-spec
     TS->>TT: break the spec into tracer bullets
     TT->>CN: publish the ticket graph
-    end
-
-    rect rgb(236, 253, 240)
+    
     Note over IM,PU: fresh context per ticket
     TT->>IM: one unblocked ticket
     IM->>CN: publish-implementation
@@ -160,7 +157,7 @@ sequenceDiagram
         CR->>IM: address them, republish a head
     else clean
         CR->>PU: publish the reviewed head
-    end
+
     PU->>CN: publish-head
     end
 
@@ -352,14 +349,12 @@ sequenceDiagram
 
     TT-->>IM: one unblocked ticket, fresh context
 
-    rect rgb(236, 253, 240)
     Note over IM,PR: nested, and publishing nothing
     IM->>TD: red, green, refactor at pre-agreed seams
     TD->>CD: when the interface shape is itself in question
     IM->>CD: module, interface, depth, seam vocabulary
     IM->>DM: keep the domain model current
     IM->>PR: when a tracer bullet needs something concrete first
-    end
 
     IM->>IM: typecheck, targeted tests, full suite once
     IM->>IM: commit and push so the head is durable
@@ -452,14 +447,14 @@ A candidate picked here becomes an *idea* for [`grill-with-docs`](./grill-with-d
 
 ## 9. Bootstrap
 
-[`setup-agent-skills`](./setup-agent-skills.md) runs **once per repo**, before anything else. It
+[`setup-agent-skills`](./setup-git-loopy-skills.md) runs **once per repo**, before anything else. It
 writes the config that four other skills read.
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor U as You
-    participant SAS as /setup-agent-skills
+    participant SAS as /setup-git-loopy-skills
     participant DOC as docs/agents/
     participant NX as /next
     participant TR as /triage
@@ -475,7 +470,7 @@ sequenceDiagram
 
     NX->>DOC: read the tracker config
     alt missing
-        NX-->>U: /setup-agent-skills is the only candidate
+        NX-->>U: /setup-git-loopy-skills is the only candidate
     else present
         TR->>DOC: label vocabulary
         CR->>DOC: tracker and standards
@@ -521,8 +516,6 @@ sequenceDiagram
 
 `/microsoft-docs` and `/microsoft-code-reference` are also pulled in by
 [`code-review`](./code-review.md) whenever a diff touches Microsoft technologies.
-`/azure-mcaps-resource-deployment` is local-only — it is gitignored and never published from this
-repo, so it appears here only for completeness in a working copy that has it.
 
 ---
 
@@ -604,4 +597,4 @@ These have no workflow edges. Reach for them directly; they neither route onward
 
 - [`next`](./next.md) — the router that picks the edge to walk
 - [`continuation`](./continuation.md) — the reader that reconciles what runs published
-- [`setup-agent-skills`](./setup-agent-skills.md) — the config every workflow edge depends on
+- [`setup-agent-skills`](./setup-git-loopy-skills.md) — the config every workflow edge depends on

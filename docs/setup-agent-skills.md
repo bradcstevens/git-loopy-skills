@@ -8,7 +8,7 @@ npx skills add bradcstevens/git-loopy-skills --skill=setup-agent-skills
 npx skills update setup-agent-skills
 ```
 
-[Source](https://github.com/bradcstevens/git-loopy-skills/tree/main/skills/setup-agent-skills)
+[Source](https://github.com/bradcstevens/git-loopy-skills/tree/main/skills/setup-git-loopy-skills)
 
 ## What it does
 
@@ -18,7 +18,7 @@ It writes config, it does not hard-code behaviour. The engineering chain assumes
 
 ## When to reach for it
 
-You invoke this by typing `/setup-agent-skills` — the agent won't reach for it on its own.
+You invoke this by typing `/setup-git-loopy-skills` — the agent won't reach for it on its own.
 
 Reach for it **once per repo, before the first use of any other engineering skill**. If [triage](./triage.md), [to-spec](./to-spec.md), or [to-tickets](./to-tickets.md) start guessing where your issues live or applying labels that don't exist, they haven't been set up here yet. Re-run it only to switch issue trackers or start over — day-to-day tweaks are just edits to `docs/agents/*.md`.
 
@@ -30,11 +30,11 @@ It leads each with a recommended answer you can accept in a word, and skips what
 - **Triage labels** — asked only if the `triage` skill is installed, and then just: keep the default labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`)? Say no only if your tracker already uses other names, so `triage` applies real ones instead of creating duplicates.
 - **Domain docs** — assumed single-context (one `CONTEXT.md` + `docs/adr/` at the root), which fits almost every repo; it only raises a multi-context map when it spots monorepo signals.
 
-The output is a set of files under `docs/agents/` — `issue-tracker.md`, `domain.md`, and `triage-labels.md` when `triage` is installed — plus an `## Agent skills` block pointing to them in whichever of `CLAUDE.md` / `AGENTS.md` the repo already uses. Those files are the shared substrate the rest of the toolkit stands on.
+The output is a set of files under `docs/agents/` — `issue-tracker.md`, `domain.md`, and `triage-labels.md` when `triage` is installed — plus an `## Agent skills` block pointing to them in the `AGENTS.md` the repo already uses. Those files are the shared substrate the rest of the toolkit stands on.
 
 ## It's working if
 
-- `issue-tracker.md` and `domain.md` land under `docs/agents/` (plus `triage-labels.md` when `triage` is installed), and an `## Agent skills` section appears in your `CLAUDE.md` or `AGENTS.md`.
+- `issue-tracker.md` and `domain.md` land under `docs/agents/` (plus `triage-labels.md` when `triage` is installed), and an `## Agent skills` section appears in your `AGENTS.md`.
 - The tracker it proposes matches your real `git remote`, and the labels match strings that already exist in your repo.
 - Afterwards, `triage` and `to-tickets` act on the right place with the right labels instead of asking or guessing.
 

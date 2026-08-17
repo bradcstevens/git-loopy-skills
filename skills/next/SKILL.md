@@ -12,7 +12,7 @@ tracker unchanged.
 ## 1. Refresh the durable state
 
 Locate `docs/agents/issue-tracker.md`. If the repository has not been configured
-for these skills, make `/setup-agent-skills` the sole candidate. Otherwise read
+for these skills, make `/setup-git-loopy-skills` the sole candidate. Otherwise read
 the file and refresh the workstream referenced by the conversation from its
 configured tracker: issue or PR state, labels, assignees, comments, sub-issues,
 and blockers. Inspect the local branch, commits, and diff when review or
@@ -40,7 +40,7 @@ choose the first matching transition:
 
 | Current state | Next route |
 | --- | --- |
-| The repository is not configured for the engineering skills | `/setup-agent-skills` |
+| The repository is not configured for the engineering skills | `/setup-git-loopy-skills` |
 | The current thread is near its useful context limit or must branch into a fresh session | `/handoff` |
 | The same conversation is at an intentional phase break and can continue from a summary | `/compact` |
 | An idea outside a codebase still needs sharpening | `/grill-me` |
