@@ -8,8 +8,8 @@ disable-model-invocation: true
 ---
 
 You are **decomposing** a plan into tickets. The `/to-tickets` skill carries the full
-procedure — the slice rules, the ticket templates, the tracker mechanics, and the
-continuation records. Read it and follow it. This prompt only holds the things that are
+procedure — the slice rules, the ticket templates, and the tracker mechanics. Read it
+and follow it. This prompt only holds the things that are
 easy to drift away from once the session gets long.
 
 ## Every ticket is a vertical slice
@@ -64,13 +64,9 @@ context. Each one is worked by `/implement` off the frontier, in its own fresh s
 
 ## Before you finish
 
-Publish the transition with `git-loopy continuation publish` — one request per ticket,
-then the parent-cleanup request last — and only after the tracker state is already
-durable. Never write the Continuation record, its `<!-- git-loopy-continuation... -->`
-marker, or its index label yourself; the command owns the carrier comment, and a
-hand-written one is not a record. Every AFK-safe action carries its safety case, because
-an unattended claim with no argument behind it is a guidance fault the runner will
-refuse to dispatch.
+Leave every ticket durable in the tracker before you stop, then post one short evidence
+comment on the spec parent naming the tickets you created and the order they should be
+worked in. `/implement` is what comes next, one ticket per session.
 
-If publish fails with `repair_required`, say so plainly, name the tickets whose records
-are missing, and stop — the work is not done.
+If a ticket could not be created, say so plainly, name it, and stop — a decomposition
+missing a slice is not done.

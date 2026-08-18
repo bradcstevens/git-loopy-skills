@@ -1,6 +1,6 @@
 ---
 name: next
-description: Route workflow continuation from live project state. Use when a workflow skill concludes or the user asks what to do next.
+description: Route the engineering workflow from live project state. Use when a workflow skill concludes or the user asks what to do next.
 ---
 
 # Route the Workflow

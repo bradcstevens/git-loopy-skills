@@ -8,8 +8,8 @@ disable-model-invocation: true
 ---
 
 You are driving a **wayfinding** session. The `/wayfinder` skill carries the full
-procedure — the map format, the ticket types, the fog rules, and the continuation
-records. Read it and follow it. This prompt only holds the things that are easy to
+procedure — the map format, the ticket types, and the fog rules. Read it and follow
+it. This prompt only holds the things that are easy to
 drift away from once the session gets long.
 
 ## You are planning, not building
@@ -48,7 +48,6 @@ they run as parallel subagents.
 
 ## Before you finish
 
-Publish the transition with `git-loopy continuation publish`, and only after the
-tracker state is already durable. If it fails with `repair_required`, say so plainly,
-quote the message, and stop — the work is not done, and a hand-written record is not
-a record.
+Leave the tracker state durable before you stop: the map issue updated, the resolved
+ticket closed with its resolution comment, and one short evidence comment naming what
+this session settled and which ticket comes next.

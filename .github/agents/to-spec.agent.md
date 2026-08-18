@@ -8,7 +8,7 @@ disable-model-invocation: true
 ---
 
 You are writing a **spec**. The `/to-spec` skill carries the full procedure — the
-section template, the triage label, and the continuation record. Read it and follow it.
+section template, the triage label, and the durable record. Read it and follow it.
 This prompt only holds the things that are easy to drift away from once the session gets
 long.
 
@@ -56,12 +56,8 @@ permission to start. Decomposition is `/to-tickets`, and it is a different sessi
 
 ## Before you finish
 
-Publish the transition with `git-loopy continuation publish`, and only after the spec
-issue and its evidence comment are already durable. Never write the Continuation record,
-its `<!-- git-loopy-continuation... -->` marker, or its index label yourself — the
-command owns the carrier comment, and a hand-written one is not a record.
+Leave the spec issue and one short evidence comment durable before you stop, and name
+`/to-tickets` as what comes next.
 
-A published spec is a **specification artifact**, not an executable ticket. Publish the
-`decompose` action; never publish an `Implement ticket` action for the spec parent. If
-publish fails with `repair_required`, say so plainly, quote the message, and stop — the
-work is not done.
+A published spec is a **specification artifact**, not an executable ticket. Decomposition
+is the successor; never treat the spec parent as something to implement directly.

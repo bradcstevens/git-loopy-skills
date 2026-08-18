@@ -14,18 +14,16 @@ Every edge in this document is one of four kinds. Read the arrows with these in 
 | Kind | Meaning | Example |
 | --- | --- | --- |
 | **Routes to** | One session ends, another begins — usually a fresh context | `/to-tickets` → `/implement` |
-| **Runs inside** | Nested in the caller's session; owns no transition and publishes nothing | `/implement` → `/tdd` |
-| **Publishes to** | Records a durable transition that a later session reads back | `/code-review` → `/continuation` |
+| **Runs inside** | Nested in the caller's session; owns no transition and records nothing of its own | `/implement` → `/tdd` |
+| **Publishes to** | Leaves a durable evidence comment that a later session reads back | `/code-review` → the ticket |
 | **Reads config from** | Depends on files another skill wrote | `/next` → `/setup-git-loopy-skills` |
 
-Two skills are hubs. [`next`](./next.md) is the **router** — it reads live state (tracker, branch,
-diff, worktrees) and names one action. [`continuation`](./continuation.md) is the **reader** — it
-reconciles what previous runs published. Neither does any work itself.
+One skill is a hub. [`next`](./next.md) is the **router** — it reads live state (tracker, branch,
+diff, worktrees) and names one action. It does no work itself.
 
-Twelve skills carry git-loopy's Workflow Continuation contract and publish a record when they finish
-a transition they own: `code-review`, `grill-with-docs`, `implement`, `prototype`, `push`,
-`research`, `resolving-merge-conflicts`, `to-spec`, `to-tickets`, `triage`, `wayfinder` — plus
-`continuation` itself, which only reads.
+Eleven skills leave a durable evidence comment on the ticket they acted on and name the skill that
+succeeds them: `code-review`, `grill-with-docs`, `implement`, `prototype`, `push`,
+`research`, `resolving-merge-conflicts`, `to-spec`, `to-tickets`, `triage`, `wayfinder`.
 
 ## The connection map
 
@@ -33,10 +31,9 @@ a transition they own: `code-review`, `grill-with-docs`, `implement`, `prototype
 flowchart LR
     setup["/setup-git-loopy-skills"]
 
-    subgraph ROUTE["Routing and continuity"]
+    subgraph ROUTE["Routing"]
         next["/next"]
         handoff["/handoff"]
-        continuation["/continuation"]
     end
 
     subgraph ONRAMP["On-ramps"]
@@ -101,18 +98,6 @@ flowchart LR
     review --> implement
     rmc --> review
 
-    gwd -.-> continuation
-    tospec -.-> continuation
-    totickets -.-> continuation
-    implement -.-> continuation
-    review -.-> continuation
-    push -.-> continuation
-    wayfinder -.-> continuation
-    triage -.-> continuation
-    research -.-> continuation
-    prototype -.-> continuation
-    rmc -.-> continuation
-
     next --> questionnaire
 ```
 
@@ -136,32 +121,30 @@ sequenceDiagram
     participant IM as /implement
     participant CR as /code-review
     participant PU as /push
-    participant CN as /continuation
 
     U->>NX: a rough idea
     NX-->>U: route, runtime, paste-safe prompt
 
     Note over GD,TT: one unbroken context
     U->>GD: sharpen it, a round of questions at a time
-    GD->>CN: publish the grilled decision
+    GD->>GD: post the grilled decision as a ticket comment
     GD->>TS: destination agreed
-    TS->>CN: publish-spec
+    TS->>TS: post the spec as a ticket comment
     TS->>TT: break the spec into tracer bullets
-    TT->>CN: publish the ticket graph
+    TT->>TT: post the ticket graph as a ticket comment
     
     Note over IM,PU: fresh context per ticket
     TT->>IM: one unblocked ticket
-    IM->>CN: publish-implementation
+    IM->>IM: post the implementation as a ticket comment
     IM->>CR: review this candidate head
     alt findings
         CR->>IM: address them, republish a head
     else clean
         CR->>PU: publish the reviewed head
 
-    PU->>CN: publish-head
     end
 
-    CN-->>U: what the last run recorded as next
+    PU-->>U: the merged head
 ```
 
 A genuinely small change may skip the middle and go straight from grilling to
@@ -169,9 +152,7 @@ A genuinely small change may skip the middle and go straight from grilling to
 
 ## 2. Routing and session continuity
 
-[`next`](./next.md) decides *what*; [`handoff`](./handoff.md) *launches* it;
-[`continuation`](./continuation.md) answers the same question from the opposite source — published
-records rather than live state.
+[`next`](./next.md) decides *what*; [`handoff`](./handoff.md) *launches* it.
 
 ```mermaid
 sequenceDiagram
@@ -180,7 +161,6 @@ sequenceDiagram
     participant SK as any workflow skill
     participant NX as /next
     participant HO as /handoff
-    participant CN as /continuation
     participant BG as fresh session
 
     SK-->>NX: session concludes
@@ -197,10 +177,6 @@ sequenceDiagram
         HO->>BG: nohup copilot --yolo --no-ask-user with the same flags
         BG-->>U: resume by session name
     end
-
-    Note over CN: reads what runs published, never live state
-    U->>CN: what did the last run record
-    CN-->>U: one reconciled recommendation
 ```
 
 `/next` also routes to `/compact` at an intentional phase break, and to `/handoff` when the thread
@@ -222,7 +198,6 @@ sequenceDiagram
     participant GR as /grilling
     participant DM as /domain-modeling
     participant NX as /next
-    participant CN as /continuation
 
     alt an idea outside a codebase
         U->>GM: sharpen it
@@ -245,13 +220,13 @@ sequenceDiagram
     end
 
     GR->>NX: conclude and route onward
-    GD->>CN: publish the grilled decision
+    GD->>GD: post the grilled decision as a ticket comment
 ```
 
 `/batch-grill-me` is a standalone variant of the same discipline — it asks the whole frontier at
 once instead of one question at a time, and calls nothing else. `/grill-with-docs` is the only
-member that publishes; a grilling nested inside `/triage` or `/wayfinder` publishes nothing of its
-own.
+member that leaves a ticket comment; a grilling nested inside `/triage` or `/wayfinder` records
+nothing of its own.
 
 ## 4. Wayfinder: planning beyond one context
 
@@ -268,7 +243,6 @@ sequenceDiagram
     participant RS as /research
     participant PR as /prototype
     participant TS as /to-spec
-    participant CN as /continuation
 
     U->>WF: a chunk bigger than one agent session
     WF->>GR: name the destination
@@ -278,11 +252,11 @@ sequenceDiagram
     par AFK, in parallel subagents
         WF->>RS: a research ticket
         RS-->>WF: findings on a throwaway research branch
-        RS->>CN: research-ticket resolved or unresolved
+        RS->>RS: post the resolution as a ticket comment
     and HITL, when discussion is not enough
         WF->>PR: a prototype ticket
         PR-->>WF: a concrete artifact to react to
-        PR->>CN: prototype-ticket resolved or unresolved
+        PR->>PR: post the resolution as a ticket comment
     end
 
     loop until the frontier is empty
@@ -291,7 +265,7 @@ sequenceDiagram
     end
 
     WF->>TS: the way is clear, publish the spec
-    WF->>CN: map-complete
+    WF->>WF: post map-complete as a ticket comment
 ```
 
 Wayfinder routes to [`to-spec`](./to-spec.md), **not** straight to implementation — unless the
@@ -310,7 +284,6 @@ sequenceDiagram
     participant GR as /grilling
     participant DM as /domain-modeling
     participant IM as /implement
-    participant CN as /continuation
 
     M->>TR: a raw issue or external PR
     TR->>TR: categorise, label, verify the reproduction
@@ -320,10 +293,10 @@ sequenceDiagram
     end
 
     alt agent-ready
-        TR->>CN: triage-agent-ready
+        TR->>TR: post triage-agent-ready as a ticket comment
         TR-->>IM: implement the triaged issue
     else needs info
-        TR->>CN: triage-needs-info
+        TR->>TR: post triage-needs-info as a ticket comment
         TR-->>M: a brief naming exactly what is missing
     end
 ```
@@ -332,7 +305,7 @@ sequenceDiagram
 
 ## 6. Inside `/implement`
 
-Four skills run **nested** here. They hand their evidence back to `/implement` and publish nothing
+Four skills run **nested** here. They hand their evidence back to `/implement` and record nothing
 of their own, so the whole ticket is one durable transition.
 
 ```mermaid
@@ -344,12 +317,11 @@ sequenceDiagram
     participant CD as /codebase-design
     participant DM as /domain-modeling
     participant PR as /prototype
-    participant CN as /continuation
     participant CR as /code-review
 
     TT-->>IM: one unblocked ticket, fresh context
 
-    Note over IM,PR: nested, and publishing nothing
+    Note over IM,PR: nested, and recording nothing
     IM->>TD: red, green, refactor at pre-agreed seams
     TD->>CD: when the interface shape is itself in question
     IM->>CD: module, interface, depth, seam vocabulary
@@ -358,7 +330,7 @@ sequenceDiagram
 
     IM->>IM: typecheck, targeted tests, full suite once
     IM->>IM: commit and push so the head is durable
-    IM->>CN: publish-implementation
+    IM->>IM: post the implementation as a ticket comment
     IM->>CR: review this exact candidate head
 ```
 
@@ -378,7 +350,6 @@ sequenceDiagram
     participant MS as /microsoft-docs and /microsoft-code-reference
     participant PU as /push
     participant RMC as /resolving-merge-conflicts
-    participant CN as /continuation
 
     IM->>CR: candidate head, fixed point at the default branch
 
@@ -392,20 +363,20 @@ sequenceDiagram
     end
 
     alt findings
-        CR->>CN: review-findings
+        CR->>CR: post review-findings as a ticket comment
         CR->>IM: address them, republish a head
     else clean
-        CR->>CN: review-clean
+        CR->>CR: post review-clean as a ticket comment
         CR->>PU: publish the reviewed head
     end
 
     PU->>PU: stage intended changes, commit, push, open the PR
     alt the remote moved
         PU->>RMC: reconcile with the remote head
-        RMC->>CN: resolve-conflict
+        RMC->>RMC: post resolve-conflict as a ticket comment
         RMC->>CR: review the resolved head
     else clean
-        PU->>CN: publish-head
+        PU->>PU: post publish-head as a ticket comment
     end
 ```
 
@@ -550,7 +521,7 @@ These have no workflow edges. Reach for them directly; they neither route onward
 | `grill-me` | `grilling` | runs inside | Always — it is a one-line wrapper |
 | `loop-me` | `grilling` | runs inside | Stateful grilling over workflow specs |
 | `grill-with-docs` | `grilling`, `domain-modeling` | runs inside | Always |
-| `grill-with-docs` | `continuation` | publishes to | On the grilled decision |
+| `grill-with-docs` | the ticket | publishes to | On the grilled decision |
 | `improve-codebase-architecture` | `codebase-design` | runs inside | For the architecture vocabulary |
 | `improve-codebase-architecture` | `grilling`, `domain-modeling` | runs inside | Once a candidate is picked |
 | `improve-codebase-architecture` | `next` | routes to | The survey never implements |
@@ -576,14 +547,14 @@ These have no workflow edges. Reach for them directly; they neither route onward
 | `setup-agent-skills` | `triage`, `domain-modeling` | reads config from | Writes the labels and domain layout they use |
 | `writing-great-skills` | `writing-for-agents` | runs inside | Always |
 | `azure-mcaps-resource-deployment` | `microsoft-foundry` | routes to | Creating or configuring a Foundry resource |
-| eleven producers | `continuation` | publishes to | On completing a transition they own |
+| eleven producers | the ticket | publishes to | On completing a transition they own |
 
 ## Rules that govern the edges
 
 - **Context boundaries.** `/grill-with-docs` → `/to-spec` → `/to-tickets` stays in one context.
   Every `/implement` ticket starts in a fresh one.
 - **Nesting owns nothing.** A skill running inside another's session hands its evidence back and
-  publishes no transition of its own.
+  records no transition of its own.
 - **Reviews come back.** `/code-review` findings return to `/implement`, which republishes a head
   and re-enters review. `/resolving-merge-conflicts` re-enters review too.
 - **Surveys do not build.** `/improve-codebase-architecture` and `/diagnosing-bugs` produce ideas
@@ -596,5 +567,4 @@ These have no workflow edges. Reach for them directly; they neither route onward
 ## See also
 
 - [`next`](./next.md) — the router that picks the edge to walk
-- [`continuation`](./continuation.md) — the reader that reconciles what runs published
 - [`setup-agent-skills`](./setup-git-loopy-skills.md) — the config every workflow edge depends on
