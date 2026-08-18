@@ -203,3 +203,5 @@ ticket exists.
 are already durable, so an exit-`1` result carrying `"code": "repair_required"` means the
 transition happened but its record did not. Say so plainly, quote the message, and stop — do
 not retry blindly, invent a record, or report the session as complete.
+
+At the conclusion of a `/to-spec` run, continue the session by running the `/to-tickets` skill.
