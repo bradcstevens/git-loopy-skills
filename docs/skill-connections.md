@@ -171,6 +171,10 @@ sequenceDiagram
         U->>SK: paste the prompt into this conversation
     else Fresh session, you drive
         U->>BG: run the copyable copilot command block
+    else /implement route
+        NX->>HO: run /handoff with the prompt and flags just returned
+        HO->>BG: nohup copilot --yolo --no-ask-user with the same flags
+        BG-->>U: resume by session name
     else Fresh session, agent drives
         U->>HO: /handoff
         HO->>NX: run /next first if it is not the last output
@@ -514,6 +518,7 @@ These have no workflow edges. Reach for them directly; they neither route onward
 | From | To | Kind | When |
 | --- | --- | --- | --- |
 | `next` | 22 routes | routes to | The earliest unresolved gate decides which |
+| `next` | `handoff` | runs | The chosen route is `/implement` |
 | `next` | `setup-agent-skills` | reads config from | `docs/agents/issue-tracker.md` is missing |
 | `handoff` | `next` | routes to | Runs `/next` first if it is not the last output |
 | `handoff` | fresh session | routes to | Launches the sized runtime in the background |

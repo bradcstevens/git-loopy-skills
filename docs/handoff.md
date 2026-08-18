@@ -26,7 +26,7 @@ The command returns straight away. You follow the run with `tail -f <log path>` 
 
 ## When to reach for it
 
-You invoke this by typing `/handoff` — the agent won't reach for it on its own. Pass a note about what the next session is for and the prompt is tailored to it.
+You invoke this by typing `/handoff`, and `/next` reaches it on its own whenever it routes to [implement](./implement.md) — a ticket is already specified, so the agent starts rather than waits. Pass a note about what the next session is for and the prompt is tailored to it.
 
 Reach for it when the next stretch of work doesn't need you in the loop: a long refactor, a test suite to get green, a chore you'd rather not watch. When you'd rather run the step yourself, [next](./next.md) already hands you the same launch as one copyable `Command` block for your own terminal.
 

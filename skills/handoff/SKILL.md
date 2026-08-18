@@ -1,7 +1,6 @@
 ---
 name: handoff
-description: Pass the runtime and prompt output of a `/next` skill run to a fresh background agent that picks up the work immediately.
-disable-model-invocation: true
+description: Launch a `/next` recommendation — its prompt and its sized runtime — as a background agent. Use when `/next` routes to `/implement`, or work moves to a fresh session that runs on its own.
 ---
 
 If the `/next` skill output isn't the last part of the current conversation, run it before doing anything else.

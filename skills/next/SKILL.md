@@ -197,17 +197,6 @@ co -n "<descriptive name>" --model "<model>" --effort "<level>" --context "<defa
 ```
 ````
 
-Background Command:
-Command:
-```bash
-PROMPT=$(cat <<'PROMPT_EOF'
-/<route> <concise imperative naming the target and desired outcome>
-PROMPT_EOF
-)
-nohup co -n "<descriptive name>" --model "<model>" --effort "<level>" --context "<default | long_context>" -p "$PROMPT"
-```
-````
-
 Write the prompt **paste-safe**: one physical line of plain ASCII that opens with
 the exact skill invocation and names its target in bare words, so the shell
 receives a single argument whether the prompt reaches it through the heredoc
@@ -232,9 +221,11 @@ it with `copilot --yolo --resume="<descriptive name>"`. The command
 runs the session in the user's own terminal; `/handoff` launches the same pair
 in the background instead.
 
-Emit the `Command` block only when `Context` names a fresh session — a
-`Continue here` recommendation is a prompt for this conversation and has no
-session to launch. When the context is `Fresh session in a new worktree`, the
+Emit the `Command` block only when `Context` names a fresh session the user
+launches — a `Continue here` recommendation is a prompt for this conversation and
+has no session to launch, and an `/implement` recommendation is launched for the
+user by step 6, so a second copyable launcher would put two agents on one
+worktree. When the context is `Fresh session in a new worktree`, the
 command still runs from the current directory, because the prompt it carries
 opens with the `git worktree add` that moves the agent before it writes.
 
@@ -248,7 +239,22 @@ For a terminal workstream, return:
 **Complete:** <why no further workflow skill is needed>.
 ```
 
+## 6. Launch an `/implement` route
+
+An `/implement` route arrives already specified by its ticket, so this skill
+starts it rather than handing it over. Run `/handoff` and give it the
+recommendation just returned — the prompt verbatim between the heredoc markers
+and the three `Runtime` flags spliced in — so a background agent picks the ticket
+up while the user keeps this session.
+
+A `HITL` implement route launches the same way; carry its open judgment into the
+prompt as an instruction to stop and report it, because a question the background
+agent raises reaches nobody.
+
+Every other route ends at step 5 and leaves the launch to the user.
+
 Routing is complete when every active candidate has been classified and every
 recommendation names a live target, an exact invocation, a paste-safe prompt in
-its own code fence, a copyable `copilot` command whenever the route opens a fresh
-session, the correct context, a sized runtime, and any blocker.
+its own code fence, a copyable `copilot` command whenever the user launches the
+fresh session, the correct context, a sized runtime, and any blocker — and an
+`/implement` recommendation has a background agent `/handoff` reports alive.

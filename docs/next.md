@@ -34,10 +34,13 @@ A recommendation also names the **runtime** to run it on: `--model`, `--effort`,
 
 When the route calls for a fresh session, the recommendation also comes with the whole thing already assembled: a `Command` block holding the prompt in a quoted heredoc and the sized flags spliced into a `copilot --yolo -n "..." --model ... --effort ... --context ... -p "$PROMPT"` invocation. Select it, paste it, and the next session starts — named, so `copilot --yolo --resume="<name>"` finds it again. It's the same launch [handoff](./handoff.md) performs for you in the background, offered here as one copyable selection instead.
 
+An [implement](./implement.md) route is the exception, because its ticket already specifies it: `next` runs [handoff](./handoff.md) itself, so the background agent is working by the time you read the recommendation, and no `Command` block comes with it — one launcher, one agent, one worktree. Resume it by the name `handoff` gave it.
+
 ## It's working if
 
 - You get back exactly one action, with a live target — a linked issue, PR, spec, branch, or the current conversation — and never a menu of possibilities.
 - A recommendation that opens a fresh session arrives as a runnable `copilot` command, not as flags you assemble yourself.
+- An `/implement` recommendation arrives with its background agent already running, and its resume command instead of a `copilot` command to paste.
 - The recommendation names whether to continue in this context or start a fresh session, matching the flow's own rules: grill → spec → tickets stays in one context, each `/implement` ticket starts in a new one.
 - In a repo that was never configured, it routes to [setup-agent-skills](./setup-git-loopy-skills.md) and nothing else.
 - When the work is genuinely finished, it says so instead of inventing a next step.
