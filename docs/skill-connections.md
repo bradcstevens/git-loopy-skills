@@ -453,7 +453,7 @@ sequenceDiagram
     end
 ```
 
-## 10. Writing skills, and the Microsoft cluster
+## 10. Writing for agents, and the Microsoft cluster
 
 Two small chains that sit off to the side of the engineering flow.
 
@@ -462,14 +462,14 @@ sequenceDiagram
     autonumber
     actor U as You
     participant NX as /next
-    participant WGS as /writing-great-skills
     participant WFA as /writing-for-agents
+    participant SM as SKILL-MECHANICS.md
 
     NX-->>U: the task is to write or revise a skill
-    U->>WGS: author or edit a skill
-    WGS->>WFA: the rules for writing documents agents read
-    WFA-->>WGS: structure, tone, token discipline
-    WGS-->>U: a skill that reads predictably
+    U->>WFA: author or edit a skill, or modify AGENTS.md
+    WFA->>SM: the document being written is a skill
+    SM-->>WFA: frontmatter, invocation choice, router skills
+    WFA-->>U: a document that reads predictably
 ```
 
 ```mermaid
@@ -550,7 +550,6 @@ These have no workflow edges. Reach for them directly; they neither route onward
 | `push` | `resolving-merge-conflicts` | routes to | The remote head moved |
 | `resolving-merge-conflicts` | `code-review` | routes to | A resolved head is a new candidate |
 | `setup-agent-skills` | `triage`, `domain-modeling` | reads config from | Writes the labels and domain layout they use |
-| `writing-great-skills` | `writing-for-agents` | runs inside | Always |
 | `azure-mcaps-resource-deployment` | `microsoft-foundry` | routes to | Creating or configuring a Foundry resource |
 | eleven producers | the ticket | publishes to | On completing a transition they own |
 

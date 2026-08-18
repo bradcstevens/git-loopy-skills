@@ -62,7 +62,7 @@ choose the first matching transition:
 | Reviewed work remains local or the current branch lacks its PR | `/push` |
 | No delivery work is active and codebase health needs a survey | `/improve-codebase-architecture` |
 | The user wants a stateful learning path | `/teach` |
-| The task is to write or revise an agent skill | `/writing-great-skills` |
+| The task is to write or revise an agent skill | `/writing-for-agents` |
 | The accepted work is closed, reviewed, and published | No next route: report completion |
 
 Apply these flow rules:
