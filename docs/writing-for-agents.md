@@ -18,7 +18,7 @@ Almost none of it is skill-specific. The universal core — context pointers, th
 
 ## When to reach for it
 
-The agent reaches for it on its own whenever you're creating or editing a skill, or modifying `AGENTS.md` — and you can still type `/writing-for-agents` to pull it up directly.
+Type `/writing-for-agents` whenever you're creating or editing a skill, or modifying `AGENTS.md`.
 
 ## The two loads
 

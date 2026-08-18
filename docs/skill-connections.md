@@ -463,12 +463,9 @@ sequenceDiagram
     actor U as You
     participant NX as /next
     participant WFA as /writing-for-agents
-    participant SM as SKILL-MECHANICS.md
 
     NX-->>U: the task is to write or revise a skill
     U->>WFA: author or edit a skill, or modify AGENTS.md
-    WFA->>SM: the document being written is a skill
-    SM-->>WFA: frontmatter, invocation choice, router skills
     WFA-->>U: a document that reads predictably
 ```
 

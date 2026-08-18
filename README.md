@@ -97,7 +97,7 @@ situation matches. The rest you invoke by name.
 | [wait-what](docs/wait-what.md) | `/wait-what` | Stop — that last message did not land, so re-pitch it. |
 | [wayfinder](docs/wayfinder.md) | `/wayfinder` | Plan a huge chunk of work — more than one agent session can hold — as a shared map of decision tickets on your issue tracker, and resolve them one at a time until the way to the destination is clear. |
 | wizard | automatic | Generate an interactive bash wizard that walks a human through steps only they can perform. |
-| [writing-for-agents](docs/writing-for-agents.md) | automatic | Writing documents for agents. |
+| [writing-for-agents](docs/writing-for-agents.md) | `/writing-for-agents` | Reference for writing the documents agents read — skills, AGENTS.md, and pointed-at docs. |
 
 <!-- skills:end -->
 
