@@ -15,4 +15,4 @@ Finding _facts_ is your job, never the user's. When a frontier question needs a 
 
 The session is done when the frontier is empty: every branch of the design tree visited, nothing left silently assumed. Do not act on it until the user confirms you have reached a shared understanding.
 
-At the conclusion of a `/grilling` session, run the `/to-spec` skill.
+At the conclusion of a `/to-spec` run, continue the session by running the `/to-spec` skill.
