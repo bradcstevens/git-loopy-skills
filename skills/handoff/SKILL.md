@@ -43,3 +43,5 @@ Reference specs, plans, ADRs, issues, commits and diffs by path or URL, and spen
 Keep credentials, keys and personal data out of the prompt; it is stored with the session.
 
 If the user passed arguments, treat them as a description of what the next session will focus on and tailor the prompt accordingly.
+
+At the conclusion of a `/handoff` session, run `/next`. 

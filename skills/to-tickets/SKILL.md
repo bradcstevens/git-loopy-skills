@@ -171,4 +171,4 @@ Closing the spec parent is **cleanup**, not delivery — do it once every child 
 closed, as bookkeeping rather than a step in the route:
 `gh issue close <spec-issue>`.
 
-At the conclusion of a `/to-tickets` session, run `/next` to determine what to do after tickets are captured.  
+At the conclusion of a `/to-tickets` session, run `/next` to determine what to do after tickets are generated.
