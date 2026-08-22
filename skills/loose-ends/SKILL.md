@@ -88,14 +88,9 @@ depend on application code after it is opened. HTML-escape every tracker-provide
 before interpolation.
 
 Reuse the architecture survey's presentation scaffold in
-[`../improve-codebase-architecture/HTML-REPORT.md`](../improve-codebase-architecture/HTML-REPORT.md):
+[`../improve-codebase-architecture/HTML-REPORT.md`](../improve-codebase-architecture/HTML-REPORT.md)
+without copying its document-shell or visual conventions. This report adds:
 
-- Use the same dark-only document shell, Tailwind CDN, optional Mermaid ESM import, slate
-  palette, generous spacing, `max-w-5xl` main column, and compact metadata header.
-- Make this an editorial survey rather than an application dashboard. Cards use
-  `bg-slate-900`, `border-slate-800`, `text-slate-100`, `text-slate-200`, and
-  `text-slate-400`; use tinted emerald for actionable findings and amber only for held or
-  cautionary context.
 - Header metadata shows the repository, exact generation timestamp, the effective grace
   period, and the finding count. Do not add a generic introduction paragraph.
 - Group findings by **follow-up action**, not finding class. This tracer renders
