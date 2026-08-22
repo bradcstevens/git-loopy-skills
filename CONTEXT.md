@@ -25,9 +25,9 @@ A mark on a route that still needs a human decision. The opposite of AFK-safe.
 _Avoid_: Manual, interactive
 
 **Allowlisted route**:
-One of the five routes the chain is permitted to spawn without asking: `/implement`,
-`/code-review`, `/research`, `/push`, `/resolving-merge-conflicts`. Being allowlisted is necessary
-but not sufficient — the route must also be AFK-safe.
+One of the six routes the chain is permitted to spawn without asking: `/implement`,
+`/code-review`, `/research`, `/push`, `/resolving-merge-conflicts`, `/merge`. Being allowlisted is
+necessary but not sufficient — the route must also be AFK-safe.
 
 ### The chain
 
@@ -71,6 +71,37 @@ _Avoid_: Stale row, dangling row
 **In flight**:
 Describes a target currently held by a running agent. An in-flight target is spoken for: routing a
 second agent at it would duplicate or corrupt the work.
+
+**Stale worktree**:
+A working directory whose work is finished or abandoned and which no live process holds. Distinct
+from an **orphaned reservation**, which is a ledger row holding a concurrency slot: a stale worktree
+is a directory, it may come from a producer no ledger tracks, and it holds nothing but disk.
+_Avoid_: Dead worktree, leftover
+
+**Worktree marker**:
+The record inside a worktree naming the process that owns it. A worktree carrying none cannot be
+vouched for, so nothing removes it on a single look.
+_Avoid_: Lock file, sentinel
+
+**Sweep**:
+One pass over every worktree, classifying each as held, marked, or unvouched. Corroboration is
+counted in sweeps rather than elapsed time, because a directory unchanged across two of them is
+evidence about that directory, where an idle timer is only a guess about how long an agent thinks.
+_Avoid_: Scan, cleanup run
+
+### The merge boundary
+
+**Merge boundary**:
+The point where a reviewed head enters the default branch. It was a human's by rule; it is now
+whatever the merge evidence says, which is why the chain may cross it and a bare `git merge` may
+not.
+_Avoid_: Ship, land
+
+**Merge evidence**:
+What makes an unattended merge legitimate: GitHub's own mergeable state, the `review-clean` comment
+`/code-review` published, and every check green. It is this workflow's own record rather than the
+remote's branch protection, because a repository may require nothing and still be merged into.
+_Avoid_: Approval, sign-off (an approval is one possible input, not the whole set)
 
 ### Connection kinds
 
