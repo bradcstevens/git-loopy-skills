@@ -11,6 +11,11 @@ err() {
   fail=1
 }
 
+worktree_count() {
+  git -C "$1" worktree list --porcelain |
+    awk '/^worktree / { count += 1 } END { print count + 0 }'
+}
+
 cleanup() {
   cd "$REPO"
   rm -rf "$tmp_dir"
@@ -22,6 +27,9 @@ git -C "$tmp_dir" init --quiet
 git -C "$tmp_dir" -c user.name=test -c user.email=test@example.com commit --quiet --allow-empty -m initial
 ledger="$tmp_dir/.git-loopy/subagents.jsonl"
 
+# The routing agent owns the background `task` call between these two commands.
+# This exercises chain.sh's durable CLI seam: reserve happens before launch and
+# bind accepts the runtime identity the launch returns.
 reserve_and_bind() {
   local route="" target="" session_id="" agent_id="" agent_type="" agent_name=""
   local spawn_time="" worktree="" chain_depth="" ledger_path=""
@@ -129,6 +137,90 @@ PY
 then
   err "bind did not attach the runtime identity to the reservation"
 fi
+
+missing_session_ledger="$tmp_dir/.git-loopy/missing-session-subagents.jsonl"
+if (
+  cd "$tmp_dir"
+  "$CHAIN" reserve \
+    --ledger "$missing_session_ledger" \
+    --route code-review \
+    --target issue-missing-session \
+    --spawn-time 2026-08-22T00:02:00Z \
+    --worktree "$tmp_dir" \
+    --chain-depth 1 \
+    --in-place \
+    2>/dev/null
+)
+then
+  err "in-place reserve accepted a missing deterministic session"
+fi
+if [ -e "$missing_session_ledger" ]; then
+  err "in-place reserve wrote a row without a deterministic session"
+fi
+
+in_place_ledger="$tmp_dir/.git-loopy/in-place-subagents.jsonl"
+worktree_count_before_in_place="$(
+  worktree_count "$tmp_dir"
+)"
+(
+  cd "$tmp_dir"
+  "$CHAIN" reserve \
+    --ledger "$in_place_ledger" \
+    --route code-review \
+    --target issue-serial-hop \
+    --spawn-time 2026-08-22T00:02:00Z \
+    --worktree "$tmp_dir" \
+    --chain-depth 1 \
+    --session-id session-serial-hop \
+    --in-place
+)
+if ! python3 - "$in_place_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger]
+
+assert rows == [{
+    "route": "code-review",
+    "target": "issue-serial-hop",
+    "spawn_time": "2026-08-22T00:02:00Z",
+    "worktree": sys.argv[1].replace("/.git-loopy/in-place-subagents.jsonl", ""),
+    "chain_depth": 1,
+    "finish_time": "",
+    "outcome": "",
+    "session_id": "session-serial-hop",
+    "in_place": True,
+}]
+PY
+then
+  err "in-place reserve did not persist the deterministic session before spawn"
+fi
+if [ "$(worktree_count "$tmp_dir")" -ne "$worktree_count_before_in_place" ]; then
+  err "in-place reserve created a linked worktree"
+fi
+cp "$in_place_ledger" "$in_place_ledger.before-mismatched-bind"
+if "$CHAIN" bind \
+  --ledger "$in_place_ledger" \
+  --worktree "$tmp_dir" \
+  --session-id session-wrong \
+  --agent-id agent-serial-hop \
+  --agent-type code-review-agent \
+  --agent-name code-review-agent \
+  2>/dev/null
+then
+  err "bind accepted a session identity different from the reservation"
+fi
+if ! cmp -s "$in_place_ledger.before-mismatched-bind" "$in_place_ledger"; then
+  err "mismatched session binding modified the reservation"
+fi
+"$CHAIN" bind \
+  --ledger "$in_place_ledger" \
+  --worktree "$tmp_dir" \
+  --session-id session-serial-hop \
+  --agent-id agent-serial-hop \
+  --agent-type code-review-agent \
+  --agent-name code-review-agent
 
 reserve_and_bind \
   --ledger "$ledger" \
@@ -401,6 +493,61 @@ completion_payload() {
   fi
   printf '%s' '{"sessionId":"'"$session_id"'","timestamp":'"$timestamp_json"',"cwd":"'"$cwd"'","transcriptPath":"'"$tmp_dir"'/transcript.jsonl","agentId":"'"$agent_id"'","agentType":"'"$agent_type"'","agentName":"'"$agent_name"'","agentDisplayName":"Implement agent","response":"Completed the route.","stopReason":"end_turn"}'
 }
+
+serial_repo="$tmp_dir/serial-reentry-repository"
+git init --quiet "$serial_repo"
+git -C "$serial_repo" -c user.name=test -c user.email=test@example.com \
+  commit --quiet --allow-empty -m initial
+(
+  cd "$serial_repo"
+  "$CHAIN" reserve \
+    --route code-review \
+    --target issue-serial-hop \
+    --spawn-time 2026-08-22T00:02:00Z \
+    --worktree "$serial_repo" \
+    --chain-depth 1 \
+    --session-id session-serial-hop \
+    --in-place
+  "$CHAIN" bind \
+    --worktree "$serial_repo" \
+    --session-id session-serial-hop \
+    --agent-id agent-serial-hop \
+    --agent-type code-review-agent \
+    --agent-name code-review-agent
+)
+serial_ledger="$serial_repo/.git-loopy/subagents.jsonl"
+serial_completion_output="$(
+  cd "$serial_repo"
+  PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete \
+    <<< "$(completion_payload agent-serial-hop 2026-08-22T00:11:00Z code-review-agent code-review-agent session-serial-hop "$serial_repo")"
+)"
+assert_plan "serial in-place completion" "$serial_completion_output" \
+  '{"continue":true,"outcome":"published","target":"issue-serial-hop"}'
+if [ ! -d "$serial_repo/.git" ] && [ ! -f "$serial_repo/.git" ]; then
+  err "in-place completion removed the spawning worktree"
+fi
+serial_reentry="$(
+  python3 "$REPO/skills/setup-git-loopy-skills/git-loopy-agent-stop.py" \
+    <<< '{"cwd":"'"$serial_repo"'","timestamp":"2026-08-22T00:12:00Z","stop_hook_active":false}'
+)"
+if [ "$serial_reentry" != '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","target":"issue-serial-hop"}' ]; then
+  err "serial completion did not re-enter /next through agentStop"
+fi
+if ! python3 - "$serial_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    row = json.loads(ledger.readline())
+
+assert row["finish_time"] == "2026-08-22T00:11:00Z", row
+assert row["outcome"] == "published", row
+assert row["routed"] is True, row
+assert row["routed_at"] == "2026-08-22T00:12:00Z", row
+PY
+then
+  err "serial hop did not close and route its ledger row"
+fi
 
 unbound_ledger="$tmp_dir/.git-loopy/unbound-subagents.jsonl"
 unbound_worktree="$tmp_dir/worktree-unbound"
