@@ -69,8 +69,6 @@ choose the first matching transition:
 Apply these flow rules:
 
 - Keep `/grill-with-docs`, `/to-spec`, and `/to-tickets` in one unbroken context.
-  Start each `/implement` ticket in a fresh context. A genuinely small change can
-  move directly from grilling to `/implement` in the current context.
 - At an intentional phase boundary, `PHASE-BOUNDARIES.md` alone chooses the
   context transition. Use `/handoff` only for its portability cases: a new
   harness, directory, colleague, or mid-phase side task.
@@ -179,16 +177,16 @@ At every intentional phase boundary, apply the full ordered procedure in the co-
 skill's directory so an installation of `/next` carries it without `/skill-router`.
 
 The procedure's fourth question, “Can the task be done AFK?”, is the reasoning behind the chain's
-spawn gate. A yes marks the action `AFK-safe`, but the chain may spawn it only when it is also
-allowlisted: `/implement`, `/code-review`, `/research`, `/push`, or `/resolving-merge-conflicts`.
-An allowlisted route that is `HITL` reaches the checkpoint boundary instead; it does not become safe
-because the chain can run it.
+spawn gate. Only when it is the first yes does the procedure select `Subagent`. That action is
+`AFK-safe`, but the chain may spawn it only when it is also allowlisted: `/implement`,
+`/code-review`, `/research`, `/push`, or `/resolving-merge-conflicts`. A `HITL` or non-allowlisted
+action reaches the checkpoint boundary instead; it does not become safe because the chain can run it.
 
-For an `AFK-safe` allowlisted action, consult `chain.sh plan` with the route, target, custom agent,
+Only for that `Subagent` outcome, consult `chain.sh plan` with the route, target, custom agent,
 runtime, and proposed worktree. Treat its returned JSON decision as authoritative. A `decline` means
-do not spawn; report its reason and leave the action at the checkpoint boundary. A `spawn` selects
-`Context: Subagent` and proceeds to step 7. The script owns the ledger, collision, and concurrency
-decisions; do not reimplement them in this skill.
+do not spawn; report its reason and leave the action at the checkpoint boundary. A `spawn` proceeds
+to step 7. The script owns the ledger, collision, and concurrency decisions; do not reimplement them
+in this skill.
 
 The chain stops and asks a human before an unexplained runaway: it permits a route at most **three**
 times for one target and a target lineage at most **eight** hops deep. A fourth repeat or ninth hop
@@ -199,9 +197,8 @@ The chain and `/handoff` have different lifetimes. The chain runs an in-session 
 this session and ends with it. `/handoff` launches detached work that outlives this session. Keep
 `/handoff` separate; never use it as the chain's launcher.
 
-This step is complete when the first applicable phase-boundary choice is known, every eligible
-subagent action has a `plan` decision, every decline carries its reason, and every spawn is handed
-to step 7.
+This step is complete when the first applicable phase-boundary choice is known, every `Subagent`
+outcome has a `plan` decision, every decline carries its reason, and every spawn is handed to step 7.
 
 ## 6. Return the recommendation
 
@@ -234,7 +231,8 @@ Write the prompt **paste-safe**: one physical line of plain ASCII that opens wit
 the exact skill invocation and names its target in bare words, so the shell
 receives a single argument whether the prompt reaches it through the heredoc
 below or a hand-typed `-p "..."`. Keep every label and explanation outside the
-code fence. For `/compact`, pass no argument. Match `Context` to the flow rules
+code fence. For `/compact`, pass the instruction the phase-boundary procedure requires. Match
+`Context` to the flow rules
 above, choosing `Fresh session in a new worktree` when another agent holds the
 primary worktree — and open the prompt with the `git worktree add` that clears
 it, so the agent moves itself before it writes.
@@ -282,7 +280,7 @@ Set `Context: Subagent` only for the `spawn` decision from step 5. Reserve the t
 launching the returned custom agent in background mode, bind the returned agent identity
 immediately after launch, and carry the recommendation's paste-safe prompt and runtime into that
 agent. Do not launch a declined action, an action that reaches the checkpoint boundary, or an action
-whose phase-boundary choice is `/handoff`.
+whose phase-boundary choice is anything other than `Subagent`.
 
 Every other route ends at step 6 and leaves a user-launched fresh session, continued session, or
 `/handoff` transition to its own documented behavior.
