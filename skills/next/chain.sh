@@ -15,6 +15,8 @@ usage:
   chain.sh recover --stale-after-seconds N [--now TIMESTAMP] [--ledger PATH]
 
 A PID-less ledger lock is recoverable after CHAIN_LOCK_STALE_SECONDS (default: 300).
+Route repetition and chain depth count bound rows only. Reservations claim
+capacity and a worktree, but do not represent a spawned hop.
 EOF
   exit 2
 }
@@ -317,6 +319,122 @@ concurrency_limit() {
   printf '%s\n' "$limit"
 }
 
+allowlisted_route() {
+  case "$1" in
+    /implement|/code-review|/research|/push|/resolving-merge-conflicts) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+evaluate_and_record_target_guard() {
+  local route="$1" target="$2" requested_depth="${3:-}"
+
+  python3 - "$ledger" "$route" "$target" "$requested_depth" <<'PY'
+import datetime
+import json
+import os
+import sys
+import tempfile
+
+ledger_path, route, target, requested_depth = sys.argv[1:]
+requested_depth = int(requested_depth) if requested_depth else 0
+if not os.path.exists(ledger_path):
+    print(json.dumps({
+        "reason": None,
+        "target": target,
+        "next_chain_depth": max(1, requested_depth),
+    }, separators=(",", ":")))
+    raise SystemExit
+
+try:
+    with open(ledger_path, encoding="utf-8") as ledger:
+        rows = [json.loads(line) for line in ledger if line.strip()]
+except json.JSONDecodeError as error:
+    print(f"error: invalid spawn ledger: {error}", file=sys.stderr)
+    raise SystemExit(2)
+
+bound_rows = [
+    (index, row)
+    for index, row in enumerate(rows)
+    if row.get("target") == target and row.get("agent_id")
+]
+recorded_depth = max(
+    (
+        row.get("chain_depth", 0)
+        for _, row in bound_rows
+        if isinstance(row.get("chain_depth"), int)
+    ),
+    default=0,
+)
+next_chain_depth = max(recorded_depth + 1, requested_depth, 1)
+
+if not bound_rows:
+    print(json.dumps({
+        "reason": None,
+        "target": target,
+        "next_chain_depth": next_chain_depth,
+    }, separators=(",", ":")))
+    raise SystemExit
+
+halt_reason = None
+for _, row in reversed(bound_rows):
+    if isinstance(row.get("halt_reason"), str) and row["halt_reason"]:
+        halt_reason = row["halt_reason"]
+        break
+
+if halt_reason is None and any(
+    row.get("outcome") == "no-evidence" for _, row in bound_rows
+):
+    halt_reason = "no-evidence"
+elif halt_reason is None:
+    normalized_route = route.lstrip("/")
+    repetitions = sum(
+        row.get("route", "").lstrip("/") == normalized_route
+        for _, row in bound_rows
+        if isinstance(row.get("route"), str)
+    )
+    if repetitions >= 3:
+        halt_reason = "route-repetition-limit"
+    else:
+        if next_chain_depth > 8:
+            halt_reason = "chain-depth-limit"
+
+if halt_reason is None:
+    print(json.dumps({
+        "reason": None,
+        "target": target,
+        "next_chain_depth": next_chain_depth,
+    }, separators=(",", ":")))
+    raise SystemExit
+
+_, halt_row = bound_rows[-1]
+if halt_row.get("halt_reason") != halt_reason:
+    halted_at = datetime.datetime.now(datetime.timezone.utc).isoformat(
+        timespec="seconds"
+    ).replace("+00:00", "Z")
+    halt_row["halt_reason"] = halt_reason
+    halt_row["halted_at"] = halted_at
+    descriptor, temporary_path = tempfile.mkstemp(
+        dir=os.path.dirname(ledger_path) or ".",
+        prefix=".subagents.",
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            for row in rows:
+                output.write(json.dumps(row, separators=(",", ":")) + "\n")
+        os.replace(temporary_path, ledger_path)
+    except BaseException:
+        os.unlink(temporary_path)
+        raise
+
+print(json.dumps({
+    "reason": halt_reason,
+    "target": target,
+    "next_chain_depth": next_chain_depth,
+}, separators=(",", ":")))
+PY
+}
+
 plan() {
   local route="" target="" safety="" agent="" model="" effort="" context_tier="" worktree=""
 
@@ -343,8 +461,11 @@ plan() {
     ledger="$(repository_root)/.git-loopy/subagents.jsonl"
   fi
 
-  local worktree_held=0 collision_status max_concurrency
+  local worktree_held=0 collision_status max_concurrency guard="" route_allowed=0
   max_concurrency="$(concurrency_limit)" || return $?
+  if allowlisted_route "$route"; then
+    route_allowed=1
+  fi
   if ledger_has_open_worktree "$worktree"; then
     worktree_held=1
   else
@@ -354,24 +475,27 @@ plan() {
     fi
   fi
 
-  python3 - "$ledger" "$route" "$target" "$safety" "$agent" "$model" "$effort" "$context_tier" "$worktree" "$worktree_held" "$max_concurrency" <<'PY'
+  if [ "$safety" = "AFK-safe" ] && [ "$route_allowed" -eq 1 ]; then
+    mkdir -p "$(dirname "$ledger")"
+    lock_dir="$ledger.lock"
+    acquire_lock
+    guard="$(evaluate_and_record_target_guard "$route" "$target")"
+    release_lock
+  fi
+
+  python3 - "$ledger" "$route" "$target" "$safety" "$agent" "$model" "$effort" "$context_tier" "$worktree" "$worktree_held" "$max_concurrency" "$route_allowed" "$guard" <<'PY'
 import json
 import os
 import sys
 
-ledger, route, target, safety, agent, model, effort, context_tier, worktree, worktree_held, max_concurrency = sys.argv[1:]
+ledger, route, target, safety, agent, model, effort, context_tier, worktree, worktree_held, max_concurrency, route_allowed, guard = sys.argv[1:]
 worktree = os.path.realpath(os.path.abspath(worktree))
 worktree_held = worktree_held == "1"
 max_concurrency = int(max_concurrency)
-allowlisted_routes = {
-    "/implement",
-    "/code-review",
-    "/research",
-    "/push",
-    "/resolving-merge-conflicts",
-}
+route_allowed = route_allowed == "1"
+guard = json.loads(guard) if guard else None
 
-if route not in allowlisted_routes:
+if not route_allowed:
     decision = {
         "decision": "decline",
         "reason": "route-not-allowlisted",
@@ -408,6 +532,14 @@ else:
         decision = {
             "decision": "decline",
             "reason": "target-in-flight",
+            "route": route,
+            "target": target,
+        }
+    elif guard and guard["reason"]:
+        decision = {
+            "decision": "decline",
+            "reason": "target-halted",
+            "halt_reason": guard["reason"],
             "route": route,
             "target": target,
         }
@@ -485,7 +617,7 @@ reserve() {
 
   acquire_lock
 
-  local collision_status
+  local collision_status guard
   if ledger_has_open_worktree "$worktree"; then
     echo "error: worktree-in-flight: $worktree" >&2
     exit 1
@@ -505,6 +637,13 @@ reserve() {
       return "$collision_status"
     fi
   fi
+
+  guard="$(evaluate_and_record_target_guard "$route" "$target" "$chain_depth")"
+  if [ "$(python3 -c 'import json; import sys; print(json.load(sys.stdin)["reason"] or "")' <<< "$guard")" ]; then
+    echo "error: target-halted: $(python3 -c 'import json; import sys; print(json.load(sys.stdin)["reason"])' <<< "$guard")" >&2
+    exit 1
+  fi
+  chain_depth="$(python3 -c 'import json; import sys; print(json.load(sys.stdin)["next_chain_depth"])' <<< "$guard")"
 
   open_reservations="$(python3 - "$ledger" <<'PY'
 import json
@@ -860,12 +999,20 @@ for comment in comments:
         break
 
 outcome = "published" if has_evidence else "no-evidence"
-row["finish_time"] = (
+finish_time = (
     finish_at.astimezone(datetime.timezone.utc)
     .isoformat(timespec="seconds")
     .replace("+00:00", "Z")
 )
+row["finish_time"] = finish_time
 row["outcome"] = outcome
+if outcome == "no-evidence":
+    row["halt_reason"] = "no-evidence"
+    row["halted_at"] = finish_time
+elif isinstance(row.get("chain_depth"), int) and row["chain_depth"] >= 8:
+    # Record the next-hop stop before agentStop reaches its own eight-block limit.
+    row["halt_reason"] = "chain-depth-limit"
+    row["halted_at"] = finish_time
 
 with open(output_path, "w", encoding="utf-8") as output:
     for updated_row in rows:
@@ -874,7 +1021,7 @@ with open(metadata_path, "w", encoding="utf-8") as metadata:
     metadata.write(worktree + "\n")
 
 print(json.dumps({
-    "continue": has_evidence,
+    "continue": has_evidence and "halt_reason" not in row,
     "outcome": outcome,
     "target": target,
 }, separators=(",", ":")))

@@ -515,15 +515,212 @@ with open(sys.argv[1], encoding="utf-8") as ledger:
 row = next(row for row in rows if row["session_id"] == "session-no-evidence")
 assert row["finish_time"] == "2026-08-22T00:11:00Z"
 assert row["outcome"] == "no-evidence"
+assert row["halt_reason"] == "no-evidence"
+assert row["halted_at"] == "2026-08-22T00:11:00Z"
 PY
 then
-  err "no-evidence completion did not close the matching ledger row"
+  err "no-evidence completion did not record its target halt"
 fi
 
 plan_ledger="$complete_ledger"
 no_evidence_target="$(plan /implement issue-no-evidence AFK-safe implement-agent gpt-5.6-terra high default "$tmp_dir/plan-no-evidence")"
 assert_plan "no-evidence target" "$no_evidence_target" \
-  '{"decision":"decline","reason":"target-failed","route":"/implement","target":"issue-no-evidence"}'
+  '{"decision":"decline","reason":"target-halted","halt_reason":"no-evidence","route":"/implement","target":"issue-no-evidence"}'
+
+reserve_and_bind \
+  --ledger "$complete_ledger" \
+  --route research \
+  --target issue-depth-complete \
+  --session-id session-depth-complete \
+  --agent-id agent-depth-complete \
+  --agent-type research-agent \
+  --agent-name research-agent \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$tmp_dir/worktree-depth-complete" \
+  --chain-depth 8
+
+depth_complete_output="$(
+  PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete --ledger "$complete_ledger" \
+    <<< "$(completion_payload agent-depth-complete 2026-08-22T00:11:00Z research-agent research-agent session-depth-complete)"
+)"
+assert_plan "eighth completed lineage hop" "$depth_complete_output" \
+  '{"continue":false,"outcome":"published","target":"issue-depth-complete"}'
+
+if ! python3 - "$complete_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger]
+
+row = next(row for row in rows if row["session_id"] == "session-depth-complete")
+assert row["outcome"] == "published"
+assert row["halt_reason"] == "chain-depth-limit"
+assert row["halted_at"] == "2026-08-22T00:11:00Z"
+PY
+then
+  err "eighth hop did not record the depth halt before re-entry"
+fi
+
+depth_increment_ledger="$tmp_dir/.git-loopy/depth-increment-subagents.jsonl"
+reserve_and_bind \
+  --ledger "$depth_increment_ledger" \
+  --route implement \
+  --target issue-depth-increment \
+  --session-id session-depth-increment-1 \
+  --agent-id agent-depth-increment-1 \
+  --agent-type implement-agent \
+  --agent-name implement-agent \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$tmp_dir/worktree-depth-increment-1" \
+  --chain-depth 1
+
+PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete --ledger "$depth_increment_ledger" \
+  <<< "$(completion_payload agent-depth-increment-1 2026-08-22T00:11:00Z implement-agent implement-agent session-depth-increment-1)" \
+  >/dev/null
+
+"$CHAIN" reserve \
+  --ledger "$depth_increment_ledger" \
+  --route code-review \
+  --target issue-depth-increment \
+  --spawn-time 2026-08-22T00:12:00Z \
+  --worktree "$tmp_dir/worktree-depth-increment-2" \
+  --chain-depth 1
+
+if ! python3 - "$depth_increment_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger]
+
+row = next(row for row in rows if row["worktree"].endswith("worktree-depth-increment-2"))
+assert row["chain_depth"] == 2
+PY
+then
+  err "reserve did not derive the next target lineage depth"
+fi
+
+guard_ledger="$tmp_dir/.git-loopy/guard-subagents.jsonl"
+python3 - "$guard_ledger" <<'PY'
+import json
+import sys
+
+ledger_path = sys.argv[1]
+
+def bound(target, route, depth, identifier, finish_time="2026-08-22T00:10:00Z"):
+    return {
+        "route": route,
+        "target": target,
+        "session_id": f"session-{identifier}",
+        "agent_id": f"agent-{identifier}",
+        "agent_type": f"{route}-agent",
+        "agent_name": f"{route}-agent",
+        "spawn_time": "2026-08-22T00:00:00Z",
+        "worktree": f"/tmp/{identifier}",
+        "chain_depth": depth,
+        "finish_time": finish_time,
+        "outcome": "published" if finish_time else "",
+    }
+
+rows = [
+    bound("issue-repeat-below", "code-review", 1, "repeat-below-1"),
+    bound("issue-repeat-below", "code-review", 2, "repeat-below-2"),
+    *(bound("issue-repeat-limit", "code-review", depth, f"repeat-limit-{depth}")
+      for depth in range(1, 4)),
+    *(bound(
+        "issue-depth-below",
+        ("implement", "code-review", "research", "push", "resolving-merge-conflicts")[
+            (depth - 1) % 5
+        ],
+        depth,
+        f"depth-below-{depth}",
+    ) for depth in range(1, 8)),
+    *(bound(
+        "issue-depth-limit",
+        ("implement", "code-review", "research", "push", "resolving-merge-conflicts")[
+            (depth - 1) % 5
+        ],
+        depth,
+        f"depth-limit-{depth}",
+    ) for depth in range(1, 9)),
+    bound("issue-unbound-budget", "code-review", 1, "unbound-budget"),
+    {
+        "route": "code-review",
+        "target": "issue-unbound-budget",
+        "spawn_time": "2026-08-22T00:00:00Z",
+        "worktree": "/tmp/unbound-budget-reservation",
+        "chain_depth": 8,
+        "finish_time": "2026-08-22T00:10:00Z",
+        "outcome": "published",
+    },
+    bound("issue-other-in-flight", "implement", 1, "other-in-flight", ""),
+]
+
+with open(ledger_path, "w", encoding="utf-8") as ledger:
+    for row in rows:
+        ledger.write(json.dumps(row, separators=(",", ":")) + "\n")
+PY
+
+plan_ledger="$guard_ledger"
+repeat_below="$(plan /code-review issue-repeat-below AFK-safe code-review-agent gpt-5.6-sol high default "$tmp_dir/plan-repeat-below")"
+assert_plan "third route occurrence" "$repeat_below" \
+  '{"decision":"spawn","route":"/code-review","target":"issue-repeat-below","agent":"code-review-agent","model":"gpt-5.6-sol","effort":"high","context_tier":"default","worktree":"'"$tmp_dir"'/plan-repeat-below"}'
+
+repeat_limit="$(plan /code-review issue-repeat-limit AFK-safe code-review-agent gpt-5.6-sol high default "$tmp_dir/plan-repeat-limit")"
+assert_plan "fourth route occurrence" "$repeat_limit" \
+  '{"decision":"decline","reason":"target-halted","halt_reason":"route-repetition-limit","route":"/code-review","target":"issue-repeat-limit"}'
+
+if "$CHAIN" reserve \
+  --ledger "$guard_ledger" \
+  --route code-review \
+  --target issue-repeat-limit \
+  --spawn-time 2026-08-22T00:11:00Z \
+  --worktree "$tmp_dir/worktree-repeat-limit" \
+  --chain-depth 4 \
+  2>"$tmp_dir/repeat-limit.err"
+then
+  err "reserve bypassed the route repetition guard"
+fi
+if ! grep -q "target-halted: route-repetition-limit" "$tmp_dir/repeat-limit.err"; then
+  err "reserve did not report the route repetition halt"
+fi
+if [ -e "$tmp_dir/worktree-repeat-limit" ]; then
+  err "repetition guard created a worktree"
+fi
+
+depth_below="$(plan /research issue-depth-below AFK-safe research-agent claude-opus-5 high default "$tmp_dir/plan-depth-below")"
+assert_plan "eighth lineage hop" "$depth_below" \
+  '{"decision":"spawn","route":"/research","target":"issue-depth-below","agent":"research-agent","model":"claude-opus-5","effort":"high","context_tier":"default","worktree":"'"$tmp_dir"'/plan-depth-below"}'
+
+depth_limit="$(plan /research issue-depth-limit AFK-safe research-agent claude-opus-5 high default "$tmp_dir/plan-depth-limit")"
+assert_plan "ninth lineage hop" "$depth_limit" \
+  '{"decision":"decline","reason":"target-halted","halt_reason":"chain-depth-limit","route":"/research","target":"issue-depth-limit"}'
+
+unbound_budget="$(plan /code-review issue-unbound-budget AFK-safe code-review-agent gpt-5.6-sol high default "$tmp_dir/plan-unbound-budget")"
+assert_plan "unbound reservation is not a hop" "$unbound_budget" \
+  '{"decision":"spawn","route":"/code-review","target":"issue-unbound-budget","agent":"code-review-agent","model":"gpt-5.6-sol","effort":"high","context_tier":"default","worktree":"'"$tmp_dir"'/plan-unbound-budget"}'
+
+if ! python3 - "$guard_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger]
+
+repeat = next(row for row in rows if row["target"] == "issue-repeat-limit" and row["chain_depth"] == 3)
+depth = next(row for row in rows if row["target"] == "issue-depth-limit" and row["chain_depth"] == 8)
+other = next(row for row in rows if row["target"] == "issue-other-in-flight")
+assert repeat["outcome"] == "published"
+assert repeat["halt_reason"] == "route-repetition-limit"
+assert depth["outcome"] == "published"
+assert depth["halt_reason"] == "chain-depth-limit"
+assert other["finish_time"] == ""
+assert "halt_reason" not in other
+PY
+then
+  err "guard halt bookkeeping did not isolate the target"
+fi
 
 reserve_and_bind \
   --ledger "$complete_ledger" \
