@@ -26,6 +26,36 @@ Eligible issues are worked **oldest first**, by creation date. A newly filed iss
 
 What it does is **reorder**, and only reorder. An issue carrying `priority` is selected ahead of older ones, and two `priority` issues order oldest-first against each other. What it does **not** do is change eligibility: a `priority` issue still needs `ready-for-agent` to enter the pool, still has to pass the AFK-ready body discriminator (`## What to build` plus `## Acceptance criteria`), and still needs `parallel-safe` to be worked concurrently.
 
+## Task-type labels
+
+`task-type:` labels are **not** triage roles either. Each one asserts the dominant risk of a ticket — the dimension whose failure is most expensive, not the one touching the most files — and `git-loopy` reads it to pick the model and reasoning effort that carry the run. The taxonomy is **closed at seven**, matching the keys in `git-loopy config routing list`:
+
+| Label | For work whose dominant risk is |
+| --- | --- |
+| `task-type:planning` | Deciding what to build |
+| `task-type:review` | Judging work that already exists |
+| `task-type:implementation` | Building behaviour |
+| `task-type:test` | Verifying behaviour |
+| `task-type:docs` | Explaining something accurately |
+| `task-type:chore` | A mechanical change |
+| `task-type:bugfix` | Diagnosing and correcting a defect |
+
+Three hazards, all of which fail silently:
+
+- **Exactly one per issue.** The router selects the first match from an unordered list, so a second label makes routing arbitrary.
+- **Never invent an eighth.** An out-of-taxonomy `task-type:` label still looks labelled, so the classifier will not correct it and routing falls through.
+- **A missing label falls back to the classifier**, which is a guess. Prefer to set it explicitly.
+
+Create them by hand — `--force` makes this a create-or-update, so it is safe to re-run:
+
+```bash
+for pair in planning:0e8a16 review:006b75 implementation:1d76db test:5319e7 \
+            docs:c5def5 chore:bfd4f2 bugfix:d93f0b; do
+  gh label create "task-type:${pair%%:*}" --force --color "${pair##*:}" \
+    --description "git-loopy routing taxonomy: ${pair%%:*}. Exactly one task-type label per issue."
+done
+```
+
 ## Creating the labels
 
 `git-loopy init`, run inside the repository, creates whichever triage, `parallel-safe`, and `priority` labels are absent and leaves the ones that already exist untouched. Re-running it creates nothing.
