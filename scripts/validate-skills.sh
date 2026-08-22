@@ -64,9 +64,17 @@ if [ -d docs ]; then
   done < <(grep -roE '\]\(\./[a-z0-9.-]+\.md\)' docs | sort -u)
 fi
 
+chain_hook=".github/hooks/git-loopy-chain.json"
+if [ -e "$chain_hook" ]; then
+  if ! python3 scripts/validate-chain-hook.py "$chain_hook"; then
+    err "$chain_hook is not a valid git-loopy chain hook"
+  fi
+fi
+
 if [ "$fail" -eq 0 ]; then
   echo "ok: $count skill(s) valid"
 fi
 
 scripts/test-chain.sh || fail=1
+bash scripts/test-chain-hook.sh || fail=1
 exit "$fail"
