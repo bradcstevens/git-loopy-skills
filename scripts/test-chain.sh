@@ -29,6 +29,9 @@ fi
   --route implement \
   --target issue-4 \
   --session-id session-1 \
+  --agent-id agent-1 \
+  --agent-type implement-agent \
+  --agent-name implement-agent \
   --spawn-time 2026-08-22T00:00:00Z \
   --worktree "$tmp_dir/worktree-1" \
   --chain-depth 1
@@ -48,6 +51,9 @@ assert rows[0] == {
     "route": "implement",
     "target": "issue-4",
     "session_id": "session-1",
+    "agent_id": "agent-1",
+    "agent_type": "implement-agent",
+    "agent_name": "implement-agent",
     "spawn_time": "2026-08-22T00:00:00Z",
     "worktree": sys.argv[1].replace("/.git-loopy/subagents.jsonl", "/worktree-1"),
     "chain_depth": 1,
@@ -62,6 +68,9 @@ fi
   --route code-review \
   --target issue-4 \
   --session-id session-2 \
+  --agent-id agent-2 \
+  --agent-type code-review-agent \
+  --agent-name code-review-agent \
   --spawn-time 2026-08-22T00:01:00Z \
   --worktree "$tmp_dir/worktree-2" \
   --chain-depth 2
@@ -75,6 +84,9 @@ CHAIN_RECORD_PAUSE_BEFORE_COMMIT=10 "$CHAIN" record \
   --route push \
   --target issue-4 \
   --session-id interrupted \
+  --agent-id agent-interrupted \
+  --agent-type push-agent \
+  --agent-name push-agent \
   --spawn-time 2026-08-22T00:02:00Z \
   --worktree "$tmp_dir/worktree-3" \
   --chain-depth 3 &
@@ -143,6 +155,9 @@ fi
   --route implement \
   --target issue-6 \
   --session-id session-3 \
+  --agent-id agent-3 \
+  --agent-type implement-agent \
+  --agent-name implement-agent \
   --spawn-time 2026-08-22T00:03:00Z \
   --worktree "$tmp_dir/worktree-4" \
   --chain-depth 1

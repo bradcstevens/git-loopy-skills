@@ -6,9 +6,9 @@ usage() {
 usage:
   chain.sh plan --route ROUTE --target TARGET --safety SAFETY \
     --agent AGENT --model MODEL --effort EFFORT --context-tier TIER [--ledger PATH]
-  chain.sh record --route ROUTE --target TARGET --session-id ID \
-    --spawn-time TIMESTAMP --worktree PATH --chain-depth N \
-    [--agent-id ID --agent-type TYPE --agent-name NAME] [--ledger PATH]
+  chain.sh record --route ROUTE --target TARGET --session-id ID --agent-id ID \
+    --agent-type TYPE --agent-name NAME --spawn-time TIMESTAMP --worktree PATH \
+    --chain-depth N [--ledger PATH]
   chain.sh complete [--ledger PATH] < subagent-stop-payload.json
 EOF
   exit 2
@@ -136,20 +136,12 @@ record() {
   done
 
   [ -n "$route" ] && [ -n "$target" ] && [ -n "$session_id" ] &&
+    [ -n "$agent_id" ] && [ -n "$agent_type" ] && [ -n "$agent_name" ] &&
     [ -n "$spawn_time" ] && [ -n "$worktree" ] && [ -n "$chain_depth" ] || usage
   [[ "$chain_depth" =~ ^[0-9]+$ ]] || {
     echo "error: --chain-depth must be a non-negative integer" >&2
     exit 2
   }
-  if [ -n "$agent_id" ] && { [ -z "$agent_type" ] || [ -z "$agent_name" ]; }; then
-    echo "error: --agent-id requires --agent-type and --agent-name" >&2
-    exit 2
-  fi
-  if [ -z "$agent_id" ] && { [ -n "$agent_type" ] || [ -n "$agent_name" ]; }; then
-    echo "error: --agent-type and --agent-name require --agent-id" >&2
-    exit 2
-  fi
-
   local ledger_dir row
   if [ -z "$ledger" ]; then
     ledger="$(git rev-parse --show-toplevel)/.git-loopy/subagents.jsonl"
@@ -179,10 +171,9 @@ row = {
     "finish_time": "",
     "outcome": "",
 }
-if agent_id:
-    row["agent_id"] = agent_id
-    row["agent_type"] = agent_type
-    row["agent_name"] = agent_name
+row["agent_id"] = agent_id
+row["agent_type"] = agent_type
+row["agent_name"] = agent_name
 print(json.dumps(row, separators=(",", ":")))
 PY
 )"
@@ -382,7 +373,7 @@ for comment in comments:
         comment_at = datetime.datetime.fromisoformat(created_at.replace("Z", "+00:00"))
     except ValueError:
         continue
-    if comment_at >= spawn_at:
+    if spawn_at <= comment_at <= finish_at:
         has_evidence = True
         break
 
