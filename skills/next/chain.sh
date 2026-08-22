@@ -15,6 +15,8 @@ usage:
   chain.sh recover --stale-after-seconds N [--now TIMESTAMP] [--ledger PATH]
 
 A PID-less ledger lock is recoverable after CHAIN_LOCK_STALE_SECONDS (default: 300).
+Route repetition and chain depth count bound rows only. Reservations claim
+capacity and a worktree, but do not represent a spawned hop.
 EOF
   exit 2
 }
@@ -317,6 +319,99 @@ concurrency_limit() {
   printf '%s\n' "$limit"
 }
 
+evaluate_target_guard() {
+  local route="$1" target="$2" requested_depth="${3:-}"
+
+  python3 - "$ledger" "$route" "$target" "$requested_depth" <<'PY'
+import datetime
+import json
+import os
+import sys
+import tempfile
+
+ledger_path, route, target, requested_depth = sys.argv[1:]
+if not os.path.exists(ledger_path):
+    raise SystemExit
+
+try:
+    with open(ledger_path, encoding="utf-8") as ledger:
+        rows = [json.loads(line) for line in ledger if line.strip()]
+except json.JSONDecodeError as error:
+    print(f"error: invalid spawn ledger: {error}", file=sys.stderr)
+    raise SystemExit(2)
+
+bound_rows = [
+    (index, row)
+    for index, row in enumerate(rows)
+    if row.get("target") == target and row.get("agent_id")
+]
+if not bound_rows:
+    raise SystemExit
+
+halt_reason = None
+for _, row in reversed(bound_rows):
+    if isinstance(row.get("halt_reason"), str) and row["halt_reason"]:
+        halt_reason = row["halt_reason"]
+        break
+
+if halt_reason is None and any(
+    row.get("outcome") == "no-evidence" for _, row in bound_rows
+):
+    halt_reason = "no-evidence"
+elif halt_reason is None:
+    normalized_route = route.lstrip("/")
+    repetitions = sum(
+        row.get("route", "").lstrip("/") == normalized_route
+        for _, row in bound_rows
+        if isinstance(row.get("route"), str)
+    )
+    if repetitions >= 3:
+        halt_reason = "route-repetition-limit"
+    else:
+        recorded_depth = max(
+            (
+                row.get("chain_depth", 0)
+                for _, row in bound_rows
+                if isinstance(row.get("chain_depth"), int)
+            ),
+            default=0,
+        )
+        candidate_depth = recorded_depth + 1
+        if requested_depth:
+            candidate_depth = max(candidate_depth, int(requested_depth))
+        if candidate_depth > 8:
+            halt_reason = "chain-depth-limit"
+
+if halt_reason is None:
+    raise SystemExit
+
+_, halt_row = bound_rows[-1]
+if halt_row.get("halt_reason") != halt_reason:
+    halted_at = datetime.datetime.now(datetime.timezone.utc).isoformat(
+        timespec="seconds"
+    ).replace("+00:00", "Z")
+    halt_row["halt_reason"] = halt_reason
+    halt_row["halted_at"] = halted_at
+    descriptor, temporary_path = tempfile.mkstemp(
+        dir=os.path.dirname(ledger_path) or ".",
+        prefix=".subagents.",
+    )
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8") as output:
+            for row in rows:
+                output.write(json.dumps(row, separators=(",", ":")) + "\n")
+        os.replace(temporary_path, ledger_path)
+    except BaseException:
+        os.unlink(temporary_path)
+        raise
+
+print(json.dumps({
+    "reason": halt_reason,
+    "target": target,
+}, separators=(",", ":")))
+PY
+}
+
 plan() {
   local route="" target="" safety="" agent="" model="" effort="" context_tier="" worktree=""
 
@@ -343,7 +438,7 @@ plan() {
     ledger="$(repository_root)/.git-loopy/subagents.jsonl"
   fi
 
-  local worktree_held=0 collision_status max_concurrency
+  local worktree_held=0 collision_status max_concurrency guard=""
   max_concurrency="$(concurrency_limit)" || return $?
   if ledger_has_open_worktree "$worktree"; then
     worktree_held=1
@@ -354,15 +449,28 @@ plan() {
     fi
   fi
 
-  python3 - "$ledger" "$route" "$target" "$safety" "$agent" "$model" "$effort" "$context_tier" "$worktree" "$worktree_held" "$max_concurrency" <<'PY'
+  if [[ "$safety" = "AFK-safe" ]] && case "$route" in
+    /implement|/code-review|/research|/push|/resolving-merge-conflicts) true ;;
+    *) false ;;
+  esac
+  then
+    mkdir -p "$(dirname "$ledger")"
+    lock_dir="$ledger.lock"
+    acquire_lock
+    guard="$(evaluate_target_guard "$route" "$target")"
+    release_lock
+  fi
+
+  python3 - "$ledger" "$route" "$target" "$safety" "$agent" "$model" "$effort" "$context_tier" "$worktree" "$worktree_held" "$max_concurrency" "$guard" <<'PY'
 import json
 import os
 import sys
 
-ledger, route, target, safety, agent, model, effort, context_tier, worktree, worktree_held, max_concurrency = sys.argv[1:]
+ledger, route, target, safety, agent, model, effort, context_tier, worktree, worktree_held, max_concurrency, guard = sys.argv[1:]
 worktree = os.path.realpath(os.path.abspath(worktree))
 worktree_held = worktree_held == "1"
 max_concurrency = int(max_concurrency)
+guard = json.loads(guard) if guard else None
 allowlisted_routes = {
     "/implement",
     "/code-review",
@@ -408,6 +516,14 @@ else:
         decision = {
             "decision": "decline",
             "reason": "target-in-flight",
+            "route": route,
+            "target": target,
+        }
+    elif guard:
+        decision = {
+            "decision": "decline",
+            "reason": "target-halted",
+            "halt_reason": guard["reason"],
             "route": route,
             "target": target,
         }
@@ -485,7 +601,7 @@ reserve() {
 
   acquire_lock
 
-  local collision_status
+  local collision_status guard
   if ledger_has_open_worktree "$worktree"; then
     echo "error: worktree-in-flight: $worktree" >&2
     exit 1
@@ -504,6 +620,12 @@ reserve() {
     if [ "$collision_status" -ne 1 ]; then
       return "$collision_status"
     fi
+  fi
+
+  guard="$(evaluate_target_guard "$route" "$target" "$chain_depth")"
+  if [ -n "$guard" ]; then
+    echo "error: target-halted: $(python3 -c 'import json; import sys; print(json.load(sys.stdin)["reason"])' <<< "$guard")" >&2
+    exit 1
   fi
 
   open_reservations="$(python3 - "$ledger" <<'PY'
@@ -860,12 +982,20 @@ for comment in comments:
         break
 
 outcome = "published" if has_evidence else "no-evidence"
-row["finish_time"] = (
+finish_time = (
     finish_at.astimezone(datetime.timezone.utc)
     .isoformat(timespec="seconds")
     .replace("+00:00", "Z")
 )
+row["finish_time"] = finish_time
 row["outcome"] = outcome
+if outcome == "no-evidence":
+    row["halt_reason"] = "no-evidence"
+    row["halted_at"] = finish_time
+elif isinstance(row.get("chain_depth"), int) and row["chain_depth"] >= 8:
+    # Record the next-hop stop before agentStop reaches its own eight-block limit.
+    row["halt_reason"] = "chain-depth-limit"
+    row["halted_at"] = finish_time
 
 with open(output_path, "w", encoding="utf-8") as output:
     for updated_row in rows:
@@ -874,7 +1004,7 @@ with open(metadata_path, "w", encoding="utf-8") as metadata:
     metadata.write(worktree + "\n")
 
 print(json.dumps({
-    "continue": has_evidence,
+    "continue": has_evidence and "halt_reason" not in row,
     "outcome": outcome,
     "target": target,
 }, separators=(",", ":")))
