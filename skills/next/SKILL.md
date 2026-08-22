@@ -11,12 +11,12 @@ tracker unchanged.
 
 ## 1. Refresh the durable state
 
-Locate `docs/agents/issue-tracker.md`. If the repository has not been configured
-for these skills, make `/setup-git-loopy-skills` the sole candidate. Otherwise read
-the file and refresh the workstream referenced by the conversation from its
-configured tracker: issue or PR state, labels, assignees, comments, sub-issues,
-and blockers. Inspect the local branch, commits, and diff when review or
-publication may be next.
+Locate `docs/agents/issue-tracker.md` and `.github/hooks/git-loopy-chain.json`. If either is
+missing, the repository has not been configured for these skills: make
+`/setup-git-loopy-skills` the sole candidate. Otherwise read the file and refresh the
+workstream referenced by the conversation from its configured tracker: issue or PR state,
+labels, assignees, comments, sub-issues, and blockers. Inspect the local branch, commits, and
+diff when review or publication may be next.
 
 When the conversation names no workstream, review the open workflow-bearing
 issues and their relationships to find the active maps, specs, tickets, and PRs.

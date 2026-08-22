@@ -64,6 +64,53 @@ if [ -d docs ]; then
   done < <(grep -roE '\]\(\./[a-z0-9.-]+\.md\)' docs | sort -u)
 fi
 
+chain_hook=".github/hooks/git-loopy-chain.json"
+if [ -e "$chain_hook" ]; then
+  if ! python3 - "$chain_hook" <<'PY'
+import json
+import os
+import shlex
+import sys
+
+path = sys.argv[1]
+try:
+    with open(path, encoding="utf-8") as hook_file:
+        hook = json.load(hook_file)
+except (OSError, json.JSONDecodeError) as error:
+    print(f"{path} is not valid JSON: {error}", file=sys.stderr)
+    raise SystemExit(1)
+
+hooks = hook.get("hooks") if isinstance(hook, dict) else None
+subagent_stop = hooks.get("subagentStop") if isinstance(hooks, dict) else None
+if hook.get("version") != 1:
+    print(f"{path} must have hook version 1", file=sys.stderr)
+    raise SystemExit(1)
+if not isinstance(subagent_stop, list) or not subagent_stop:
+    print(f"{path} must define a non-empty subagentStop hook", file=sys.stderr)
+    raise SystemExit(1)
+
+for entry in subagent_stop:
+    command = entry.get("bash") if isinstance(entry, dict) and entry.get("type") == "command" else None
+    if not isinstance(command, str):
+        print(f"{path} has a subagentStop hook without a command", file=sys.stderr)
+        raise SystemExit(1)
+    try:
+        argv = shlex.split(command)
+    except ValueError as error:
+        print(f"{path} has an invalid command: {error}", file=sys.stderr)
+        raise SystemExit(1)
+    if len(argv) != 2 or argv[1] != "complete" or not os.path.isfile(argv[0]):
+        print(
+            f"{path} must invoke an existing chain script with complete",
+            file=sys.stderr,
+        )
+        raise SystemExit(1)
+PY
+  then
+    err "$chain_hook is not a valid git-loopy chain hook"
+  fi
+fi
+
 if [ "$fail" -eq 0 ]; then
   echo "ok: $count skill(s) valid"
 fi

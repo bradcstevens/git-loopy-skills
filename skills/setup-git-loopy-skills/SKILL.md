@@ -11,6 +11,7 @@ Scaffold the per-repo configuration that the engineering skills assume:
 - **Issue tracker** — where issues live (GitHub by default; local markdown is also supported out of the box)
 - **Triage labels** — the strings used for the five canonical triage roles
 - **Domain docs** — where `CONTEXT.md` and ADRs live, and the consumer rules for reading them
+- **Chain hook** — the repository-scoped `subagentStop` hook that completes an in-session route
 
 This is a prompt-driven skill, not a deterministic script. Explore, present what you found, confirm with the user, then write.
 
@@ -26,6 +27,7 @@ Look at the current repo to understand its starting state. Read whatever exists;
 - `docs/adr/` and any `src/*/docs/adr/` directories
 - `docs/agents/` — does this skill's prior output already exist?
 - `.scratch/` — sign that a local-markdown issue tracker convention is already in use
+- `.github/hooks/git-loopy-chain.json` — does the chain hook already exist?
 - Is the `triage` skill installed? (a `triage` skill folder alongside this one, or `triage` in your available skills.) This decides whether Section B runs at all.
 - Monorepo signals — a `pnpm-workspace.yaml`, a `workspaces` field in `package.json`, or a populated `packages/*` with its own `src/`. Present only in a genuinely large multi-package repo; their absence means single-context, which is almost every repo.
 
@@ -34,6 +36,30 @@ Look at the current repo to understand its starting state. Read whatever exists;
 Summarise what's present and what's missing. Then take the sections in order — one section, one answer, then the next.
 
 Lead each section with the recommended answer so the user can accept it in a word. Give a one-line explainer only when the choice genuinely branches; skip the section entirely when exploration already settled it (Section B when `triage` isn't installed, Section C when there's no monorepo).
+
+**Before the sections, check chain prerequisites.**
+
+Resolve the installed chain script before drafting any files. Start with the directory that
+contains this installed `setup-git-loopy-skills` skill, then use its sibling
+`next/chain.sh`; never assume that the current repository is the skill source. A local
+`.agents/skills` installation takes precedence over a user installation. The candidate must
+be an executable regular file. If no sibling chain script exists, tell the user that `/next`
+must be installed alongside this skill and stop without writing a hook.
+
+Set `setup_skill_dir` to the directory holding the active `SKILL.md`, then resolve and verify:
+
+```bash
+chain_script="$(cd "$setup_skill_dir/../next" && pwd)/chain.sh"
+[ -f "$chain_script" ] && [ -x "$chain_script" ] ||
+  { echo "Install /next beside /setup-git-loopy-skills before enabling the chain." >&2; exit 1; }
+```
+
+Also give this warning before proceeding:
+
+> Copilot silently does not run repository hooks in an untrusted folder. Verify that this
+> repository's absolute path, or a parent path, is in Copilot's `trustedFolders` setting
+> before relying on the chain. A fresh clone outside a trusted folder will otherwise look as
+> though the hook trigger failed, with no error.
 
 **Section A — Issue tracker.**
 
@@ -70,6 +96,7 @@ Show the user a draft of:
 
 - The `## Agent skills` block to add to `AGENTS.md` is being edited (see step 4 for selection rules)
 - The contents of `docs/agents/issue-tracker.md`, `docs/agents/domain.md`, and `docs/agents/triage-labels.md` (the last only when `triage` is installed)
+- `.github/hooks/git-loopy-chain.json`, with the resolved absolute chain-script path and its `complete` argument
 
 Let them edit before writing.
 
@@ -112,6 +139,69 @@ Then write the docs files using the seed templates in this skill folder as a sta
 
 For "other" issue trackers, write `docs/agents/issue-tracker.md` from scratch using the user's description.
 
+Create `.github/hooks/git-loopy-chain.json` from the approved draft. It must be valid JSON
+with version `1`, a single `subagentStop` command hook, and a `bash` command that invokes the
+resolved absolute `next/chain.sh` with `complete`. The hook receives the event payload on
+standard input, so do not add a redirection or a wrapper that changes it. Use Python's
+`json` and `shlex` modules to quote the resolved path when building the draft rather than
+hand-escaping it.
+
+Build and display the draft with:
+
+```bash
+python3 - "$chain_script" <<'PY'
+import json
+import shlex
+import sys
+
+print(json.dumps({
+    "version": 1,
+    "hooks": {
+        "subagentStop": [{
+            "type": "command",
+            "bash": f"{shlex.quote(sys.argv[1])} complete",
+        }],
+    },
+}, indent=2) + "\n")
+PY
+```
+
+Only after the user approves that displayed JSON, write it in place:
+
+```bash
+python3 - "$chain_script" ".github/hooks/git-loopy-chain.json" <<'PY'
+import json
+import os
+import shlex
+import sys
+
+chain_script, hook_path = sys.argv[1:]
+hook = {
+    "version": 1,
+    "hooks": {
+        "subagentStop": [{
+            "type": "command",
+            "bash": f"{shlex.quote(chain_script)} complete",
+        }],
+    },
+}
+hook_dir = os.path.dirname(hook_path)
+os.makedirs(hook_dir, exist_ok=True)
+with open(hook_path, "w", encoding="utf-8") as hook_file:
+    json.dump(hook, hook_file, indent=2)
+    hook_file.write("\n")
+PY
+```
+
+Always write the same `git-loopy-chain.json` path. If it already exists, replace only that
+file with the approved hook rather than creating another hook file. The hook belongs in the
+repository and should be committed with the other setup output. Re-running setup on another
+clone updates the absolute installed-script path for that clone.
+
 ### 5. Done
 
-Tell the user the setup is complete and which engineering skills will now read from these files. Mention they can edit `docs/agents/*.md` directly later — re-running this skill is only necessary if they want to switch issue trackers or restart from scratch.
+Tell the user the setup is complete and which engineering skills will now read from these
+files. State the hook path and the resolved chain script. Remind them that repository hooks
+run only in trusted folders. Mention they can edit `docs/agents/*.md` directly later —
+re-running this skill is only necessary if they want to switch issue trackers, update the
+installed script path, or restart from scratch.
