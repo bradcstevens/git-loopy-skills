@@ -11,7 +11,8 @@ Scaffold the per-repo configuration that the engineering skills assume:
 - **Issue tracker** — where issues live (GitHub by default; local markdown is also supported out of the box)
 - **Triage labels** — the strings used for the five canonical triage roles
 - **Domain docs** — where `CONTEXT.md` and ADRs live, and the consumer rules for reading them
-- **Chain hook** — the repository-scoped `subagentStop` hook that completes an in-session route
+- **Chain hooks** — repository-scoped `subagentStop` and `agentStop` hooks that complete an
+  in-session route and re-enter `/next`
 
 This is a prompt-driven skill, not a deterministic script. Explore, present what you found, confirm with the user, then write.
 
@@ -96,7 +97,8 @@ Show the user a draft of:
 
 - The `## Agent skills` block to add to `AGENTS.md` is being edited (see step 4 for selection rules)
 - The contents of `docs/agents/issue-tracker.md`, `docs/agents/domain.md`, and `docs/agents/triage-labels.md` (the last only when `triage` is installed)
-- `.github/hooks/git-loopy-chain.json`, with the resolved absolute chain-script path and its `complete` argument
+- `.github/hooks/git-loopy-chain.json`, with `complete` for `subagentStop` and `reenter` for
+  `agentStop`
 
 Let them edit before writing.
 
@@ -140,9 +142,11 @@ Then write the docs files using the seed templates in this skill folder as a sta
 For "other" issue trackers, write `docs/agents/issue-tracker.md` from scratch using the user's description.
 
 Create `.github/hooks/git-loopy-chain.json` from the approved draft. It must be valid JSON
-with version `1`, a single `subagentStop` command hook, and a `bash` command that invokes
-`.github/hooks/git-loopy-chain.sh` with `complete`. The hook receives the event payload on
-standard input, so do not add a redirection or a wrapper that changes it.
+with version `1` and two command hooks: `subagentStop` invokes
+`.github/hooks/git-loopy-chain.sh complete` to close the finished run, while `agentStop`
+invokes `.github/hooks/git-loopy-chain.sh reenter` to re-enter `/next` when a completed run
+is unrouted. Both hooks receive their event payload on standard input, so do not add a
+redirection or a wrapper that changes it.
 
 **Do not write an absolute path into the hook.** The hook file is committed, and the chain
 script lives wherever the skill was installed, which differs on every machine and is absent
@@ -289,6 +293,10 @@ hook = {
         "subagentStop": [{
             "type": "command",
             "bash": ".github/hooks/git-loopy-chain.sh complete",
+        }],
+        "agentStop": [{
+            "type": "command",
+            "bash": ".github/hooks/git-loopy-chain.sh reenter",
         }],
     },
 }
