@@ -55,8 +55,11 @@ repository_root() {
 }
 
 remove_stale_lock() {
-  local stale claim_dir
-  stale="$(python3 - "$lock_dir" "${CHAIN_LOCK_STALE_SECONDS:-300}" <<'PY'
+  local stale claim_dir recovery_dir
+  recovery_dir="$lock_dir.recovery"
+  mkdir "$recovery_dir" 2>/dev/null || return 0
+
+  if ! stale="$(python3 - "$lock_dir" "${CHAIN_LOCK_STALE_SECONDS:-300}" <<'PY'
 import os
 import subprocess
 import sys
@@ -101,7 +104,10 @@ else:
 
 print("true" if stale else "false")
 PY
-)"
+  )"; then
+    rmdir "$recovery_dir"
+    return 2
+  fi
 
   if [ "$stale" = "true" ]; then
     claim_dir="$lock_dir.reclaim.$$.$RANDOM"
@@ -110,15 +116,22 @@ PY
       rmdir "$claim_dir"
     fi
   fi
+  rmdir "$recovery_dir"
 }
 
 acquire_lock() {
-  while ! mkdir "$lock_dir" 2>/dev/null; do
+  while :; do
+    while [ -d "$lock_dir.recovery" ]; do
+      sleep 0.01
+    done
+    if mkdir "$lock_dir" 2>/dev/null; then
+      lock_acquired=1
+      printf '%s\t%s\n' "$$" "$(ps -o lstart= -p "$$" | xargs)" > "$lock_dir/pid"
+      return
+    fi
     remove_stale_lock
     sleep 0.01
   done
-  lock_acquired=1
-  printf '%s\t%s\n' "$$" "$(ps -o lstart= -p "$$" | xargs)" > "$lock_dir/pid"
 }
 
 remove_worktree() {
@@ -351,7 +364,7 @@ record() {
     echo "error: --chain-depth must be a non-negative integer" >&2
     exit 2
   }
-  local ledger_dir row spawn_commit
+  local ledger_dir row spawn_commit worktree_branch
   if [ -z "$ledger" ]; then
     ledger="$(repository_root)/.git-loopy/subagents.jsonl"
   fi
@@ -359,6 +372,7 @@ record() {
   lock_dir="$ledger.lock"
   spawn_commit="$(git rev-parse HEAD)"
   repo_root="$(repository_root)"
+  worktree_branch="git-loopy/${session_id//[![:alnum:]._-]/-}"
   worktree="$(python3 -c 'import os; import sys; print(os.path.realpath(os.path.abspath(sys.argv[1])))' "$worktree")"
   mkdir -p "$ledger_dir"
 
@@ -411,7 +425,7 @@ PY
   if [ -n "${CHAIN_RECORD_PAUSE_BEFORE_WORKTREE:-}" ]; then
     sleep "$CHAIN_RECORD_PAUSE_BEFORE_WORKTREE"
   fi
-  if ! git -C "$repo_root" worktree add --detach "$worktree" "$spawn_commit"; then
+  if ! git -C "$repo_root" worktree add -b "$worktree_branch" "$worktree" "$spawn_commit"; then
     mark_record_failed "$session_id" "$agent_id"
     exit 1
   fi

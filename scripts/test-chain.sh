@@ -74,6 +74,9 @@ fi
 if [ "$(git -C "$tmp_dir/worktree-1" rev-parse HEAD)" != "$(git -C "$tmp_dir" rev-parse HEAD)" ]; then
   err "record did not create the worktree at the spawning commit"
 fi
+if [ "$(git -C "$tmp_dir/worktree-1" branch --show-current)" != "git-loopy/session-1" ]; then
+  err "record did not create a branch for the spawned worktree"
+fi
 
 "$CHAIN" record \
   --ledger "$ledger" \
