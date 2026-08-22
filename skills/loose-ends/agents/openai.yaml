@@ -1,0 +1,5 @@
+interface:
+  display_name: "Loose Ends"
+  short_description: "Find dropped workflow follow-ups"
+policy:
+  allow_implicit_invocation: false

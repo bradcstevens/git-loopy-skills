@@ -77,6 +77,7 @@ situation matches. The rest you invoke by name.
 | [implement](docs/implement.md) | automatic | Implement a piece of work based on a spec or set of tickets. |
 | [improve-codebase-architecture](docs/improve-codebase-architecture.md) | `/improve-codebase-architecture` | Scan a codebase for deepening opportunities, present them as a visual HTML report, then grill through whichever one you pick. |
 | [loop-me](docs/loop-me.md) | `/loop-me` | Grill me about specs for the workflows I want to build, within this workspace. |
+| loose-ends | `/loose-ends` | Audit the issue tracker for workflow artifacts that were started but never followed up, then open a read-only HTML report of the findings. |
 | mermaid-diagrams | automatic | Comprehensive guide for creating software diagrams using Mermaid syntax. |
 | microsoft-code-reference | automatic | Look up Microsoft API references, find working code samples, and verify SDK code is correct. |
 | microsoft-docs | automatic | Understand Microsoft technologies by querying official documentation. |
