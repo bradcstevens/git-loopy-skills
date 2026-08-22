@@ -181,6 +181,7 @@ complete_ledger="$tmp_dir/.git-loopy/complete-subagents.jsonl"
   --route implement \
   --target issue-published \
   --session-id agent-published \
+  --agent-id agent-published \
   --spawn-time 2026-08-22T00:00:00Z \
   --worktree "$tmp_dir/worktree-published" \
   --chain-depth 1
@@ -207,13 +208,14 @@ assert rows == [{
     "route": "implement",
     "target": "issue-published",
     "session_id": "agent-published",
+    "agent_id": "agent-published",
     "spawn_time": "2026-08-22T00:00:00Z",
     "worktree": sys.argv[1].replace("/.git-loopy/complete-subagents.jsonl", "/worktree-published"),
     "chain_depth": 1,
-    "finish_time": rows[0]["finish_time"],
+    "finish_time": "2026-08-22T00:11:00Z",
     "outcome": "published",
 }]
-assert rows[0]["finish_time"]
+assert rows[0]["finish_time"] == "2026-08-22T00:11:00Z"
 PY
 then
   err "published completion did not close the matching ledger row"
@@ -224,6 +226,7 @@ fi
   --route code-review \
   --target issue-no-evidence \
   --session-id agent-no-evidence \
+  --agent-id agent-no-evidence \
   --spawn-time 2026-08-22T00:00:00Z \
   --worktree "$tmp_dir/worktree-no-evidence" \
   --chain-depth 2
@@ -243,7 +246,7 @@ with open(sys.argv[1], encoding="utf-8") as ledger:
     rows = [json.loads(line) for line in ledger]
 
 row = next(row for row in rows if row["session_id"] == "agent-no-evidence")
-assert row["finish_time"]
+assert row["finish_time"] == "2026-08-22T00:11:00Z"
 assert row["outcome"] == "no-evidence"
 PY
 then

@@ -7,7 +7,7 @@ usage:
   chain.sh plan --route ROUTE --target TARGET --safety SAFETY \
     --agent AGENT --model MODEL --effort EFFORT --context-tier TIER [--ledger PATH]
   chain.sh record --route ROUTE --target TARGET --session-id ID \
-    --spawn-time TIMESTAMP --worktree PATH --chain-depth N [--ledger PATH]
+    --spawn-time TIMESTAMP --worktree PATH --chain-depth N [--agent-id ID] [--ledger PATH]
   chain.sh complete [--ledger PATH] < subagent-stop-payload.json
 EOF
   exit 2
@@ -115,13 +115,14 @@ PY
 }
 
 record() {
-  local route="" target="" session_id="" spawn_time="" worktree="" chain_depth=""
+  local route="" target="" session_id="" agent_id="" spawn_time="" worktree="" chain_depth=""
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --route) route="${2:?missing value for --route}"; shift 2 ;;
       --target) target="${2:?missing value for --target}"; shift 2 ;;
       --session-id) session_id="${2:?missing value for --session-id}"; shift 2 ;;
+      --agent-id) agent_id="${2:?missing value for --agent-id}"; shift 2 ;;
       --spawn-time) spawn_time="${2:?missing value for --spawn-time}"; shift 2 ;;
       --worktree) worktree="${2:?missing value for --worktree}"; shift 2 ;;
       --chain-depth) chain_depth="${2:?missing value for --chain-depth}"; shift 2 ;;
@@ -151,12 +152,12 @@ record() {
   lock_acquired=1
 
   tmp="$(mktemp "$ledger_dir/.subagents.XXXXXX")"
-  row="$(python3 - "$route" "$target" "$session_id" "$spawn_time" "$worktree" "$chain_depth" <<'PY'
+  row="$(python3 - "$route" "$target" "$session_id" "$agent_id" "$spawn_time" "$worktree" "$chain_depth" <<'PY'
 import json
 import sys
 
-route, target, session_id, spawn_time, worktree, chain_depth = sys.argv[1:]
-print(json.dumps({
+route, target, session_id, agent_id, spawn_time, worktree, chain_depth = sys.argv[1:]
+row = {
     "route": route,
     "target": target,
     "session_id": session_id,
@@ -165,7 +166,10 @@ print(json.dumps({
     "chain_depth": int(chain_depth),
     "finish_time": "",
     "outcome": "",
-}, separators=(",", ":")))
+}
+if agent_id:
+    row["agent_id"] = agent_id
+print(json.dumps(row, separators=(",", ":")))
 PY
 )"
 
@@ -268,12 +272,10 @@ if os.path.exists(ledger_path):
         print(f"error: invalid spawn ledger: {error}", file=sys.stderr)
         raise SystemExit(2)
 
-# The spawn records the subagent identifier in session_id so this lifecycle
-# payload can resolve the single run it is completing.
 matches = [
     index
     for index, row in enumerate(rows)
-    if row.get("session_id") == agent_id and not row.get("finish_time")
+    if row.get("agent_id") == agent_id and not row.get("finish_time")
 ]
 
 if not matches:
@@ -306,6 +308,11 @@ try:
     spawn_at = datetime.datetime.fromisoformat(spawn_time.replace("Z", "+00:00"))
 except ValueError as error:
     print(f"error: matching spawn ledger row has invalid spawn_time: {error}", file=sys.stderr)
+    raise SystemExit(2)
+try:
+    finish_at = datetime.datetime.fromisoformat(payload["timestamp"].replace("Z", "+00:00"))
+except ValueError as error:
+    print(f"error: subagent-stop payload has invalid timestamp: {error}", file=sys.stderr)
     raise SystemExit(2)
 
 tracker = subprocess.run(
@@ -342,9 +349,7 @@ for comment in comments:
 
 outcome = "published" if has_evidence else "no-evidence"
 row["finish_time"] = (
-    datetime.datetime.now(datetime.timezone.utc)
-    .isoformat(timespec="seconds")
-    .replace("+00:00", "Z")
+    finish_at.isoformat(timespec="seconds").replace("+00:00", "Z")
 )
 row["outcome"] = outcome
 
