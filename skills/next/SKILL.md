@@ -193,7 +193,7 @@ PROMPT=$(cat <<'PROMPT_EOF'
 /<route> <concise imperative naming the target and desired outcome>
 PROMPT_EOF
 )
-co -n "<descriptive name>" --model "<model>" --effort "<level>" --context "<default | long_context>" -p "$PROMPT"
+co -n "<descriptive name>" --model "<model>" --effort "<level>" --context "<default | long_context>" --no-mouse -p "$PROMPT"
 ```
 ````
 
