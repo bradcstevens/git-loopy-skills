@@ -10,8 +10,19 @@ EOF
   exit 2
 }
 
-repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-ledger="${CHAIN_LEDGER:-"$repo_root/.git-loopy/subagents.jsonl"}"
+ledger="${CHAIN_LEDGER:-}"
+lock_dir=""
+tmp=""
+lock_acquired=0
+
+cleanup() {
+  if [ "$lock_acquired" -eq 1 ]; then
+    rmdir "$lock_dir" 2>/dev/null || true
+  fi
+  [ -z "$tmp" ] || rm -f "$tmp"
+}
+trap cleanup EXIT
+trap 'exit 130' INT TERM
 
 record() {
   local route="" target="" session_id="" spawn_time="" worktree="" chain_depth=""
@@ -36,7 +47,10 @@ record() {
     exit 2
   }
 
-  local ledger_dir lock_dir row tmp
+  local ledger_dir row
+  if [ -z "$ledger" ]; then
+    ledger="$(git rev-parse --show-toplevel)/.git-loopy/subagents.jsonl"
+  fi
   ledger_dir="$(dirname "$ledger")"
   lock_dir="$ledger.lock"
   mkdir -p "$ledger_dir"
@@ -44,11 +58,7 @@ record() {
   while ! mkdir "$lock_dir" 2>/dev/null; do
     sleep 0.01
   done
-  cleanup() {
-    rmdir "$lock_dir" 2>/dev/null || true
-    [ -z "${tmp:-}" ] || rm -f "$tmp"
-  }
-  trap 'cleanup; exit 130' INT TERM
+  lock_acquired=1
 
   tmp="$(mktemp "$ledger_dir/.subagents.XXXXXX")"
   row="$(python3 - "$route" "$target" "$session_id" "$spawn_time" "$worktree" "$chain_depth" <<'PY'
@@ -79,8 +89,8 @@ PY
   fi
   mv "$tmp" "$ledger"
   tmp=""
-  cleanup
-  trap - INT TERM
+  lock_acquired=0
+  rmdir "$lock_dir"
 }
 
 [ "$#" -gt 0 ] || usage

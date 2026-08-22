@@ -23,14 +23,16 @@ if [ -e "$ledger" ]; then
   err "ledger exists before the first record"
 fi
 
-"$CHAIN" record \
-  --ledger "$ledger" \
+(
+  cd "$tmp_dir"
+  "$CHAIN" record \
   --route implement \
   --target issue-4 \
   --session-id session-1 \
   --spawn-time 2026-08-22T00:00:00Z \
   --worktree "$tmp_dir/worktree-1" \
   --chain-depth 1
+)
 
 if [ ! -f "$ledger" ]; then
   err "record did not create the ledger"
