@@ -61,4 +61,6 @@ fi
 if [ "$fail" -eq 0 ]; then
   echo "ok: $count skill(s) valid"
 fi
+
+scripts/test-chain.sh || fail=1
 exit "$fail"
