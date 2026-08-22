@@ -264,6 +264,11 @@ with open(log_path, "a", encoding="utf-8") as log_file:
 PY
 LOGGER
 chmod +x .github/hooks/git-loopy-chain.sh .github/hooks/git-loopy-hook-log.sh
+
+# Keep runtime state local to this working copy.
+if ! grep -qxF ".git-loopy/" .gitignore 2>/dev/null; then
+  printf '%s\n' "" "# Runtime state for the repository-scoped chain." ".git-loopy/" >> .gitignore
+fi
 ```
 
 The resolver exits `0` when it finds nothing, because a non-zero hook would fail and disrupt

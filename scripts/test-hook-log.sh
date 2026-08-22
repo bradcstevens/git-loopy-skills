@@ -167,8 +167,21 @@ for name, marker in (
     destination.parent.mkdir(parents=True, exist_ok=True)
     destination.write_text(script, encoding="utf-8")
     os.chmod(destination, 0o755)
+
+marker = "# Keep runtime state local to this working copy.\n"
+try:
+    ignore_script = marker + source.split(marker, 1)[1].split("\nfi\n", 1)[0] + "\nfi\n"
+except IndexError as error:
+    raise SystemExit("missing runtime ignore setup template") from error
+destination = repo_path / ".install-runtime-ignore.sh"
+destination.write_text("#!/usr/bin/env bash\nset -euo pipefail\n" + ignore_script, encoding="utf-8")
+os.chmod(destination, 0o755)
 PY
 
+(
+  cd "$template_repo"
+  ./.install-runtime-ignore.sh
+)
 run_hook "$template_repo" matched-agent "$template_repo/.github/hooks/git-loopy-chain.sh"
 if [ "$hook_status" -ne 0 ]; then
   err "setup-generated hook exited $hook_status"
@@ -178,6 +191,9 @@ if [ "$hook_output" != '{"continue":true,"outcome":"published","target":"issue-m
 fi
 if [ ! -f "$template_repo/.git-loopy/hook-invocations.jsonl" ]; then
   err "setup-generated hook did not install hook logging"
+fi
+if ! git -C "$template_repo" check-ignore -q .git-loopy/hook-invocations.jsonl; then
+  err "setup-generated hook did not ignore hook logging"
 fi
 
 blocked_repo="$tmp_dir/blocked-repo"
