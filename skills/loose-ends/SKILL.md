@@ -24,9 +24,7 @@ report outside the repository, opens it, prints its absolute path, and stops.
 - **Degrade cleanly:** no matching issues is a successful audit. Render the empty report
   and open it rather than treating an empty result as an error.
 
-Resolve the tracker repository from the current checkout's `origin` remote. This tracer
-uses tracker data only; later finding classes may add the Continuation ledger as a second
-read-only input.
+Resolve the tracker repository from the current checkout's `origin` remote.
 
 ## Terms and invocation
 
@@ -35,11 +33,11 @@ workflow transition or is an anchor from which one should follow. Artifact body 
 the native sub-issue graph are the source of truth; labels support workflow state but do
 not identify an artifact class.
 
-This tracer handles spec-shaped workflow-bearing issues. Before classifying, read the
-**Spec-shaped issue fingerprint** in [`../to-spec/SKILL.md`](../to-spec/SKILL.md); it is
-the authoritative list of the four required Markdown headings. The `/to-tickets` issue
-template has a distinct body shape. Never use `ready-for-agent` to distinguish the two:
-both specs and tickets carry that label.
+This tracer handles spec-shaped workflow-bearing issues. Before classifying, read the first
+four Markdown headings in the `<spec-template>` in
+[`../to-spec/SKILL.md`](../to-spec/SKILL.md); they are the authoritative fingerprint. The
+`/to-tickets` issue template has a distinct body shape. Never use `ready-for-agent` to
+distinguish the two: both specs and tickets carry that label.
 
 `--grace-days` defaults to `7`. It accepts a non-negative integer and overrides only this
 structural finding's grace period; for example, `/loose-ends --grace-days 0` exposes every
@@ -100,9 +98,8 @@ Reuse the architecture survey's presentation scaffold in
   cautionary context.
 - Header metadata shows the repository, exact generation timestamp, the effective grace
   period, and the finding count. Do not add a generic introduction paragraph.
-- Group findings by **follow-up action**, not finding class. This tracer renders one group,
-  **`/to-tickets` — decompose published specs**, but preserve the grouping structure for
-  future actions.
+- Group findings by **follow-up action**, not finding class. This tracer renders
+  **`/to-tickets` — decompose published specs**.
 
 Every finding is a complete card containing:
 
