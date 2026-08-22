@@ -90,8 +90,22 @@ runtime that `/next` produced and fires it as a background agent.
 `subagentStop` hook event. The chain described in
 [ADR-0001](../adr/0001-in-session-subagents-for-the-next-loop.md) triggers the next `/next` from
 `subagentStop`, so a route spawned as `general-purpose` would finish silently and stall the chain
-after one hop. When `/next` spawns `/implement` it uses a **custom YAML agent** instead, which does
-emit. Reach for `general-purpose` when you are delegating `/implement` by hand.
+after one hop. The chain instead uses one of the custom agents below, which emit. Reach for
+`general-purpose` when you are delegating `/implement` by hand.
+
+## Custom chain agents
+
+These are the in-session carriers for the five allowlisted routes. Each invokes the named skill,
+emits `subagentStop`, and deliberately leaves model, reasoning effort, and context tier to `/next`
+at spawn time.
+
+| Route | Custom agent (`agent_type`) | Invoked skill |
+| --- | --- | --- |
+| `/implement` | `implement-agent` | `/implement` |
+| `/code-review` | `code-review-agent` | `/code-review` |
+| `/research` | `research-agent` | `/research` |
+| `/push` | `push-agent` | `/push` |
+| `/resolving-merge-conflicts` | `resolving-merge-conflicts-agent` | `/resolving-merge-conflicts` |
 
 ## Rubber duck — `/codebase-design`
 
@@ -177,7 +191,7 @@ are read into whatever session needs them rather than dispatched anywhere.
 | --- | --- | --- |
 | `/az-mcaps-resource-deployment` | `task` | Verification commands only |
 | `/batch-grill-me` | — (`explore` for facts) | Main session |
-| `/code-review` | `code-review` | Two in parallel, one per axis |
+| `/code-review` | `code-review`; `code-review-agent` when chain-spawned | Two in parallel, one per axis |
 | `/codebase-audit` | `security-review` | Detect in agent, fix in main |
 | `/codebase-design` | `rubber-duck` | Parallel drafts, one critic |
 | `/create-readme` | `general-purpose` | Sync |
@@ -185,7 +199,7 @@ are read into whatever session needs them rather than dispatched anywhere.
 | `/domain-modeling` | — (`explore` to harvest terms) | Main session |
 | `/grill-me`, `/grill-with-docs`, `/grilling` | — (`explore`, `research` for facts) | Main session |
 | `/handoff` | `general-purpose` | Background — it is the launcher |
-| `/implement` | `general-purpose`, or a custom agent when spawned by the `/next` chain | Background |
+| `/implement` | `general-purpose`; `implement-agent` when chain-spawned | Background |
 | `/improve-codebase-architecture` | `explore` | Parallel threads |
 | `/loop-me` | — | Main session |
 | `/mermaid-diagrams` | — | Reference |
@@ -195,9 +209,9 @@ are read into whatever session needs them rather than dispatched anywhere.
 | `/next` | — | Main session |
 | `/playwright-cli` | `task` | Sync |
 | `/prototype` | `general-purpose` | Background |
-| `/push` | custom agent, via the `/next` chain only | Background when AFK-safe, else main session |
-| `/research` | `research` | Background |
-| `/resolving-merge-conflicts` | custom agent, via the `/next` chain only | Background when AFK-safe, else main session |
+| `/push` | `push-agent`, via the `/next` chain only | Background when AFK-safe, else main session |
+| `/research` | `research`; `research-agent` when chain-spawned | Background |
+| `/resolving-merge-conflicts` | `resolving-merge-conflicts-agent`, via the `/next` chain only | Background when AFK-safe, else main session |
 | `/setup-git-loopy-skills` | — | Main session |
 | `/skill-router` | — | Main session |
 | `/tdd` | `task` | Sync, per red/green step |
