@@ -195,7 +195,7 @@ complete_ledger="$tmp_dir/.git-loopy/complete-subagents.jsonl"
   --ledger "$complete_ledger" \
   --route implement \
   --target issue-published \
-  --session-id agent-published \
+  --session-id session-published \
   --agent-id agent-published \
   --agent-type implement-agent \
   --agent-name implement-agent \
@@ -206,18 +206,19 @@ complete_ledger="$tmp_dir/.git-loopy/complete-subagents.jsonl"
 completion_payload() {
   local agent_id="$1" timestamp="${2:-2026-08-22T00:11:00Z}"
   local agent_name="${3:-implement-agent}" agent_type="${4:-implement-agent}"
+  local session_id="${5:-session-$agent_id}"
   local timestamp_json
   if [[ "$timestamp" =~ ^[0-9]+$ ]]; then
     timestamp_json="$timestamp"
   else
     timestamp_json="$(python3 -c 'import json; import sys; print(json.dumps(sys.argv[1]))' "$timestamp")"
   fi
-  printf '%s' '{"sessionId":"parent-session","timestamp":'"$timestamp_json"',"cwd":"'"$tmp_dir"'","transcriptPath":"'"$tmp_dir"'/transcript.jsonl","agentId":"'"$agent_id"'","agentType":"'"$agent_type"'","agentName":"'"$agent_name"'","agentDisplayName":"Implement agent","response":"Completed the route.","stopReason":"end_turn"}'
+  printf '%s' '{"sessionId":"'"$session_id"'","timestamp":'"$timestamp_json"',"cwd":"'"$tmp_dir"'","transcriptPath":"'"$tmp_dir"'/transcript.jsonl","agentId":"'"$agent_id"'","agentType":"'"$agent_type"'","agentName":"'"$agent_name"'","agentDisplayName":"Implement agent","response":"Completed the route.","stopReason":"end_turn"}'
 }
 
 published_output="$(
   PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete --ledger "$complete_ledger" \
-    <<< "$(completion_payload agent-published 1787357460000)"
+    <<< "$(completion_payload agent-published 1787357460000 implement-agent implement-agent session-published)"
 )"
 assert_plan "published completion" "$published_output" \
   '{"continue":true,"outcome":"published","target":"issue-published"}'
@@ -232,7 +233,7 @@ with open(sys.argv[1], encoding="utf-8") as ledger:
 assert rows == [{
     "route": "implement",
     "target": "issue-published",
-    "session_id": "agent-published",
+    "session_id": "session-published",
     "agent_id": "agent-published",
     "agent_type": "implement-agent",
     "agent_name": "implement-agent",
@@ -252,7 +253,7 @@ fi
   --ledger "$complete_ledger" \
   --route code-review \
   --target issue-no-evidence \
-  --session-id agent-no-evidence \
+  --session-id session-no-evidence \
   --agent-id agent-no-evidence \
   --agent-type code-review-agent \
   --agent-name code-review-agent \
@@ -262,7 +263,7 @@ fi
 
 no_evidence_output="$(
   PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=no-evidence "$CHAIN" complete --ledger "$complete_ledger" \
-    <<< "$(completion_payload agent-no-evidence 2026-08-22T00:11:00Z code-review-agent code-review-agent)"
+    <<< "$(completion_payload agent-no-evidence 2026-08-22T00:11:00Z code-review-agent code-review-agent session-no-evidence)"
 )"
 assert_plan "no-evidence completion" "$no_evidence_output" \
   '{"continue":false,"outcome":"no-evidence","target":"issue-no-evidence"}'
@@ -274,7 +275,7 @@ import sys
 with open(sys.argv[1], encoding="utf-8") as ledger:
     rows = [json.loads(line) for line in ledger]
 
-row = next(row for row in rows if row["session_id"] == "agent-no-evidence")
+row = next(row for row in rows if row["session_id"] == "session-no-evidence")
 assert row["finish_time"] == "2026-08-22T00:11:00Z"
 assert row["outcome"] == "no-evidence"
 PY
@@ -286,7 +287,7 @@ fi
   --ledger "$complete_ledger" \
   --route implement \
   --target issue-unmatched \
-  --session-id agent-unmatched \
+  --session-id session-unmatched \
   --agent-id agent-unmatched \
   --agent-type implement-agent \
   --agent-name implement-agent \
@@ -297,7 +298,7 @@ fi
 cp "$complete_ledger" "$complete_ledger.before-unmatched"
 unmatched_output="$(
   PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete --ledger "$complete_ledger" \
-    <<< "$(completion_payload agent-unmatched 2026-08-22T00:11:00Z wrong-agent)"
+    <<< "$(completion_payload agent-unmatched 2026-08-22T00:11:00Z wrong-agent implement-agent session-unmatched)"
 )"
 assert_plan "unmatched completion" "$unmatched_output" \
   '{"continue":false,"reason":"unmatched-payload","agent_id":"agent-unmatched"}'

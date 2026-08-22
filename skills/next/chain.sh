@@ -291,7 +291,8 @@ matches = [
     index
     for index, row in enumerate(rows)
     if (
-        row.get("agent_id") == agent_id
+        row.get("session_id") == payload["sessionId"]
+        and row.get("agent_id") == agent_id
         and row.get("agent_type") == payload["agentType"]
         and row.get("agent_name") == payload["agentName"]
         and not row.get("finish_time")
