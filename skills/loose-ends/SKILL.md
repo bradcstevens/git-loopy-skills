@@ -35,15 +35,11 @@ workflow transition or is an anchor from which one should follow. Artifact body 
 the native sub-issue graph are the source of truth; labels support workflow state but do
 not identify an artifact class.
 
-This tracer handles one workflow-bearing shape:
-
-- A **spec** contains all four exact Markdown headings from `/to-spec`:
-  `## Problem Statement`, `## Solution`, `## User Stories`, and
-  `## Implementation Decisions`.
-
-Tickets instead use `## What to build`, `## Acceptance criteria`, and `## Blocked by`.
-Never use `ready-for-agent` to distinguish the two: both specs and tickets carry that
-label.
+This tracer handles spec-shaped workflow-bearing issues. Before classifying, read the
+**Spec-shaped issue fingerprint** in [`../to-spec/SKILL.md`](../to-spec/SKILL.md); it is
+the authoritative list of the four required Markdown headings. The `/to-tickets` issue
+template has a distinct body shape. Never use `ready-for-agent` to distinguish the two:
+both specs and tickets carry that label.
 
 `--grace-days` defaults to `7`. It accepts a non-negative integer and overrides only this
 structural finding's grace period; for example, `/loose-ends --grace-days 0` exposes every
@@ -54,16 +50,16 @@ starting the audit.
 
 1. List every open issue, including its number, title, URL, body, creation time, and label
    names. Fetch all result pages; do not assume a small tracker.
-2. Identify spec-shaped issues strictly from the four required headings above. Do not
-   inspect their `ready-for-agent` label to make this decision.
+2. Identify spec-shaped issues strictly from every heading in the authoritative fingerprint
+   above. Do not inspect their `ready-for-agent` label to make this decision.
 3. Suppress an issue before any further inspection when its labels include the exact,
    human-applied `intentional` label. The audit never adds, removes, or infers this label.
 4. For each remaining spec-shaped issue, fetch all native GitHub sub-issues with the
    read-only `GET /repos/{owner}/{repo}/issues/{issue_number}/sub_issues` endpoint,
    following pagination. A non-empty result means the spec was decomposed and produces no
    finding in this tracer, regardless of the child states.
-5. For a spec with zero native sub-issues, fetch the issue timeline read-only. Determine
-   activity from the newest of:
+5. For a spec with zero native sub-issues, fetch every page of the issue timeline
+   read-only. Determine activity from the newest of:
    - a comment event;
    - a label-added or label-removed event;
    - a linked pull-request event, including a cross-reference whose source is a pull
@@ -79,10 +75,10 @@ starting the audit.
 
    Hold the finding when idle time is less than the grace period. Report it once idle time
    reaches or exceeds the grace period.
-7. For each eligible issue, create a `Never decomposed` finding. Its evidence must name
-   the four matching spec headings and state that the native sub-issue query returned zero
-   children. Keep the finding's raw evidence in the report so the user can judge the
-   classification.
+7. For each eligible issue, create a `Never decomposed` finding. Its evidence must
+   enumerate the four matching headings from the authoritative fingerprint and state that
+   the native sub-issue query returned zero children. Keep the finding's raw evidence in
+   the report so the user can judge the classification.
 
 ## Report
 

@@ -74,6 +74,15 @@ Any further notes about the feature.
 
 </spec-template>
 
+### Spec-shaped issue fingerprint
+
+The following four exact headings identify a published spec to tracker readers:
+`## Problem Statement`, `## Solution`, `## User Stories`, and
+`## Implementation Decisions`. They are deliberately distinct from the `/to-tickets`
+issue template. Consumers such as `/loose-ends` read this fingerprint rather than using
+triage labels, because published specs and executable tickets both carry
+`ready-for-agent`.
+
 4. Publish the spec issue, then record it (see below).
 
 ## Record the specification
