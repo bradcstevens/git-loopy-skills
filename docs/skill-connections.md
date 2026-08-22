@@ -17,14 +17,14 @@ Every edge in this document is one of five kinds. Read the arrows with these in 
 | **Runs inside** | Nested in the caller's session; owns no transition and records nothing of its own | `/implement` → `/tdd` |
 | **Publishes to** | Leaves a durable evidence comment that a later session reads back | `/code-review` → the ticket |
 | **Reads config from** | Depends on files another skill wrote | `/next` → `/setup-git-loopy-skills` |
-| **Spawns** | Launches an in-session subagent that owns a transition and publishes its completion evidence through the chain ledger | `/next` → `/code-review` |
+| **Spawns** | Launches an in-session subagent that owns a transition, publishes its own tracker evidence, and has completion correlated by the chain ledger | `/next` → `/code-review` |
 
 **Spawns is not a synonym for any existing kind.** It is nested in the caller's session like
 **runs inside**, but the spawned route owns its transition rather than merely returning evidence to
-its caller. It also routes onward and publishes durable completion evidence through the ledger, like
-**routes to** and **publishes to**, but it does neither by ending the caller's session nor by only
-writing a ticket comment. The fifth kind makes those combined lifecycle and ownership semantics
-explicit.
+its caller. It also routes onward and has the spawned route publish durable evidence, like
+**routes to** and **publishes to**, while the ledger correlates that completion. It does neither by
+ending the caller's session nor by only writing a ticket comment. The fifth kind makes those
+combined lifecycle and ownership semantics explicit.
 
 One skill is a hub. [`next`](./next.md) is the **router** — it reads live state (tracker, branch,
 diff, worktrees) and names one action. When the AFK-safe chain gate approves, it reserves and
@@ -176,6 +176,7 @@ sequenceDiagram
     participant NX as /next
     participant HO as /handoff
     participant BG as fresh session
+    participant SA as in-session subagent
 
     SK-->>NX: session concludes
     NX->>NX: read tracker, branch, diff, worktrees in flight
@@ -186,9 +187,10 @@ sequenceDiagram
     else Fresh session, you drive
         U->>BG: run the copyable copilot command block
     else AFK-safe allowlisted route
-        NX->>NX: reserve and bind a ledger row
-        NX->>BG: spawn an in-session agent with the route and runtime
-        BG-->>NX: completion closes the ledger row
+        NX->>NX: reserve a ledger row
+        NX->>SA: spawn with the route and runtime
+        NX->>NX: bind the returned agent identity
+        SA-->>NX: completion closes the ledger row
         NX->>NX: agentStop re-enters /next for the successor
     else Fresh session, agent drives
         U->>HO: /handoff
