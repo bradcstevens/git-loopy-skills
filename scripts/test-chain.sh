@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 CHAIN="$REPO/skills/next/chain.sh"
-tmp_dir="$(mktemp -d)"
+tmp_dir="$(python3 -c 'import os; import sys; print(os.path.realpath(sys.argv[1]))' "$(mktemp -d)")"
 fail=0
 
 err() {
@@ -17,6 +17,7 @@ cleanup() {
 trap cleanup EXIT
 
 git -C "$tmp_dir" init --quiet
+git -C "$tmp_dir" -c user.name=test -c user.email=test@example.com commit --quiet --allow-empty -m initial
 ledger="$tmp_dir/.git-loopy/subagents.jsonl"
 
 if [ -e "$ledger" ]; then
@@ -61,6 +62,10 @@ assert rows[0] == {
     "outcome": "",
 }
 PY
+fi
+
+if [ ! -d "$tmp_dir/worktree-1/.git" ] && [ ! -f "$tmp_dir/worktree-1/.git" ]; then
+  err "record did not create the worktree before recording the spawn"
 fi
 
 "$CHAIN" record \
@@ -117,7 +122,8 @@ plan() {
     --agent "$4" \
     --model "$5" \
     --effort "$6" \
-    --context-tier "$7"
+    --context-tier "$7" \
+    --worktree "$8"
 }
 
 assert_plan() {
@@ -134,17 +140,18 @@ PY
   fi
 }
 
-outside_route="$(plan /triage issue-6 AFK-safe triage-agent gpt-5.6-terra high default)"
+outside_route="$(plan /triage issue-6 AFK-safe triage-agent gpt-5.6-terra high default "$tmp_dir/plan-outside")"
 assert_plan "outside route" "$outside_route" \
   '{"decision":"decline","reason":"route-not-allowlisted","route":"/triage","target":"issue-6"}'
 
-hitl_route="$(plan /implement issue-6 HITL implement-agent gpt-5.6-terra high default)"
+hitl_route="$(plan /implement issue-6 HITL implement-agent gpt-5.6-terra high default "$tmp_dir/plan-hitl")"
 assert_plan "HITL route" "$hitl_route" \
   '{"decision":"decline","reason":"action-not-afk-safe","route":"/implement","target":"issue-6"}'
 
-afk_safe_route="$(plan /implement issue-6 AFK-safe implement-agent gpt-5.6-terra xhigh long_context)"
+afk_worktree="$tmp_dir/plan-afk"
+afk_safe_route="$(plan /implement issue-6 AFK-safe implement-agent gpt-5.6-terra xhigh long_context "$afk_worktree")"
 assert_plan "AFK-safe route" "$afk_safe_route" \
-  '{"decision":"spawn","route":"/implement","target":"issue-6","agent":"implement-agent","model":"gpt-5.6-terra","effort":"xhigh","context_tier":"long_context"}'
+  '{"decision":"spawn","route":"/implement","target":"issue-6","agent":"implement-agent","model":"gpt-5.6-terra","effort":"xhigh","context_tier":"long_context","worktree":"'"$afk_worktree"'"}'
 
 if [ -e "$plan_ledger" ]; then
   err "plan created a ledger"
@@ -163,13 +170,21 @@ fi
   --chain-depth 1
 cp "$plan_ledger" "$plan_ledger.before"
 
-in_flight_target="$(plan /code-review issue-6 AFK-safe code-review-agent gpt-5.6-sol xhigh default)"
+in_flight_target="$(plan /code-review issue-6 AFK-safe code-review-agent gpt-5.6-sol xhigh default "$tmp_dir/plan-in-flight-target")"
 assert_plan "in-flight target" "$in_flight_target" \
   '{"decision":"decline","reason":"target-in-flight","route":"/code-review","target":"issue-6"}'
 
 if ! cmp -s "$plan_ledger.before" "$plan_ledger"; then
   err "plan modified the ledger"
 fi
+
+held_worktree="$(plan /code-review issue-7 AFK-safe code-review-agent gpt-5.6-sol xhigh default "$tmp_dir/worktree-4")"
+assert_plan "held worktree" "$held_worktree" \
+  '{"decision":"decline","reason":"worktree-in-flight","route":"/code-review","target":"issue-7","worktree":"'"$tmp_dir"'/worktree-4"}'
+
+other_candidate="$(plan /code-review issue-7 AFK-safe code-review-agent gpt-5.6-sol xhigh default "$tmp_dir/plan-other-candidate")"
+assert_plan "other candidate after collision" "$other_candidate" \
+  '{"decision":"spawn","route":"/code-review","target":"issue-7","agent":"code-review-agent","model":"gpt-5.6-sol","effort":"xhigh","context_tier":"default","worktree":"'"$tmp_dir"'/plan-other-candidate"}'
 
 fake_bin="$tmp_dir/bin"
 mkdir -p "$fake_bin"
@@ -249,6 +264,10 @@ then
   err "published completion did not close the matching ledger row"
 fi
 
+if [ -e "$tmp_dir/worktree-published" ]; then
+  err "published completion did not remove its worktree"
+fi
+
 "$CHAIN" record \
   --ledger "$complete_ledger" \
   --route code-review \
@@ -305,6 +324,100 @@ assert_plan "unmatched completion" "$unmatched_output" \
 
 if ! cmp -s "$complete_ledger.before-unmatched" "$complete_ledger"; then
   err "unmatched completion modified the ledger"
+fi
+
+recovery_ledger="$tmp_dir/.git-loopy/recovery-subagents.jsonl"
+plan_ledger="$recovery_ledger"
+stale_worktree="$tmp_dir/worktree-stale"
+"$CHAIN" record \
+  --ledger "$recovery_ledger" \
+  --route implement \
+  --target issue-stale \
+  --session-id session-stale \
+  --agent-id agent-stale \
+  --agent-type implement-agent \
+  --agent-name implement-agent \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$stale_worktree" \
+  --chain-depth 4
+
+if [ ! -e "$stale_worktree" ]; then
+  err "stale fixture did not create its worktree"
+fi
+
+stale_target="$(plan /implement issue-stale AFK-safe implement-agent gpt-5.6-terra high default "$tmp_dir/plan-stale")"
+assert_plan "stale target before recovery" "$stale_target" \
+  '{"decision":"decline","reason":"target-in-flight","route":"/implement","target":"issue-stale"}'
+
+recovery_output="$("$CHAIN" recover --ledger "$recovery_ledger" --stale-after-seconds 60 --now 2026-08-22T00:05:00Z)"
+assert_plan "stale worktree recovery" "$recovery_output" \
+  '{"recovered":1,"targets":["issue-stale"]}'
+
+if [ -e "$stale_worktree" ]; then
+  err "recovery did not remove the stale worktree"
+fi
+
+if ! python3 - "$recovery_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger]
+
+row = next(row for row in rows if row["session_id"] == "session-stale")
+assert row["finish_time"] == "2026-08-22T00:05:00Z"
+assert row["outcome"] == "failed"
+PY
+then
+  err "recovery did not close the stale ledger row as failed"
+fi
+
+recovered_target="$(plan /implement issue-stale AFK-safe implement-agent gpt-5.6-terra high default "$tmp_dir/plan-recovered")"
+assert_plan "target after recovery" "$recovered_target" \
+  '{"decision":"spawn","route":"/implement","target":"issue-stale","agent":"implement-agent","model":"gpt-5.6-terra","effort":"high","context_tier":"default","worktree":"'"$tmp_dir"'/plan-recovered"}'
+
+lock_crash_ledger="$tmp_dir/.git-loopy/lock-crash.jsonl"
+CHAIN_RECORD_PAUSE_BEFORE_COMMIT=10 "$CHAIN" record \
+  --ledger "$lock_crash_ledger" \
+  --route implement \
+  --target issue-lock-crash \
+  --session-id session-lock-crash \
+  --agent-id agent-lock-crash \
+  --agent-type implement-agent \
+  --agent-name implement-agent \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$tmp_dir/worktree-lock-crash" \
+  --chain-depth 1 &
+lock_crash_pid=$!
+for _ in $(seq 1 100); do
+  [ -f "$lock_crash_ledger.lock/pid" ] && break
+  sleep 0.01
+done
+if [ ! -f "$lock_crash_ledger.lock/pid" ]; then
+  err "SIGKILL recovery fixture did not acquire the ledger lock"
+else
+  kill -KILL "$lock_crash_pid"
+  wait "$lock_crash_pid" 2>/dev/null || true
+fi
+
+if [ ! -d "$lock_crash_ledger.lock" ]; then
+  err "SIGKILL did not leave the ledger lock behind"
+fi
+
+"$CHAIN" record \
+  --ledger "$lock_crash_ledger" \
+  --route code-review \
+  --target issue-after-lock-crash \
+  --session-id session-after-lock-crash \
+  --agent-id agent-after-lock-crash \
+  --agent-type code-review-agent \
+  --agent-name code-review-agent \
+  --spawn-time 2026-08-22T00:01:00Z \
+  --worktree "$tmp_dir/worktree-after-lock-crash" \
+  --chain-depth 1
+
+if [ -e "$lock_crash_ledger.lock" ]; then
+  err "record did not recover the SIGKILL-stranded ledger lock"
 fi
 
 exit "$fail"
