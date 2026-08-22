@@ -7,9 +7,9 @@ The set is **composable, not a fixed pipeline**. [`next`](./next.md) picks the e
 gate rather than the next item on a checklist, so any skill can be an entry point. What follows are
 the paths that actually get walked.
 
-## Four kinds of connection
+## Five kinds of connection
 
-Every edge in this document is one of four kinds. Read the arrows with these in mind.
+Every edge in this document is one of five kinds. Read the arrows with these in mind.
 
 | Kind | Meaning | Example |
 | --- | --- | --- |
@@ -17,9 +17,19 @@ Every edge in this document is one of four kinds. Read the arrows with these in 
 | **Runs inside** | Nested in the caller's session; owns no transition and records nothing of its own | `/implement` → `/tdd` |
 | **Publishes to** | Leaves a durable evidence comment that a later session reads back | `/code-review` → the ticket |
 | **Reads config from** | Depends on files another skill wrote | `/next` → `/setup-git-loopy-skills` |
+| **Spawns** | Launches an in-session subagent that owns a transition, publishes its own tracker evidence, and has completion correlated by the chain ledger | `/next` → `/code-review` |
+
+**Spawns is not a synonym for any existing kind.** It is nested in the caller's session like
+**runs inside**, but the spawned route owns its transition rather than merely returning evidence to
+its caller. It also routes onward and has the spawned route publish durable evidence, like
+**routes to** and **publishes to**, while the ledger correlates that completion. It does neither by
+ending the caller's session nor by only writing a ticket comment. The fifth kind makes those
+combined lifecycle and ownership semantics explicit. Nor is it **reads config from**: spawning
+starts and owns executable work, rather than consuming configuration another skill wrote.
 
 One skill is a hub. [`next`](./next.md) is the **router** — it reads live state (tracker, branch,
-diff, worktrees) and names one action. It does no work itself.
+diff, worktrees) and names one action. When the AFK-safe chain gate approves, it reserves and
+spawns that action as an in-session subagent.
 
 Eleven skills leave a durable evidence comment on the ticket they acted on and name the skill that
 succeeds them: `code-review`, `grill-with-docs`, `implement`, `prototype`, `push`,
@@ -71,8 +81,12 @@ flowchart LR
     next --> wayfinder
     next --> diag
     next --> ica
-    next --> implement
-    next --> handoff
+    next ==>|spawns when AFK-safe and allowlisted| implement
+    next ==>|spawns when AFK-safe and allowlisted| review
+    next ==>|spawns when AFK-safe and allowlisted| research
+    next ==>|spawns when AFK-safe and allowlisted| push
+    next ==>|spawns when AFK-safe and allowlisted| rmc
+    next -->|routes to| handoff
     handoff --> next
 
     grillme --> grilling
@@ -101,7 +115,7 @@ flowchart LR
     next --> questionnaire
 ```
 
-Solid arrows route or nest; dotted arrows publish or read config.
+Solid arrows route, nest, or spawn; dotted arrows publish or read config.
 
 ---
 
@@ -152,7 +166,8 @@ A genuinely small change may skip the middle and go straight from grilling to
 
 ## 2. Routing and session continuity
 
-[`next`](./next.md) decides *what*; [`handoff`](./handoff.md) *launches* it.
+[`next`](./next.md) decides *what* and, for an AFK-safe allowlisted route, spawns it in the current
+session. [`handoff`](./handoff.md) instead launches detached work that survives the current session.
 
 ```mermaid
 sequenceDiagram
@@ -162,20 +177,26 @@ sequenceDiagram
     participant NX as /next
     participant HO as /handoff
     participant BG as fresh session
+    participant SA as in-session subagent
 
     SK-->>NX: session concludes
     NX->>NX: read tracker, branch, diff, worktrees in flight
-    NX-->>U: one action, HITL or AFK-safe, plus model, effort, context
 
     alt Continue here
+        NX-->>U: one action, HITL, plus model, effort, context
         U->>SK: paste the prompt into this conversation
     else Fresh session, you drive
+        NX-->>U: one action, HITL, plus model, effort, context
         U->>BG: run the copyable copilot command block
-    else /implement route
-        NX->>HO: run /handoff with the prompt and flags just returned
-        HO->>BG: nohup copilot --yolo --no-ask-user with the same flags
-        BG-->>U: resume by session name
+    else AFK-safe allowlisted route
+        NX->>NX: reserve a ledger row
+        NX->>SA: spawn with the route and runtime
+        NX->>NX: bind the returned agent identity
+        NX-->>U: one AFK-safe action; its chain is running
+        SA-->>NX: completion closes the ledger row
+        NX->>NX: agentStop re-enters /next for the successor
     else Fresh session, agent drives
+        NX-->>U: one action, HITL, plus model, effort, context
         U->>HO: /handoff
         HO->>NX: run /next first if it is not the last output
         HO->>BG: nohup copilot --yolo --no-ask-user with the same flags
@@ -515,7 +536,8 @@ These have no workflow edges. Reach for them directly; they neither route onward
 | From | To | Kind | When |
 | --- | --- | --- | --- |
 | `next` | 22 routes | routes to | The earliest unresolved gate decides which |
-| `next` | `handoff` | runs | The chosen route is `/implement` |
+| `next` | `implement`, `code-review`, `research`, `push`, `resolving-merge-conflicts` | spawns | Only when the route is both AFK-safe and allowlisted |
+| `next` | `handoff` | routes to | A detached session must outlive the current one |
 | `next` | `setup-git-loopy-skills` | reads config from | `docs/agents/issue-tracker.md` is missing |
 | `handoff` | `next` | routes to | Runs `/next` first if it is not the last output |
 | `handoff` | fresh session | routes to | Launches the sized runtime in the background |
@@ -556,6 +578,9 @@ These have no workflow edges. Reach for them directly; they neither route onward
   Every `/implement` ticket starts in a fresh one.
 - **Nesting owns nothing.** A skill running inside another's session hands its evidence back and
   records no transition of its own.
+- **Spawning owns the transition.** The five allowlisted routes can run as in-session subagents
+  only after the AFK-safe gate passes; the ledger records their reservation, binding, completion,
+  and successor routing.
 - **Reviews come back.** `/code-review` findings return to `/implement`, which republishes a head
   and re-enters review. `/resolving-merge-conflicts` re-enters review too.
 - **Surveys do not build.** `/improve-codebase-architecture` and `/diagnosing-bugs` produce ideas
