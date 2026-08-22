@@ -173,28 +173,21 @@ either to a `task-type:` line in the routing map or to the fallback table.
 
 ## 5. Apply the phase-boundary procedure and chain gate
 
-At every intentional phase boundary, read the co-installed
-[`PHASE-BOUNDARIES.md`](PHASE-BOUNDARIES.md) and work its questions in order; the first yes wins:
+At every intentional phase boundary, apply the full ordered procedure in the co-installed
+[`PHASE-BOUNDARIES.md`](PHASE-BOUNDARIES.md); its first yes wins. The procedure belongs in this
+skill's directory so an installation of `/next` carries it without `/skill-router`.
 
-1. Can this session continue because the next phase needs this one as a primary source, or there is
-   enough smart-zone context?
-2. Is this context irrelevant to the next phase, so `/clear` is right?
-3. Does work need portability to a new harness, directory, colleague, or a mid-phase side task, so
-   `/handoff` is right?
-4. Can the task be done AFK, tightly scoped with no steering?
-5. Otherwise, `/compact`.
-
-Question 4 is the reasoning behind the chain's spawn gate. A yes marks the action `AFK-safe`, but
-the chain may spawn it only when it is also allowlisted: `/implement`, `/code-review`, `/research`,
-`/push`, or `/resolving-merge-conflicts`. An allowlisted route that is `HITL` reaches the checkpoint
-boundary instead; it does not become safe because the chain can run it.
+The procedure's fourth question, “Can the task be done AFK?”, is the reasoning behind the chain's
+spawn gate. A yes marks the action `AFK-safe`, but the chain may spawn it only when it is also
+allowlisted: `/implement`, `/code-review`, `/research`, `/push`, or `/resolving-merge-conflicts`.
+An allowlisted route that is `HITL` reaches the checkpoint boundary instead; it does not become safe
+because the chain can run it.
 
 For an `AFK-safe` allowlisted action, consult `chain.sh plan` with the route, target, custom agent,
 runtime, and proposed worktree. Treat its returned JSON decision as authoritative. A `decline` means
-do not spawn; report its reason and leave the action at the checkpoint boundary. A `spawn` means
-reserve the returned worktree, launch the returned custom agent as a background **in-session
-subagent**, then bind its runtime identity to the reservation. The script owns the ledger, collision,
-and concurrency decisions; do not reimplement them in this skill.
+do not spawn; report its reason and leave the action at the checkpoint boundary. A `spawn` selects
+`Context: Subagent` and proceeds to step 7. The script owns the ledger, collision, and concurrency
+decisions; do not reimplement them in this skill.
 
 The chain stops and asks a human before an unexplained runaway: it permits a route at most **three**
 times for one target and a target lineage at most **eight** hops deep. A fourth repeat or ninth hop
@@ -206,8 +199,8 @@ this session and ends with it. `/handoff` launches detached work that outlives t
 `/handoff` separate; never use it as the chain's launcher.
 
 This step is complete when the first applicable phase-boundary choice is known, every eligible
-subagent action has a `plan` decision, every decline carries its reason, and every spawn has a
-reservation and a live bound agent.
+subagent action has a `plan` decision, every decline carries its reason, and every spawn is handed
+to step 7.
 
 ## 6. Return the recommendation
 
@@ -277,6 +270,10 @@ For a terminal workstream, return:
 ```markdown
 **Complete:** <why no further workflow skill is needed>.
 ```
+
+This step is complete when the recommendation names its live target, state, context, runtime, and
+paste-safe prompt, and includes a `Command` block exactly when its context requires a
+user-launched fresh session.
 
 ## 7. Spawn a chain-approved route
 
