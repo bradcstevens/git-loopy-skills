@@ -80,7 +80,9 @@ CHAIN_RECORD_PAUSE_BEFORE_COMMIT=10 "$CHAIN" record \
   --chain-depth 3 &
 record_pid=$!
 for _ in $(seq 1 100); do
-  [ -d "$ledger.lock" ] && break
+  if grep -q interrupted "$tmp_dir/.git-loopy"/.subagents.* 2>/dev/null; then
+    break
+  fi
   sleep 0.01
 done
 kill -TERM "$record_pid"
