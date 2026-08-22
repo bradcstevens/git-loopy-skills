@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
+import atexit
 import json
 import os
 import subprocess
 import sys
 import tempfile
+import time
 
 
 def decision(reason: str, **details: object) -> None:
@@ -15,13 +17,45 @@ def repository_root(cwd: object) -> str | None:
         return None
 
     result = subprocess.run(
-        ["git", "-C", cwd, "rev-parse", "--show-toplevel"],
+        ["git", "-C", cwd, "worktree", "list", "--porcelain"],
         capture_output=True,
         text=True,
     )
     if result.returncode:
         return None
-    return result.stdout.strip()
+    for line in result.stdout.splitlines():
+        if line.startswith("worktree "):
+            return line.removeprefix("worktree ")
+    return None
+
+
+def acquire_lock(lock_dir: str) -> bool:
+    deadline = time.monotonic() + 1
+    while True:
+        try:
+            os.mkdir(lock_dir)
+        except FileExistsError:
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.05)
+            continue
+
+        start = subprocess.run(
+            ["ps", "-o", "lstart=", "-p", str(os.getpid())],
+            capture_output=True,
+            text=True,
+        ).stdout.split()
+        with open(os.path.join(lock_dir, "pid"), "w", encoding="utf-8") as owner:
+            owner.write(f"{os.getpid()}\t{' '.join(start)}\n")
+        return True
+
+
+def release_lock(lock_dir: str) -> None:
+    try:
+        os.unlink(os.path.join(lock_dir, "pid"))
+        os.rmdir(lock_dir)
+    except FileNotFoundError:
+        pass
 
 
 try:
@@ -47,6 +81,12 @@ ledger_path = os.path.join(root, ".git-loopy", "subagents.jsonl")
 if not os.path.exists(ledger_path):
     decision("no-ledger")
     raise SystemExit(0)
+
+lock_dir = ledger_path + ".lock"
+if not acquire_lock(lock_dir):
+    decision("ledger-busy")
+    raise SystemExit(0)
+atexit.register(release_lock, lock_dir)
 
 try:
     with open(ledger_path, encoding="utf-8") as ledger:
@@ -100,7 +140,7 @@ print(
     json.dumps(
         {
             "decision": "block",
-            "reason": "completed-run-unrouted",
+            "reason": "A completed run is unrouted. Run /next now.",
             "target": target,
         },
         separators=(",", ":"),
