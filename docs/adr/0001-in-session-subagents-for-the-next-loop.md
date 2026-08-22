@@ -20,9 +20,9 @@ grilling session re-examined and kept it. Only the grounds were mistaken.
 
 The corrected design splits the work across two events: `subagentStop` closes the ledger row, and a
 separate `agentStop` hook — the only event that can make the parent take another turn — carries
-re-entry into `/next`. That design gets its own ADR once a spike confirms `agentStop` can block the
-parent, because replacing one unverified mechanism with another is how this error happened the
-first time.
+re-entry into `/next`. That design is recorded in
+[ADR-0004](./0004-two-hook-events-carry-the-chain.md), written only after a spike fired the event,
+because replacing one unverified mechanism with another is how this was got wrong the first time.
 
 The error is left in place above rather than edited away: a reader who inherits this file should be
 able to see what was believed and why it was wrong.
