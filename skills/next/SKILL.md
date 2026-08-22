@@ -281,9 +281,11 @@ reserve the current working directory with `chain.sh reserve --in-place` before 
 returned custom agent in background mode. Record `COPILOT_AGENT_SESSION_ID` with `--session-id`
 on that reservation: it is the deterministic parent-session value the completion payload will
 carry, so the transcript can be correlated even before the runtime returns the agent identity.
-Bind that returned identity immediately after launch, then carry the recommendation's paste-safe
-prompt and runtime into the agent. Do not launch a declined action, an action that reaches the
-checkpoint boundary, or an action whose phase-boundary choice is anything other than `Subagent`.
+The routing agent performs the background custom-agent `task` invocation; `chain.sh` deliberately
+owns only the durable reserve, bind, complete, and guard operations. Bind the identity returned by
+that invocation immediately after launch, then carry the recommendation's paste-safe prompt and
+runtime into the agent. Do not launch a declined action, an action that reaches the checkpoint
+boundary, or an action whose phase-boundary choice is anything other than `Subagent`.
 
 Every other route ends at step 6 and leaves a user-launched fresh session, continued session, or
 `/handoff` transition to its own documented behavior.

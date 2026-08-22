@@ -600,6 +600,10 @@ reserve() {
 
   [ -n "$route" ] && [ -n "$target" ] && [ -n "$spawn_time" ] &&
     [ -n "$worktree" ] && [ -n "$chain_depth" ] || usage
+  if [ "$in_place" -eq 1 ] && [ -z "$session_id" ]; then
+    echo "error: --in-place requires --session-id" >&2
+    exit 2
+  fi
   [[ "$chain_depth" =~ ^[0-9]+$ ]] || {
     echo "error: --chain-depth must be a non-negative integer" >&2
     exit 2

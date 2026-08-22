@@ -11,6 +11,11 @@ err() {
   fail=1
 }
 
+worktree_count() {
+  git -C "$1" worktree list --porcelain |
+    awk '/^worktree / { count += 1 } END { print count + 0 }'
+}
+
 cleanup() {
   cd "$REPO"
   rm -rf "$tmp_dir"
@@ -22,6 +27,9 @@ git -C "$tmp_dir" init --quiet
 git -C "$tmp_dir" -c user.name=test -c user.email=test@example.com commit --quiet --allow-empty -m initial
 ledger="$tmp_dir/.git-loopy/subagents.jsonl"
 
+# The routing agent owns the background `task` call between these two commands.
+# This exercises chain.sh's durable CLI seam: reserve happens before launch and
+# bind accepts the runtime identity the launch returns.
 reserve_and_bind() {
   local route="" target="" session_id="" agent_id="" agent_type="" agent_name=""
   local spawn_time="" worktree="" chain_depth="" ledger_path=""
@@ -130,9 +138,29 @@ then
   err "bind did not attach the runtime identity to the reservation"
 fi
 
+missing_session_ledger="$tmp_dir/.git-loopy/missing-session-subagents.jsonl"
+if (
+  cd "$tmp_dir"
+  "$CHAIN" reserve \
+    --ledger "$missing_session_ledger" \
+    --route code-review \
+    --target issue-missing-session \
+    --spawn-time 2026-08-22T00:02:00Z \
+    --worktree "$tmp_dir" \
+    --chain-depth 1 \
+    --in-place \
+    2>/dev/null
+)
+then
+  err "in-place reserve accepted a missing deterministic session"
+fi
+if [ -e "$missing_session_ledger" ]; then
+  err "in-place reserve wrote a row without a deterministic session"
+fi
+
 in_place_ledger="$tmp_dir/.git-loopy/in-place-subagents.jsonl"
 worktree_count_before_in_place="$(
-  git -C "$tmp_dir" worktree list --porcelain | awk '/^worktree / {print}' | wc -l | tr -d ' '
+  worktree_count "$tmp_dir"
 )"
 (
   cd "$tmp_dir"
@@ -168,7 +196,7 @@ PY
 then
   err "in-place reserve did not persist the deterministic session before spawn"
 fi
-if [ "$(git -C "$tmp_dir" worktree list --porcelain | awk '/^worktree / {print}' | wc -l | tr -d ' ')" -ne "$worktree_count_before_in_place" ]; then
+if [ "$(worktree_count "$tmp_dir")" -ne "$worktree_count_before_in_place" ]; then
   err "in-place reserve created a linked worktree"
 fi
 cp "$in_place_ledger" "$in_place_ledger.before-mismatched-bind"
