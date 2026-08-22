@@ -58,7 +58,10 @@ record() {
 
   while ! mkdir "$lock_dir" 2>/dev/null; do
     if [ ! -e "$lock_dir/owner" ]; then
-      rmdir "$lock_dir" 2>/dev/null || true
+      lock_created="$(stat -f %m "$lock_dir" 2>/dev/null || stat -c %Y "$lock_dir" 2>/dev/null || echo 0)"
+      if [ "$(( $(date +%s) - lock_created ))" -ge 1 ]; then
+        rmdir "$lock_dir" 2>/dev/null || true
+      fi
     elif ! kill -0 "$(cat "$lock_dir/owner")" 2>/dev/null; then
       rm -f "$lock_dir/owner"
       rmdir "$lock_dir" 2>/dev/null || true
