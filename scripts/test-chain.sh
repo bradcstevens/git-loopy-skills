@@ -22,19 +22,51 @@ git -C "$tmp_dir" init --quiet
 git -C "$tmp_dir" -c user.name=test -c user.email=test@example.com commit --quiet --allow-empty -m initial
 ledger="$tmp_dir/.git-loopy/subagents.jsonl"
 
+reserve_and_bind() {
+  local route="" target="" session_id="" agent_id="" agent_type="" agent_name=""
+  local spawn_time="" worktree="" chain_depth="" ledger_path=""
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --route) route="$2"; shift 2 ;;
+      --target) target="$2"; shift 2 ;;
+      --session-id) session_id="$2"; shift 2 ;;
+      --agent-id) agent_id="$2"; shift 2 ;;
+      --agent-type) agent_type="$2"; shift 2 ;;
+      --agent-name) agent_name="$2"; shift 2 ;;
+      --spawn-time) spawn_time="$2"; shift 2 ;;
+      --worktree) worktree="$2"; shift 2 ;;
+      --chain-depth) chain_depth="$2"; shift 2 ;;
+      --ledger) ledger_path="$2"; shift 2 ;;
+      *) err "reserve_and_bind received unexpected argument: $1"; return 2 ;;
+    esac
+  done
+
+  local -a ledger_args=()
+  [ -z "$ledger_path" ] || ledger_args=(--ledger "$ledger_path")
+  "$CHAIN" reserve "${ledger_args[@]}" \
+    --route "$route" \
+    --target "$target" \
+    --spawn-time "$spawn_time" \
+    --worktree "$worktree" \
+    --chain-depth "$chain_depth"
+  "$CHAIN" bind "${ledger_args[@]}" \
+    --worktree "$worktree" \
+    --session-id "$session_id" \
+    --agent-id "$agent_id" \
+    --agent-type "$agent_type" \
+    --agent-name "$agent_name"
+}
+
 if [ -e "$ledger" ]; then
   err "ledger exists before the first record"
 fi
 
 (
   cd "$tmp_dir"
-  "$CHAIN" record \
+  "$CHAIN" reserve \
   --route implement \
   --target issue-4 \
-  --session-id session-1 \
-  --agent-id agent-1 \
-  --agent-type implement-agent \
-  --agent-name implement-agent \
   --spawn-time 2026-08-22T00:00:00Z \
   --worktree "$tmp_dir/worktree-1" \
   --chain-depth 1
@@ -43,7 +75,7 @@ fi
 cd "$tmp_dir"
 
 if [ ! -f "$ledger" ]; then
-  err "record did not create the ledger"
+  err "reserve did not create the ledger"
 else
   python3 - "$ledger" <<'PY' || exit 1
 import json
@@ -55,10 +87,6 @@ assert len(rows) == 1
 assert rows[0] == {
     "route": "implement",
     "target": "issue-4",
-    "session_id": "session-1",
-    "agent_id": "agent-1",
-    "agent_type": "implement-agent",
-    "agent_name": "implement-agent",
     "spawn_time": "2026-08-22T00:00:00Z",
     "worktree": sys.argv[1].replace("/.git-loopy/subagents.jsonl", "/worktree-1"),
     "chain_depth": 1,
@@ -69,19 +97,43 @@ PY
 fi
 
 if [ ! -d "$tmp_dir/worktree-1/.git" ] && [ ! -f "$tmp_dir/worktree-1/.git" ]; then
-  err "record did not create the worktree before recording the spawn"
+  err "reserve did not create the worktree before the agent existed"
 fi
 if [ "$(git -C "$tmp_dir/worktree-1" rev-parse HEAD)" != "$(git -C "$tmp_dir" rev-parse HEAD)" ]; then
-  err "record did not create the worktree at the spawning commit"
+  err "reserve did not create the worktree at the spawning commit"
 fi
-if [ "$(git -C "$tmp_dir/worktree-1" branch --show-current)" != "git-loopy/session-1" ]; then
-  err "record did not create a branch for the spawned worktree"
+if [[ "$(git -C "$tmp_dir/worktree-1" branch --show-current)" != git-loopy/reservation-* ]]; then
+  err "reserve did not create a branch for the reserved worktree"
 fi
 
-"$CHAIN" record \
+"$CHAIN" bind \
+  --ledger "$ledger" \
+  --worktree "$tmp_dir/worktree-1" \
+  --session-id session-1 \
+  --agent-id agent-1 \
+  --agent-type implement-agent \
+  --agent-name implement-agent
+
+if ! python3 - "$ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger]
+
+assert rows[0]["session_id"] == "session-1"
+assert rows[0]["agent_id"] == "agent-1"
+assert rows[0]["agent_type"] == "implement-agent"
+assert rows[0]["agent_name"] == "implement-agent"
+PY
+then
+  err "bind did not attach the runtime identity to the reservation"
+fi
+
+reserve_and_bind \
   --ledger "$ledger" \
   --route code-review \
-  --target issue-4 \
+  --target issue-4-review \
   --session-id session-2 \
   --agent-id agent-2 \
   --agent-type code-review-agent \
@@ -91,28 +143,24 @@ fi
   --chain-depth 2
 
 if [ "$(wc -l < "$ledger" | tr -d ' ')" -ne 2 ]; then
-  err "record did not append a second row"
+  err "reserve and bind did not append a second row"
 fi
 
-CHAIN_RECORD_PAUSE_BEFORE_COMMIT=1 "$CHAIN" record \
+CHAIN_RESERVE_PAUSE_BEFORE_COMMIT=1 "$CHAIN" reserve \
   --ledger "$ledger" \
   --route push \
-  --target issue-4 \
-  --session-id interrupted \
-  --agent-id agent-interrupted \
-  --agent-type push-agent \
-  --agent-name push-agent \
+  --target issue-interrupted \
   --spawn-time 2026-08-22T00:02:00Z \
   --worktree "$tmp_dir/worktree-3" \
   --chain-depth 3 &
 record_pid=$!
 for _ in $(seq 1 100); do
-  if grep -q interrupted "$tmp_dir/.git-loopy"/.subagents.* 2>/dev/null; then
+  if grep -q worktree-3 "$tmp_dir/.git-loopy"/.subagents.* 2>/dev/null; then
     break
   fi
   sleep 0.01
 done
-kill -TERM "$record_pid"
+kill -TERM "$record_pid" 2>/dev/null || true
 wait "$record_pid" 2>/dev/null || true
 
 if [ "$(wc -l < "$ledger" | tr -d ' ')" -ne 2 ]; then
@@ -120,6 +168,66 @@ if [ "$(wc -l < "$ledger" | tr -d ' ')" -ne 2 ]; then
 fi
 if grep -q interrupted "$ledger"; then
   err "interrupted append committed an incomplete record"
+fi
+
+duplicate_worktree="$tmp_dir/worktree-duplicate-identity"
+"$CHAIN" reserve \
+  --ledger "$ledger" \
+  --route research \
+  --target issue-duplicate-identity \
+  --spawn-time 2026-08-22T00:03:00Z \
+  --worktree "$duplicate_worktree" \
+  --chain-depth 1
+cp "$ledger" "$ledger.before-duplicate-bind"
+if "$CHAIN" bind \
+  --ledger "$ledger" \
+  --worktree "$duplicate_worktree" \
+  --session-id session-duplicate \
+  --agent-id agent-1 \
+  --agent-type research-agent \
+  --agent-name research-agent \
+  2>/dev/null
+then
+  err "bind accepted an agent identity that was already bound"
+fi
+if ! cmp -s "$ledger.before-duplicate-bind" "$ledger"; then
+  err "duplicate agent binding modified the ledger"
+fi
+
+cp "$ledger" "$ledger.before-duplicate-target"
+if "$CHAIN" reserve \
+  --ledger "$ledger" \
+  --route code-review \
+  --target issue-4 \
+  --spawn-time 2026-08-22T00:04:00Z \
+  --worktree "$tmp_dir/worktree-duplicate-target" \
+  --chain-depth 2 \
+  2>/dev/null
+then
+  err "reserve accepted a target that was already in flight"
+fi
+if ! cmp -s "$ledger.before-duplicate-target" "$ledger"; then
+  err "duplicate target reservation modified the ledger"
+fi
+
+cp "$ledger" "$ledger.before-missing-bind"
+missing_bind_error="$tmp_dir/missing-bind.err"
+if "$CHAIN" bind \
+  --ledger "$ledger" \
+  --worktree "$tmp_dir/worktree-missing-reservation" \
+  --session-id session-missing \
+  --agent-id agent-missing \
+  --agent-type research-agent \
+  --agent-name research-agent \
+  2>"$missing_bind_error"
+then
+  err "bind accepted a missing reservation"
+fi
+if ! grep -q "reservation not found for worktree" "$missing_bind_error"; then
+  err "bind did not report the missing reservation"
+fi
+if ! cmp -s "$ledger.before-missing-bind" "$ledger"; then
+  err "missing reservation binding modified the ledger"
 fi
 
 plan_ledger="$tmp_dir/.git-loopy/plan-subagents.jsonl"
@@ -150,6 +258,58 @@ PY
   fi
 }
 
+concurrency_ledger="$tmp_dir/.git-loopy/concurrency-subagents.jsonl"
+"$CHAIN" reserve \
+  --ledger "$concurrency_ledger" \
+  --route implement \
+  --target issue-concurrency-holder \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$tmp_dir/worktree-concurrency-holder" \
+  --chain-depth 1
+cp "$concurrency_ledger" "$concurrency_ledger.before-limit"
+if CHAIN_MAX_CONCURRENCY=1 "$CHAIN" reserve \
+  --ledger "$concurrency_ledger" \
+  --route implement \
+  --target issue-concurrency-rejected \
+  --spawn-time 2026-08-22T00:01:00Z \
+  --worktree "$tmp_dir/worktree-concurrency-rejected" \
+  --chain-depth 1 \
+  2>/dev/null
+then
+  err "reserve exceeded the concurrency ceiling"
+fi
+if ! cmp -s "$concurrency_ledger.before-limit" "$concurrency_ledger"; then
+  err "rejected reservation modified the ledger"
+fi
+concurrency_limit="$(
+  CHAIN_MAX_CONCURRENCY=1 "$CHAIN" plan \
+    --ledger "$concurrency_ledger" \
+    --route /implement \
+    --target issue-concurrency-candidate \
+    --safety AFK-safe \
+    --agent implement-agent \
+    --model gpt-5.6-terra \
+    --effort high \
+    --context-tier default \
+    --worktree "$tmp_dir/worktree-concurrency-candidate"
+)"
+assert_plan "unbound reservation concurrency" "$concurrency_limit" \
+  '{"decision":"decline","reason":"concurrency-limit","route":"/implement","target":"issue-concurrency-candidate"}'
+if CHAIN_MAX_CONCURRENCY=11 "$CHAIN" plan \
+  --ledger "$concurrency_ledger" \
+  --route /implement \
+  --target issue-invalid-concurrency \
+  --safety AFK-safe \
+  --agent implement-agent \
+  --model gpt-5.6-terra \
+  --effort high \
+  --context-tier default \
+  --worktree "$tmp_dir/worktree-invalid-concurrency" \
+  2>/dev/null
+then
+  err "plan accepted a concurrency ceiling above ten"
+fi
+
 outside_route="$(plan /triage issue-6 AFK-safe triage-agent gpt-5.6-terra high default "$tmp_dir/plan-outside")"
 assert_plan "outside route" "$outside_route" \
   '{"decision":"decline","reason":"route-not-allowlisted","route":"/triage","target":"issue-6"}'
@@ -167,7 +327,7 @@ if [ -e "$plan_ledger" ]; then
   err "plan created a ledger"
 fi
 
-"$CHAIN" record \
+reserve_and_bind \
   --ledger "$plan_ledger" \
   --route implement \
   --target issue-6 \
@@ -216,7 +376,7 @@ SH
 chmod +x "$fake_bin/gh"
 
 complete_ledger="$tmp_dir/.git-loopy/complete-subagents.jsonl"
-"$CHAIN" record \
+reserve_and_bind \
   --ledger "$complete_ledger" \
   --route implement \
   --target issue-published \
@@ -232,14 +392,35 @@ completion_payload() {
   local agent_id="$1" timestamp="${2:-2026-08-22T00:11:00Z}"
   local agent_name="${3:-implement-agent}" agent_type="${4:-implement-agent}"
   local session_id="${5:-session-$agent_id}"
+  local cwd="${6:-$tmp_dir}"
   local timestamp_json
   if [[ "$timestamp" =~ ^[0-9]+$ ]]; then
     timestamp_json="$timestamp"
   else
     timestamp_json="$(python3 -c 'import json; import sys; print(json.dumps(sys.argv[1]))' "$timestamp")"
   fi
-  printf '%s' '{"sessionId":"'"$session_id"'","timestamp":'"$timestamp_json"',"cwd":"'"$tmp_dir"'","transcriptPath":"'"$tmp_dir"'/transcript.jsonl","agentId":"'"$agent_id"'","agentType":"'"$agent_type"'","agentName":"'"$agent_name"'","agentDisplayName":"Implement agent","response":"Completed the route.","stopReason":"end_turn"}'
+  printf '%s' '{"sessionId":"'"$session_id"'","timestamp":'"$timestamp_json"',"cwd":"'"$cwd"'","transcriptPath":"'"$tmp_dir"'/transcript.jsonl","agentId":"'"$agent_id"'","agentType":"'"$agent_type"'","agentName":"'"$agent_name"'","agentDisplayName":"Implement agent","response":"Completed the route.","stopReason":"end_turn"}'
 }
+
+unbound_ledger="$tmp_dir/.git-loopy/unbound-subagents.jsonl"
+unbound_worktree="$tmp_dir/worktree-unbound"
+"$CHAIN" reserve \
+  --ledger "$unbound_ledger" \
+  --route implement \
+  --target issue-unbound \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$unbound_worktree" \
+  --chain-depth 1
+cp "$unbound_ledger" "$unbound_ledger.before-complete"
+unbound_output="$(
+  PATH="$fake_bin:$PATH" "$CHAIN" complete --ledger "$unbound_ledger" \
+    <<< "$(completion_payload agent-unbound 2026-08-22T00:11:00Z implement-agent implement-agent session-unbound "$unbound_worktree")"
+)"
+assert_plan "unbound completion" "$unbound_output" \
+  '{"continue":false,"reason":"unbound-reservation","worktree":"'"$unbound_worktree"'"}'
+if ! cmp -s "$unbound_ledger.before-complete" "$unbound_ledger"; then
+  err "unbound completion modified the ledger"
+fi
 
 published_output="$(
   PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete --ledger "$complete_ledger" \
@@ -281,7 +462,7 @@ fi
 default_worktree="$tmp_dir/worktree-default-ledger"
 (
   cd "$tmp_dir"
-  "$CHAIN" record \
+  reserve_and_bind \
     --route implement \
     --target issue-default-ledger \
     --session-id session-default-ledger \
@@ -305,7 +486,7 @@ if [ -e "$default_worktree" ]; then
   err "completion from a linked worktree did not remove its worktree"
 fi
 
-"$CHAIN" record \
+reserve_and_bind \
   --ledger "$complete_ledger" \
   --route code-review \
   --target issue-no-evidence \
@@ -344,7 +525,7 @@ no_evidence_target="$(plan /implement issue-no-evidence AFK-safe implement-agent
 assert_plan "no-evidence target" "$no_evidence_target" \
   '{"decision":"decline","reason":"target-failed","route":"/implement","target":"issue-no-evidence"}'
 
-"$CHAIN" record \
+reserve_and_bind \
   --ledger "$complete_ledger" \
   --route implement \
   --target issue-unmatched \
@@ -371,7 +552,7 @@ fi
 recovery_ledger="$tmp_dir/recovery-subagents.jsonl"
 plan_ledger="$recovery_ledger"
 stale_worktree="$tmp_dir/worktree-stale"
-"$CHAIN" record \
+reserve_and_bind \
   --ledger "$recovery_ledger" \
   --route implement \
   --target issue-stale \
@@ -419,14 +600,10 @@ assert_plan "target after recovery" "$recovered_target" \
   '{"decision":"decline","reason":"target-failed","route":"/implement","target":"issue-stale"}'
 
 reservation_ledger="$tmp_dir/.git-loopy/reservation-crash.jsonl"
-CHAIN_RECORD_PAUSE_BEFORE_WORKTREE=1 "$CHAIN" record \
+CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE=1 "$CHAIN" reserve \
   --ledger "$reservation_ledger" \
   --route implement \
   --target issue-reservation-crash \
-  --session-id session-reservation-crash \
-  --agent-id agent-reservation-crash \
-  --agent-type implement-agent \
-  --agent-name implement-agent \
   --spawn-time 2026-08-22T00:00:00Z \
   --worktree "$tmp_dir/worktree-reservation-crash" \
   --chain-depth 1 &
@@ -451,14 +628,10 @@ assert_plan "uncreated worktree recovery" "$reservation_recovery" \
   '{"recovered":1,"targets":["issue-reservation-crash"]}'
 
 lock_crash_ledger="$tmp_dir/.git-loopy/lock-crash.jsonl"
-CHAIN_RECORD_PAUSE_BEFORE_COMMIT=1 "$CHAIN" record \
+CHAIN_RESERVE_PAUSE_BEFORE_COMMIT=1 "$CHAIN" reserve \
   --ledger "$lock_crash_ledger" \
   --route implement \
   --target issue-lock-crash \
-  --session-id session-lock-crash \
-  --agent-id agent-lock-crash \
-  --agent-type implement-agent \
-  --agent-name implement-agent \
   --spawn-time 2026-08-22T00:00:00Z \
   --worktree "$tmp_dir/worktree-lock-crash" \
   --chain-depth 1 &
@@ -478,7 +651,7 @@ if [ ! -d "$lock_crash_ledger.lock" ]; then
   err "SIGKILL did not leave the ledger lock behind"
 fi
 
-"$CHAIN" record \
+reserve_and_bind \
   --ledger "$lock_crash_ledger" \
   --route code-review \
   --target issue-after-lock-crash \
@@ -491,31 +664,27 @@ fi
   --chain-depth 1
 
 if [ -e "$lock_crash_ledger.lock" ]; then
-  err "record did not recover the SIGKILL-stranded ledger lock"
+  err "reserve did not recover the SIGKILL-stranded ledger lock"
 fi
 
 pidless_lock_ledger="$tmp_dir/.git-loopy/pidless-lock.jsonl"
 mkdir -p "$pidless_lock_ledger.lock"
-CHAIN_LOCK_STALE_SECONDS=0 "$CHAIN" record \
+CHAIN_LOCK_STALE_SECONDS=0 "$CHAIN" reserve \
   --ledger "$pidless_lock_ledger" \
   --route implement \
   --target issue-pidless-lock \
-  --session-id session-pidless-lock \
-  --agent-id agent-pidless-lock \
-  --agent-type implement-agent \
-  --agent-name implement-agent \
   --spawn-time 2026-08-22T00:00:00Z \
   --worktree "$tmp_dir/worktree-pidless-lock" \
   --chain-depth 1
 
 if [ -e "$pidless_lock_ledger.lock" ]; then
-  err "record did not recover the PID-less stale ledger lock"
+  err "reserve did not recover the PID-less stale ledger lock"
 fi
 
 recovery_lock_ledger="$tmp_dir/.git-loopy/recovery-lock.jsonl"
 mkdir -p "$recovery_lock_ledger.lock.recovery"
 printf '999999\tstale process\n' > "$recovery_lock_ledger.lock.recovery/pid"
-"$CHAIN" record \
+reserve_and_bind \
   --ledger "$recovery_lock_ledger" \
   --route implement \
   --target issue-recovery-lock \
@@ -528,7 +697,7 @@ printf '999999\tstale process\n' > "$recovery_lock_ledger.lock.recovery/pid"
   --chain-depth 1
 
 if [ -e "$recovery_lock_ledger.lock.recovery" ]; then
-  err "record did not recover the stranded reclamation lock"
+  err "reserve did not recover the stranded reclamation lock"
 fi
 
 if [ "$(git -C "$REPO" worktree list --porcelain | awk '/^worktree /')" != "$parent_worktrees_before" ]; then
