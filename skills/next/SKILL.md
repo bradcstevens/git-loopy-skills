@@ -6,14 +6,16 @@ description: Route the engineering workflow from live project state. Use when a 
 # Route the Workflow
 
 This skill is the model-invoked router for the engineering flow. Inspect the
-current state and return one recommendation. Leave the repository and issue
-tracker unchanged.
+current state and return one recommendation. Leave source files and the issue
+tracker unchanged. A chain spawn may write its ledger and create its reserved
+branch and worktree; the spawned subagent owns work inside that worktree.
 
 ## 1. Refresh the durable state
 
 Locate `docs/agents/issue-tracker.md` and `.github/hooks/git-loopy-chain.json`. If either is
-missing, the repository has not been configured for these skills: make
-`/setup-git-loopy-skills` the sole candidate. Otherwise read the file and refresh the
+missing, the repository is not configured for these skills: make `/setup-git-loopy-skills` the sole
+candidate. In particular, a missing hook means the repository is not configured. Otherwise read the
+file and refresh the
 workstream referenced by the conversation from its configured tracker: issue or PR state,
 labels, assignees, comments, sub-issues, and blockers. Inspect the local branch, commits, and
 diff when review or publication may be next.
@@ -41,8 +43,7 @@ choose the first matching transition:
 | Current state | Next route |
 | --- | --- |
 | The repository is not configured for the engineering skills | `/setup-git-loopy-skills` |
-| The current thread is near its useful context limit or must branch into a fresh session | `/handoff` |
-| The same conversation is at an intentional phase break and can continue from a summary | `/compact` |
+| An intentional phase boundary needs a context transition | Apply `PHASE-BOUNDARIES.md` before choosing a route |
 | An idea outside a codebase still needs sharpening | `/grill-me` |
 | An idea in a codebase still has human decisions | `/grill-with-docs` |
 | The destination is too foggy or large for one planning context | `/wayfinder` |
@@ -68,13 +69,12 @@ choose the first matching transition:
 Apply these flow rules:
 
 - Keep `/grill-with-docs`, `/to-spec`, and `/to-tickets` in one unbroken context.
-  Start each `/implement` ticket in a fresh context. A genuinely small change can
-  move directly from grilling to `/implement` in the current context.
-- Use `/compact` only at an intentional phase break where a summary is enough.
-  Use `/handoff` when a fresh session or preserved branch of the current thread
-  is required.
-- Bridge a prototype detour with `/handoff` in both directions when the original
-  thread must survive. Route the validated answer back into the main flow.
+- At an intentional phase boundary, `PHASE-BOUNDARIES.md` alone chooses the
+  context transition. Use `/handoff` only for its portability cases: a new
+  harness, directory, colleague, or mid-phase side task.
+- Bridge a prototype detour with `/handoff` in both directions when its new
+  directory or mid-phase fork needs portability. Route the validated answer
+  back into the main flow.
 - Route source-answerable gaps to `/research` and answers held by another person
   to `/to-questionnaire`. Resume the decision flow with either result in
   `/grill-with-docs` or `/to-spec`.
@@ -170,7 +170,37 @@ This step is complete when the action is marked `HITL` or `AFK-safe` and the
 task type, model, effort, and context tier are each named, with the pair traced
 either to a `task-type:` line in the routing map or to the fallback table.
 
-## 5. Return the recommendation
+## 5. Apply the phase-boundary procedure and chain gate
+
+At every intentional phase boundary, apply the full ordered procedure in the co-installed
+[`PHASE-BOUNDARIES.md`](PHASE-BOUNDARIES.md); its first yes wins. The procedure belongs in this
+skill's directory so an installation of `/next` carries it without `/skill-router`.
+
+The procedure's fourth question, “Can the task be done AFK?”, is the reasoning behind the chain's
+spawn gate. Only when it is the first yes does the procedure select `Subagent`. That action is
+`AFK-safe`, but the chain may spawn it only when it is also allowlisted: `/implement`,
+`/code-review`, `/research`, `/push`, or `/resolving-merge-conflicts`. A `HITL` or non-allowlisted
+action reaches the checkpoint boundary instead; it does not become safe because the chain can run it.
+
+Only for that `Subagent` outcome, consult `chain.sh plan` with the route, target, `--safety
+AFK-safe`, custom agent, runtime, and proposed worktree. Treat its returned JSON decision as
+authoritative. A `decline` means do not spawn; report its reason and leave the action at the
+checkpoint boundary. A `spawn` proceeds to step 7. The script owns the ledger, collision, and
+concurrency decisions; do not reimplement them in this skill.
+
+The chain stops and asks a human before an unexplained runaway: it permits a route at most **three**
+times for one target and a target lineage at most **eight** hops deep. A fourth repeat or ninth hop
+is declined. `subagentStop` closes the finished run's ledger row; `agentStop`, not `subagentStop`,
+carries re-entry into `/next`.
+
+The chain and `/handoff` have different lifetimes. The chain runs an in-session subagent alongside
+this session and ends with it. `/handoff` launches detached work that outlives this session. Keep
+`/handoff` separate; never use it as the chain's launcher.
+
+This step is complete when the first applicable phase-boundary choice is known, every `Subagent`
+outcome has a `plan` decision, every decline carries its reason, and every spawn is handed to step 7.
+
+## 6. Return the recommendation
 
 Use this shape:
 
@@ -178,7 +208,7 @@ Use this shape:
 1. **<concrete action>** - `/<route>` - <HITL | AFK-safe>
 Target: <linked issue, PR, map, spec, branch, document, or current conversation>
 State: <Ready | Blocked by ...>
-Context: <Continue here | Fresh session | Fresh session in a new worktree>
+Context: <Continue here | Fresh session | Fresh session in a new worktree | Subagent>
 Runtime: `--model <model> --effort <level> --context <default | long_context>`
 Why now: <one sentence grounded in live state>
 
@@ -201,10 +231,11 @@ Write the prompt **paste-safe**: one physical line of plain ASCII that opens wit
 the exact skill invocation and names its target in bare words, so the shell
 receives a single argument whether the prompt reaches it through the heredoc
 below or a hand-typed `-p "..."`. Keep every label and explanation outside the
-code fence. For `/compact`, pass no argument. Match `Context` to the flow rules
-above, choosing `Fresh session in a new worktree` when another agent holds the
-primary worktree — and open the prompt with the `git worktree add` that clears
-it, so the agent moves itself before it writes.
+code fence. For `/compact`, pass the instruction the phase-boundary procedure requires. Match
+`Context` to the phase-boundary procedure. When another agent holds the primary
+worktree, carry that constraint into the prompt and do not direct work into it.
+If the procedure selects `Fresh session in a new worktree`, open the prompt with
+the `git worktree add` that clears the constraint before the agent writes.
 
 Carry into the prompt every constraint that came from live state and is absent
 from the target's own record: the worktree to work in, the files it shares with
@@ -223,8 +254,8 @@ in the background instead.
 
 Emit the `Command` block only when `Context` names a fresh session the user
 launches — a `Continue here` recommendation is a prompt for this conversation and
-has no session to launch, and an `/implement` recommendation is launched for the
-user by step 6, so a second copyable launcher would put two agents on one
+has no session to launch, and a `Subagent` recommendation is launched by the
+chain gate in step 7, so a second copyable launcher would put two agents on one
 worktree. When the context is `Fresh session in a new worktree`, the
 command still runs from the current directory, because the prompt it carries
 opens with the `git worktree add` that moves the agent before it writes.
@@ -239,22 +270,23 @@ For a terminal workstream, return:
 **Complete:** <why no further workflow skill is needed>.
 ```
 
-## 6. Launch an `/implement` route
+This step is complete when the recommendation names its live target, state, context, runtime, and
+paste-safe prompt, and includes a `Command` block exactly when its context requires a
+user-launched fresh session.
 
-An `/implement` route arrives already specified by its ticket, so this skill
-starts it rather than handing it over. Run `/handoff` and give it the
-recommendation just returned — the prompt verbatim between the heredoc markers
-and the three `Runtime` flags spliced in — so a background agent picks the ticket
-up while the user keeps this session.
+## 7. Spawn a chain-approved route
 
-A `HITL` implement route launches the same way; carry its open judgment into the
-prompt as an instruction to stop and report it, because a question the background
-agent raises reaches nobody.
+Set `Context: Subagent` only for the `spawn` decision from step 5. Reserve the target before
+launching the returned custom agent in background mode, bind the returned agent identity
+immediately after launch, and carry the recommendation's paste-safe prompt and runtime into that
+agent. Do not launch a declined action, an action that reaches the checkpoint boundary, or an action
+whose phase-boundary choice is anything other than `Subagent`.
 
-Every other route ends at step 5 and leaves the launch to the user.
+Every other route ends at step 6 and leaves a user-launched fresh session, continued session, or
+`/handoff` transition to its own documented behavior.
 
 Routing is complete when every active candidate has been classified and every
 recommendation names a live target, an exact invocation, a paste-safe prompt in
 its own code fence, a copyable `copilot` command whenever the user launches the
-fresh session, the correct context, a sized runtime, and any blocker — and an
-`/implement` recommendation has a background agent `/handoff` reports alive.
+fresh session, the correct context, a sized runtime, and any blocker — and every
+`Subagent` recommendation has a live, bound in-session agent.
