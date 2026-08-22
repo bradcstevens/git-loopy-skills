@@ -58,6 +58,7 @@ remove_stale_lock() {
   local stale claim_dir recovery_dir
   recovery_dir="$lock_dir.recovery"
   mkdir "$recovery_dir" 2>/dev/null || return 0
+  printf '%s\t%s\n' "$$" "$(ps -o lstart= -p "$$" | xargs)" > "$recovery_dir/pid"
 
   if ! stale="$(python3 - "$lock_dir" "${CHAIN_LOCK_STALE_SECONDS:-300}" <<'PY'
 import os
@@ -99,12 +100,14 @@ else:
             ["ps", "-o", "lstart=", "-p", str(pid)],
             capture_output=True,
             text=True,
-        ).stdout.strip()
+        ).stdout.split()
+        current_start = " ".join(current_start)
         stale = current_start != owner_start
 
 print("true" if stale else "false")
 PY
   )"; then
+    rm -f "$recovery_dir/pid"
     rmdir "$recovery_dir"
     return 2
   fi
@@ -116,12 +119,59 @@ PY
       rmdir "$claim_dir"
     fi
   fi
+  rm -f "$recovery_dir/pid"
   rmdir "$recovery_dir"
+}
+
+recover_stale_recovery_lock() {
+  local recovery_dir="$lock_dir.recovery" stale
+
+  [ -d "$recovery_dir" ] || return 0
+  stale="$(python3 - "$recovery_dir" "${CHAIN_LOCK_STALE_SECONDS:-300}" <<'PY'
+import os
+import subprocess
+import sys
+import time
+
+lock_dir, stale_after = sys.argv[1:]
+stale_after_seconds = int(stale_after)
+pid_path = os.path.join(lock_dir, "pid")
+try:
+    with open(pid_path, encoding="utf-8") as owner:
+        pid_text, owner_start = owner.read().rstrip("\n").split("\t", 1)
+        pid = int(pid_text)
+except (FileNotFoundError, ValueError):
+    stale = time.time() - os.stat(lock_dir).st_mtime >= stale_after_seconds
+else:
+    try:
+        if pid <= 0:
+            raise ProcessLookupError
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        stale = True
+    except PermissionError:
+        stale = False
+    else:
+        current_start = subprocess.run(
+            ["ps", "-o", "lstart=", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+        ).stdout.split()
+        stale = " ".join(current_start) != owner_start
+
+print("true" if stale else "false")
+PY
+)"
+  if [ "$stale" = "true" ]; then
+    rm -f "$recovery_dir/pid"
+    rmdir "$recovery_dir" 2>/dev/null || true
+  fi
 }
 
 acquire_lock() {
   while :; do
     while [ -d "$lock_dir.recovery" ]; do
+      recover_stale_recovery_lock
       sleep 0.01
     done
     if mkdir "$lock_dir" 2>/dev/null; then
@@ -162,7 +212,11 @@ with open(ledger, encoding="utf-8") as ledger_file:
         line = raw_line.strip()
         if not line:
             continue
-        row = json.loads(line)
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError as error:
+            print(f"error: invalid spawn ledger: {error}", file=sys.stderr)
+            raise SystemExit(2)
         row_worktree = row.get("worktree")
         if (
             isinstance(row_worktree, str)

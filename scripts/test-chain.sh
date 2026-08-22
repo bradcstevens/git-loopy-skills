@@ -512,6 +512,25 @@ if [ -e "$pidless_lock_ledger.lock" ]; then
   err "record did not recover the PID-less stale ledger lock"
 fi
 
+recovery_lock_ledger="$tmp_dir/.git-loopy/recovery-lock.jsonl"
+mkdir -p "$recovery_lock_ledger.lock.recovery"
+printf '999999\tstale process\n' > "$recovery_lock_ledger.lock.recovery/pid"
+"$CHAIN" record \
+  --ledger "$recovery_lock_ledger" \
+  --route implement \
+  --target issue-recovery-lock \
+  --session-id session-recovery-lock \
+  --agent-id agent-recovery-lock \
+  --agent-type implement-agent \
+  --agent-name implement-agent \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$tmp_dir/worktree-recovery-lock" \
+  --chain-depth 1
+
+if [ -e "$recovery_lock_ledger.lock.recovery" ]; then
+  err "record did not recover the stranded reclamation lock"
+fi
+
 if [ "$(git -C "$REPO" worktree list --porcelain)" != "$parent_worktrees_before" ]; then
   err "chain tests modified the parent repository worktree registry"
 fi
