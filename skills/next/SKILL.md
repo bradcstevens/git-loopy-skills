@@ -11,9 +11,10 @@ tracker unchanged.
 
 ## 1. Refresh the durable state
 
-Locate `docs/agents/issue-tracker.md` and `.github/hooks/git-loopy-chain.json`. A missing hook
-means the repository is not configured for these skills: make `/setup-git-loopy-skills` the sole
-candidate. Otherwise read the file and refresh the
+Locate `docs/agents/issue-tracker.md` and `.github/hooks/git-loopy-chain.json`. If either is
+missing, the repository is not configured for these skills: make `/setup-git-loopy-skills` the sole
+candidate. In particular, a missing hook means the repository is not configured. Otherwise read the
+file and refresh the
 workstream referenced by the conversation from its configured tracker: issue or PR state,
 labels, assignees, comments, sub-issues, and blockers. Inspect the local branch, commits, and
 diff when review or publication may be next.
@@ -203,6 +204,10 @@ carries re-entry into `/next`.
 The chain and `/handoff` have different lifetimes. The chain runs an in-session subagent alongside
 this session and ends with it. `/handoff` launches detached work that outlives this session. Keep
 `/handoff` separate; never use it as the chain's launcher.
+
+This step is complete when the first applicable phase-boundary choice is known, every eligible
+subagent action has a `plan` decision, every decline carries its reason, and every spawn has a
+reservation and a live bound agent.
 
 ## 6. Return the recommendation
 
