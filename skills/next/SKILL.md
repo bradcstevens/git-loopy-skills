@@ -6,8 +6,9 @@ description: Route the engineering workflow from live project state. Use when a 
 # Route the Workflow
 
 This skill is the model-invoked router for the engineering flow. Inspect the
-current state and return one recommendation. Leave the repository and issue
-tracker unchanged.
+current state and return one recommendation. Leave source files and the issue
+tracker unchanged. A chain spawn may write its ledger and create its reserved
+branch and worktree; the spawned subagent owns work inside that worktree.
 
 ## 1. Refresh the durable state
 
@@ -42,8 +43,7 @@ choose the first matching transition:
 | Current state | Next route |
 | --- | --- |
 | The repository is not configured for the engineering skills | `/setup-git-loopy-skills` |
-| The current thread is near its useful context limit or must branch into a fresh session | `/handoff` |
-| The same conversation is at an intentional phase break and can continue from a summary | `/compact` |
+| An intentional phase boundary needs a context transition | Apply `PHASE-BOUNDARIES.md` before choosing a route |
 | An idea outside a codebase still needs sharpening | `/grill-me` |
 | An idea in a codebase still has human decisions | `/grill-with-docs` |
 | The destination is too foggy or large for one planning context | `/wayfinder` |
@@ -71,11 +71,12 @@ Apply these flow rules:
 - Keep `/grill-with-docs`, `/to-spec`, and `/to-tickets` in one unbroken context.
   Start each `/implement` ticket in a fresh context. A genuinely small change can
   move directly from grilling to `/implement` in the current context.
-- Use `/compact` only at an intentional phase break where a summary is enough.
-  Use `/handoff` when a fresh session or preserved branch of the current thread
-  is required.
-- Bridge a prototype detour with `/handoff` in both directions when the original
-  thread must survive. Route the validated answer back into the main flow.
+- At an intentional phase boundary, `PHASE-BOUNDARIES.md` alone chooses the
+  context transition. Use `/handoff` only for its portability cases: a new
+  harness, directory, colleague, or mid-phase side task.
+- Bridge a prototype detour with `/handoff` in both directions when its new
+  directory or mid-phase fork needs portability. Route the validated answer
+  back into the main flow.
 - Route source-answerable gaps to `/research` and answers held by another person
   to `/to-questionnaire`. Resume the decision flow with either result in
   `/grill-with-docs` or `/to-spec`.
