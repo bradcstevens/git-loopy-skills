@@ -33,11 +33,10 @@ workflow transition or is an anchor from which one should follow. Artifact body 
 the native sub-issue graph are the source of truth; labels support workflow state but do
 not identify an artifact class.
 
-This tracer handles spec-shaped workflow-bearing issues. Before classifying, read the first
-four Markdown headings in the `<spec-template>` in
-[`../to-spec/SKILL.md`](../to-spec/SKILL.md); they are the authoritative fingerprint. The
-`/to-tickets` issue template has a distinct body shape. Never use `ready-for-agent` to
-distinguish the two: both specs and tickets carry that label.
+This tracer handles spec-shaped workflow-bearing issues. A spec contains all four exact
+Markdown headings: `## Problem Statement`, `## Solution`, `## User Stories`, and
+`## Implementation Decisions`. Tickets use a distinct body shape. Never use
+`ready-for-agent` to distinguish the two: both specs and tickets carry that label.
 
 `--grace-days` defaults to `7`. It accepts a non-negative integer and overrides only this
 structural finding's grace period; for example, `/loose-ends --grace-days 0` exposes every
@@ -87,10 +86,14 @@ must contain all finding data at generation time: it must not make tracker reque
 depend on application code after it is opened. HTML-escape every tracker-provided field
 before interpolation.
 
-Reuse the architecture survey's presentation scaffold in
-[`../improve-codebase-architecture/HTML-REPORT.md`](../improve-codebase-architecture/HTML-REPORT.md)
-without copying its document-shell or visual conventions. This report adds:
+Use the architecture survey's dark-only presentation scaffold locally so a single-skill
+installation has every instruction it needs:
 
+- Use Tailwind CDN, an optional Mermaid ESM import, the slate palette, generous spacing, a
+  `max-w-5xl` main column, and a compact metadata header.
+- Render an editorial survey, not an application dashboard. Cards use `bg-slate-900`,
+  `border-slate-800`, `text-slate-100`, `text-slate-200`, and `text-slate-400`; use tinted
+  emerald for actionable findings and amber only for held or cautionary context.
 - Header metadata shows the repository, exact generation timestamp, the effective grace
   period, and the finding count. Do not add a generic introduction paragraph.
 - Group findings by **follow-up action**, not finding class. This tracer renders
