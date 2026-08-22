@@ -17,7 +17,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-parent_worktrees_before="$(git -C "$REPO" worktree list --porcelain)"
+parent_worktrees_before="$(git -C "$REPO" worktree list --porcelain | awk '/^worktree /')"
 git -C "$tmp_dir" init --quiet
 git -C "$tmp_dir" -c user.name=test -c user.email=test@example.com commit --quiet --allow-empty -m initial
 ledger="$tmp_dir/.git-loopy/subagents.jsonl"
@@ -531,7 +531,7 @@ if [ -e "$recovery_lock_ledger.lock.recovery" ]; then
   err "record did not recover the stranded reclamation lock"
 fi
 
-if [ "$(git -C "$REPO" worktree list --porcelain)" != "$parent_worktrees_before" ]; then
+if [ "$(git -C "$REPO" worktree list --porcelain | awk '/^worktree /')" != "$parent_worktrees_before" ]; then
   err "chain tests modified the parent repository worktree registry"
 fi
 

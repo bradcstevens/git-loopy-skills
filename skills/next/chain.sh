@@ -124,7 +124,7 @@ PY
 }
 
 recover_stale_recovery_lock() {
-  local recovery_dir="$lock_dir.recovery" stale
+  local recovery_dir="$lock_dir.recovery" stale claim_dir
 
   [ -d "$recovery_dir" ] || return 0
   stale="$(python3 - "$recovery_dir" "${CHAIN_LOCK_STALE_SECONDS:-300}" <<'PY'
@@ -141,7 +141,10 @@ try:
         pid_text, owner_start = owner.read().rstrip("\n").split("\t", 1)
         pid = int(pid_text)
 except (FileNotFoundError, ValueError):
-    stale = time.time() - os.stat(lock_dir).st_mtime >= stale_after_seconds
+    try:
+        stale = time.time() - os.stat(lock_dir).st_mtime >= stale_after_seconds
+    except FileNotFoundError:
+        stale = False
 else:
     try:
         if pid <= 0:
@@ -163,9 +166,12 @@ print("true" if stale else "false")
 PY
 )"
   if [ "$stale" = "true" ]; then
-    rm -f "$recovery_dir/pid"
-    rmdir "$recovery_dir" 2>/dev/null || true
+  claim_dir="$recovery_dir.reclaim.$$.$RANDOM"
+  if mv "$recovery_dir" "$claim_dir" 2>/dev/null; then
+    rm -f "$claim_dir/pid"
+    rmdir "$claim_dir" 2>/dev/null || true
   fi
+fi
 }
 
 acquire_lock() {
