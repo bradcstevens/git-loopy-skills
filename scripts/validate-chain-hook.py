@@ -24,17 +24,29 @@ if not isinstance(hook, dict) or hook.get("version") != 1:
     error(f"{path} must have hook version 1")
 
 hooks = hook.get("hooks")
-subagent_stop = hooks.get("subagentStop") if isinstance(hooks, dict) else None
-if not isinstance(subagent_stop, list) or not subagent_stop:
-    error(f"{path} must define a non-empty subagentStop hook")
+if not isinstance(hooks, dict):
+    error(f"{path} must define hook events")
 
-for entry in subagent_stop:
-    command = entry.get("bash") if isinstance(entry, dict) and entry.get("type") == "command" else None
-    if not isinstance(command, str):
-        error(f"{path} has a subagentStop hook without a command")
-    try:
-        argv = shlex.split(command)
-    except ValueError as exc:
-        error(f"{path} has an invalid command: {exc}")
-    if len(argv) != 2 or argv[1] != "complete" or not os.path.isfile(argv[0]):
-        error(f"{path} must invoke an existing chain script with complete")
+for event, subcommand in (
+    ("subagentStop", "complete"),
+    ("agentStop", "reenter"),
+):
+    entries = hooks.get(event)
+    if not isinstance(entries, list) or not entries:
+        error(f"{path} must define a non-empty {event} hook")
+
+    for entry in entries:
+        command = entry.get("bash") if isinstance(entry, dict) and entry.get("type") == "command" else None
+        if not isinstance(command, str):
+            error(f"{path} has an {event} hook without a command")
+        try:
+            argv = shlex.split(command)
+        except ValueError as exc:
+            error(f"{path} has an invalid command: {exc}")
+        if (
+            len(argv) != 2
+            or argv[0] != ".github/hooks/git-loopy-chain.sh"
+            or argv[1] != subcommand
+            or not os.path.isfile(argv[0])
+        ):
+            error(f"{path} must invoke the repository chain resolver with {subcommand}")

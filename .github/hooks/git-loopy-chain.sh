@@ -44,12 +44,20 @@ candidates=(
 for candidate in "${candidates[@]}"; do
   if [ -x "$candidate" ]; then
     set +e
-    decision="$("$candidate" "$subcommand" <<< "$payload")"
+    if [ "$subcommand" = "reenter" ]; then
+      # agentStop re-entry runs its own script, but still through the logging
+      # path below: exec-ing here would skip the invocation log entirely, which
+      # is the silence that log exists to remove.
+      decision="$(python3 "$(dirname "${BASH_SOURCE[0]}")/git-loopy-agent-stop.py" <<< "$payload")"
+    else
+      decision="$("$candidate" "$subcommand" <<< "$payload")"
+    fi
     chain_status=$?
     set -e
 
     log_invocation "$chain_status" "$decision"
-    [ -z "$decision" ] || printf '%s\n' "$decision"
+    [ -z "$decision" ] || printf '%s
+' "$decision"
     exit "$chain_status"
   fi
 done

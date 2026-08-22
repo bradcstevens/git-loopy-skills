@@ -12,7 +12,7 @@ npx skills update setup-git-loopy-skills
 
 ## What it does
 
-`setup-git-loopy-skills` teaches one repo how the engineering skills should behave in it — where issues live, what the triage labels are called, where the domain docs sit, and how the in-session chain completes — and records those answers as **config** the other skills read.
+`setup-git-loopy-skills` teaches one repo how the engineering skills should behave in it — where issues live, what the triage labels are called, where the domain docs sit, and how the in-session chain completes and re-enters `/next` — and records those answers as **config** the other skills read.
 
 It writes config, it does not hard-code behaviour. The engineering chain assumes three files under `docs/agents/` exist; this skill is the one-time bootstrap that produces them, discovered from your actual repo (`git remote`, existing labels, existing `CONTEXT.md`) and confirmed with you rather than guessed. It is prompt-driven — explore, present what it found, confirm, then write — not a deterministic scaffold.
 
@@ -30,12 +30,12 @@ It leads each with a recommended answer you can accept in a word, and skips what
 - **Triage labels** — asked only if the `triage` skill is installed, and then just: keep the default labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`)? Say no only if your tracker already uses other names, so `triage` applies real ones instead of creating duplicates.
 - **Domain docs** — assumed single-context (one `CONTEXT.md` + `docs/adr/` at the root), which fits almost every repo; it only raises a multi-context map when it spots monorepo signals.
 
-The output is a set of files under `docs/agents/` — `issue-tracker.md`, `domain.md`, and `triage-labels.md` when `triage` is installed — plus an `## Agent skills` block pointing to them in the `AGENTS.md` the repo already uses. It also writes `.github/hooks/git-loopy-chain.json`, a repository-scoped `subagentStop` hook that invokes the installed `/next` chain script's `complete` subcommand. Those files are the shared substrate the rest of the toolkit stands on.
+The output is a set of files under `docs/agents/` — `issue-tracker.md`, `domain.md`, and `triage-labels.md` when `triage` is installed — plus an `## Agent skills` block pointing to them in the `AGENTS.md` the repo already uses. It also writes `.github/hooks/git-loopy-chain.json`, repository-scoped `subagentStop` and `agentStop` hooks that invoke the installed `/next` chain script's `complete` and `reenter` subcommands. Those files are the shared substrate the rest of the toolkit stands on.
 
 The hook resolves to the local installed `next/chain.sh`, so install `/next` alongside this
-skill before setup. Setup previews the exact hook and rewrites the same file on re-runs rather
-than adding duplicates. Because the script path is local to an installation, each clone should
-run setup after installing the skills.
+skill before setup. Setup also copies its bundled `agentStop` decision helper. It previews the
+exact hook and rewrites the same files on re-runs rather than adding duplicates. Because the
+script path is local to an installation, each clone should run setup after installing the skills.
 
 > Copilot silently skips repository hooks in folders outside its `trustedFolders` setting. Add
 > the repository path (or an appropriate parent) to that setting before relying on the chain;

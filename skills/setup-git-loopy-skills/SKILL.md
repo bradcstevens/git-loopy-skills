@@ -11,7 +11,8 @@ Scaffold the per-repo configuration that the engineering skills assume:
 - **Issue tracker** — where issues live (GitHub by default; local markdown is also supported out of the box)
 - **Triage labels** — the strings used for the five canonical triage roles
 - **Domain docs** — where `CONTEXT.md` and ADRs live, and the consumer rules for reading them
-- **Chain hook** — the repository-scoped `subagentStop` hook that completes an in-session route
+- **Chain hooks** — repository-scoped `subagentStop` and `agentStop` hooks that complete an
+  in-session route and re-enter `/next`
 
 This is a prompt-driven skill, not a deterministic script. Explore, present what you found, confirm with the user, then write.
 
@@ -52,6 +53,8 @@ Set `setup_skill_dir` to the directory holding the active `SKILL.md`, then resol
 chain_script="$(cd "$setup_skill_dir/../next" && pwd)/chain.sh"
 [ -f "$chain_script" ] && [ -x "$chain_script" ] ||
   { echo "Install /next beside /setup-git-loopy-skills before enabling the chain." >&2; exit 1; }
+[ -f "$setup_skill_dir/git-loopy-agent-stop.py" ] ||
+  { echo "The bundled agentStop helper is missing; reinstall /setup-git-loopy-skills." >&2; exit 1; }
 ```
 
 Also give this warning before proceeding:
@@ -96,7 +99,8 @@ Show the user a draft of:
 
 - The `## Agent skills` block to add to `AGENTS.md` is being edited (see step 4 for selection rules)
 - The contents of `docs/agents/issue-tracker.md`, `docs/agents/domain.md`, and `docs/agents/triage-labels.md` (the last only when `triage` is installed)
-- `.github/hooks/git-loopy-chain.json`, with the resolved absolute chain-script path and its `complete` argument
+- `.github/hooks/git-loopy-chain.json`, with `complete` for `subagentStop` and `reenter` for
+  `agentStop`
 
 Let them edit before writing.
 
@@ -140,15 +144,18 @@ Then write the docs files using the seed templates in this skill folder as a sta
 For "other" issue trackers, write `docs/agents/issue-tracker.md` from scratch using the user's description.
 
 Create `.github/hooks/git-loopy-chain.json` from the approved draft. It must be valid JSON
-with version `1`, a single `subagentStop` command hook, and a `bash` command that invokes
-`.github/hooks/git-loopy-chain.sh` with `complete`. The hook receives the event payload on
-standard input, so do not add a redirection or a wrapper that changes it.
+with version `1` and two command hooks: `subagentStop` invokes
+`.github/hooks/git-loopy-chain.sh complete` to close the finished run, while `agentStop`
+invokes `.github/hooks/git-loopy-chain.sh reenter` to re-enter `/next` when a completed run
+is unrouted. Both hooks receive their event payload on standard input, so do not add a
+redirection or a wrapper that changes it.
 
 **Do not write an absolute path into the hook.** The hook file is committed, and the chain
 script lives wherever the skill was installed, which differs on every machine and is absent
 in CI. A committed absolute path is therefore correct only on the machine that generated it
 and fails the hook validator everywhere else. Write the small resolver alongside it instead,
-so the committed hook names a repository-relative path that exists in every clone:
+so the committed hook names a repository-relative path that exists in every clone. Also copy
+the `agentStop` decision helper bundled with this skill:
 
 ```bash
 mkdir -p .github/hooks
@@ -182,7 +189,11 @@ candidates=(
 for candidate in "${candidates[@]}"; do
   if [ -x "$candidate" ]; then
     set +e
-    decision="$("$candidate" "$subcommand" <<< "$payload")"
+    if [ "$subcommand" = "reenter" ]; then
+      decision="$(python3 "$(dirname "${BASH_SOURCE[0]}")/git-loopy-agent-stop.py" <<< "$payload")"
+    else
+      decision="$("$candidate" "$subcommand" <<< "$payload")"
+    fi
     chain_status=$?
     set -e
     log_invocation "$chain_status" "$decision"
@@ -264,6 +275,8 @@ with open(log_path, "a", encoding="utf-8") as log_file:
 PY
 LOGGER
 chmod +x .github/hooks/git-loopy-chain.sh .github/hooks/git-loopy-hook-log.sh
+install -m 755 "$setup_skill_dir/git-loopy-agent-stop.py" \
+  .github/hooks/git-loopy-agent-stop.py
 
 # Keep runtime state local to this working copy.
 if ! grep -qxF ".git-loopy/" .gitignore 2>/dev/null; then
@@ -289,6 +302,10 @@ hook = {
         "subagentStop": [{
             "type": "command",
             "bash": ".github/hooks/git-loopy-chain.sh complete",
+        }],
+        "agentStop": [{
+            "type": "command",
+            "bash": ".github/hooks/git-loopy-chain.sh reenter",
         }],
     },
 }

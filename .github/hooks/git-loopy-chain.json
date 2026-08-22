@@ -6,6 +6,12 @@
         "type": "command",
         "bash": ".github/hooks/git-loopy-chain.sh complete"
       }
+    ],
+    "agentStop": [
+      {
+        "type": "command",
+        "bash": ".github/hooks/git-loopy-chain.sh reenter"
+      }
     ]
   }
 }
