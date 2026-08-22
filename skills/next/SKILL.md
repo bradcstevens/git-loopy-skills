@@ -182,11 +182,11 @@ spawn gate. Only when it is the first yes does the procedure select `Subagent`. 
 `/code-review`, `/research`, `/push`, or `/resolving-merge-conflicts`. A `HITL` or non-allowlisted
 action reaches the checkpoint boundary instead; it does not become safe because the chain can run it.
 
-Only for that `Subagent` outcome, consult `chain.sh plan` with the route, target, custom agent,
-runtime, and proposed worktree. Treat its returned JSON decision as authoritative. A `decline` means
-do not spawn; report its reason and leave the action at the checkpoint boundary. A `spawn` proceeds
-to step 7. The script owns the ledger, collision, and concurrency decisions; do not reimplement them
-in this skill.
+Only for that `Subagent` outcome, consult `chain.sh plan` with the route, target, `--safety
+AFK-safe`, custom agent, runtime, and proposed worktree. Treat its returned JSON decision as
+authoritative. A `decline` means do not spawn; report its reason and leave the action at the
+checkpoint boundary. A `spawn` proceeds to step 7. The script owns the ledger, collision, and
+concurrency decisions; do not reimplement them in this skill.
 
 The chain stops and asks a human before an unexplained runaway: it permits a route at most **three**
 times for one target and a target lineage at most **eight** hops deep. A fourth repeat or ninth hop
@@ -232,10 +232,10 @@ the exact skill invocation and names its target in bare words, so the shell
 receives a single argument whether the prompt reaches it through the heredoc
 below or a hand-typed `-p "..."`. Keep every label and explanation outside the
 code fence. For `/compact`, pass the instruction the phase-boundary procedure requires. Match
-`Context` to the flow rules
-above, choosing `Fresh session in a new worktree` when another agent holds the
-primary worktree — and open the prompt with the `git worktree add` that clears
-it, so the agent moves itself before it writes.
+`Context` to the phase-boundary procedure. When another agent holds the primary
+worktree, carry that constraint into the prompt and do not direct work into it.
+If the procedure selects `Fresh session in a new worktree`, open the prompt with
+the `git worktree add` that clears the constraint before the agent writes.
 
 Carry into the prompt every constraint that came from live state and is absent
 from the target's own record: the worktree to work in, the files it shares with
