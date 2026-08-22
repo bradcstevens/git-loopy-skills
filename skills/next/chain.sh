@@ -33,7 +33,9 @@ cleanup() {
   [ -z "$tmp" ] || rm -f "$tmp"
   [ -z "$metadata" ] || rm -f "$metadata"
   if [ "$created_worktree" -eq 1 ]; then
-    git -C "$repo_root" worktree remove --force "$created_worktree_path" >/dev/null 2>&1 || true
+    if ! git -C "$repo_root" worktree remove --force "$created_worktree_path"; then
+      echo "error: could not remove unrecorded worktree: $created_worktree_path" >&2
+    fi
   fi
 }
 trap cleanup EXIT
@@ -46,9 +48,10 @@ release_lock() {
 }
 
 remove_stale_lock() {
-  local stale
+  local stale claim_dir
   stale="$(python3 - "$lock_dir" "${CHAIN_LOCK_STALE_SECONDS:-300}" <<'PY'
 import os
+import subprocess
 import sys
 import time
 
@@ -65,26 +68,40 @@ if stale_after_seconds < 0:
 pid_path = os.path.join(lock_dir, "pid")
 try:
     with open(pid_path, encoding="utf-8") as owner:
-        pid = int(owner.read().strip())
+        pid_text, owner_start = owner.read().rstrip("\n").split("\t", 1)
+        pid = int(pid_text)
 except (FileNotFoundError, ValueError):
-    stale = time.time() - os.stat(lock_dir).st_mtime >= stale_after_seconds
+    try:
+        stale = time.time() - os.stat(lock_dir).st_mtime >= stale_after_seconds
+    except FileNotFoundError:
+        stale = False
 else:
     try:
+        if pid <= 0:
+            raise ProcessLookupError
         os.kill(pid, 0)
     except ProcessLookupError:
         stale = True
     except PermissionError:
         stale = False
     else:
-        stale = False
+        current_start = subprocess.run(
+            ["ps", "-o", "lstart=", "-p", str(pid)],
+            capture_output=True,
+            text=True,
+        ).stdout.strip()
+        stale = current_start != owner_start
 
 print("true" if stale else "false")
 PY
 )"
 
   if [ "$stale" = "true" ]; then
-    rm -f "$lock_dir/pid"
-    rmdir "$lock_dir" 2>/dev/null || true
+    claim_dir="$lock_dir.reclaim.$$.$RANDOM"
+    if mv "$lock_dir" "$claim_dir" 2>/dev/null; then
+      rm -f "$claim_dir/pid"
+      rmdir "$claim_dir"
+    fi
   fi
 }
 
@@ -94,7 +111,7 @@ acquire_lock() {
     sleep 0.01
   done
   lock_acquired=1
-  printf '%s\n' "$$" > "$lock_dir/pid"
+  printf '%s\t%s\n' "$$" "$(ps -o lstart= -p "$$" | xargs)" > "$lock_dir/pid"
 }
 
 remove_worktree() {
@@ -107,6 +124,77 @@ remove_worktree() {
     ledger_root="$(dirname "$(dirname "$ledger")")"
     git -C "$ledger_root" worktree prune
   fi
+}
+
+ledger_has_open_worktree() {
+  python3 - "$ledger" "$1" <<'PY'
+import json
+import os
+import sys
+
+ledger, worktree = sys.argv[1:]
+worktree = os.path.realpath(os.path.abspath(worktree))
+if not os.path.exists(ledger):
+    raise SystemExit(1)
+
+with open(ledger, encoding="utf-8") as ledger_file:
+    for raw_line in ledger_file:
+        line = raw_line.strip()
+        if not line:
+            continue
+        row = json.loads(line)
+        row_worktree = row.get("worktree")
+        if (
+            isinstance(row_worktree, str)
+            and row_worktree
+            and os.path.realpath(os.path.abspath(row_worktree)) == worktree
+            and not row.get("finish_time")
+        ):
+            raise SystemExit(0)
+
+raise SystemExit(1)
+PY
+}
+
+mark_record_failed() {
+  local session_id="$1" agent_id="$2"
+
+  tmp="$(mktemp "$(dirname "$ledger")/.subagents.XXXXXX")"
+  python3 - "$ledger" "$tmp" "$session_id" "$agent_id" <<'PY'
+import datetime
+import json
+import sys
+
+ledger_path, output_path, session_id, agent_id = sys.argv[1:]
+with open(ledger_path, encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger if line.strip()]
+
+matches = [
+    row
+    for row in rows
+    if (
+        row.get("session_id") == session_id
+        and row.get("agent_id") == agent_id
+        and not row.get("finish_time")
+    )
+]
+if len(matches) != 1:
+    print("error: could not close failed worktree reservation", file=sys.stderr)
+    raise SystemExit(2)
+
+matches[0]["finish_time"] = (
+    datetime.datetime.now(datetime.timezone.utc)
+    .isoformat(timespec="seconds")
+    .replace("+00:00", "Z")
+)
+matches[0]["outcome"] = "failed"
+
+with open(output_path, "w", encoding="utf-8") as output:
+    for row in rows:
+        output.write(json.dumps(row, separators=(",", ":")) + "\n")
+PY
+  mv "$tmp" "$ledger"
+  tmp=""
 }
 
 plan() {
@@ -135,13 +223,24 @@ plan() {
     ledger="$(git rev-parse --show-toplevel)/.git-loopy/subagents.jsonl"
   fi
 
-  python3 - "$ledger" "$route" "$target" "$safety" "$agent" "$model" "$effort" "$context_tier" "$worktree" <<'PY'
+  local worktree_held=0 collision_status
+  if ledger_has_open_worktree "$worktree"; then
+    worktree_held=1
+  else
+    collision_status=$?
+    if [ "$collision_status" -ne 1 ]; then
+      return "$collision_status"
+    fi
+  fi
+
+  python3 - "$ledger" "$route" "$target" "$safety" "$agent" "$model" "$effort" "$context_tier" "$worktree" "$worktree_held" <<'PY'
 import json
 import os
 import sys
 
-ledger, route, target, safety, agent, model, effort, context_tier, worktree = sys.argv[1:]
+ledger, route, target, safety, agent, model, effort, context_tier, worktree, worktree_held = sys.argv[1:]
 worktree = os.path.realpath(os.path.abspath(worktree))
+worktree_held = worktree_held == "1"
 allowlisted_routes = {
     "/implement",
     "/code-review",
@@ -166,7 +265,7 @@ elif safety != "AFK-safe":
     }
 else:
     in_flight = False
-    worktree_held = False
+    target_failed = False
     if os.path.exists(ledger):
         with open(ledger, encoding="utf-8") as ledger_file:
             for raw_line in ledger_file:
@@ -177,20 +276,20 @@ else:
                 if row["target"] == target and not row.get("finish_time"):
                     in_flight = True
                     break
-                row_worktree = row.get("worktree")
-                if (
-                    isinstance(row_worktree, str)
-                    and row_worktree
-                    and os.path.realpath(os.path.abspath(row_worktree)) == worktree
-                    and not row.get("finish_time")
-                ):
-                    worktree_held = True
-                    break
+                if row["target"] == target and row.get("outcome") == "failed":
+                    target_failed = True
 
     if in_flight:
         decision = {
             "decision": "decline",
             "reason": "target-in-flight",
+            "route": route,
+            "target": target,
+        }
+    elif target_failed:
+        decision = {
+            "decision": "decline",
+            "reason": "target-failed",
             "route": route,
             "target": target,
         }
@@ -257,38 +356,16 @@ record() {
 
   acquire_lock
 
-  if ! python3 - "$ledger" "$worktree" <<'PY'
-import json
-import os
-import sys
-
-ledger, worktree = sys.argv[1:]
-if not os.path.exists(ledger):
-    raise SystemExit(0)
-
-with open(ledger, encoding="utf-8") as ledger_file:
-    for raw_line in ledger_file:
-        line = raw_line.strip()
-        if not line:
-            continue
-        row = json.loads(line)
-        row_worktree = row.get("worktree")
-        if (
-            isinstance(row_worktree, str)
-            and row_worktree
-            and os.path.realpath(os.path.abspath(row_worktree)) == worktree
-            and not row.get("finish_time")
-        ):
-            print(f"error: worktree-in-flight: {worktree}", file=sys.stderr)
-            raise SystemExit(1)
-PY
-  then
+  local collision_status
+  if ledger_has_open_worktree "$worktree"; then
+    echo "error: worktree-in-flight: $worktree" >&2
     exit 1
+  else
+    collision_status=$?
+    if [ "$collision_status" -ne 1 ]; then
+      return "$collision_status"
+    fi
   fi
-
-  git -C "$repo_root" worktree add --detach "$worktree" HEAD
-  created_worktree=1
-  created_worktree_path="$worktree"
 
   tmp="$(mktemp "$ledger_dir/.subagents.XXXXXX")"
   row="$(python3 - "$route" "$target" "$session_id" "$agent_id" "$agent_type" "$agent_name" "$spawn_time" "$worktree" "$chain_depth" <<'PY'
@@ -323,6 +400,15 @@ PY
   fi
   mv "$tmp" "$ledger"
   tmp=""
+  if [ -n "${CHAIN_RECORD_PAUSE_BEFORE_WORKTREE:-}" ]; then
+    sleep "$CHAIN_RECORD_PAUSE_BEFORE_WORKTREE"
+  fi
+  if ! git -C "$repo_root" worktree add --detach "$worktree" HEAD; then
+    mark_record_failed "$session_id" "$agent_id"
+    exit 1
+  fi
+  created_worktree=1
+  created_worktree_path="$worktree"
   created_worktree=0
   release_lock
 }

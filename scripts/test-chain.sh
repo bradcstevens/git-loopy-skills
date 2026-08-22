@@ -374,7 +374,39 @@ fi
 
 recovered_target="$(plan /implement issue-stale AFK-safe implement-agent gpt-5.6-terra high default "$tmp_dir/plan-recovered")"
 assert_plan "target after recovery" "$recovered_target" \
-  '{"decision":"spawn","route":"/implement","target":"issue-stale","agent":"implement-agent","model":"gpt-5.6-terra","effort":"high","context_tier":"default","worktree":"'"$tmp_dir"'/plan-recovered"}'
+  '{"decision":"decline","reason":"target-failed","route":"/implement","target":"issue-stale"}'
+
+reservation_ledger="$tmp_dir/.git-loopy/reservation-crash.jsonl"
+CHAIN_RECORD_PAUSE_BEFORE_WORKTREE=10 "$CHAIN" record \
+  --ledger "$reservation_ledger" \
+  --route implement \
+  --target issue-reservation-crash \
+  --session-id session-reservation-crash \
+  --agent-id agent-reservation-crash \
+  --agent-type implement-agent \
+  --agent-name implement-agent \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$tmp_dir/worktree-reservation-crash" \
+  --chain-depth 1 &
+reservation_crash_pid=$!
+for _ in $(seq 1 100); do
+  grep -q reservation-crash "$reservation_ledger" 2>/dev/null && break
+  sleep 0.01
+done
+if ! grep -q reservation-crash "$reservation_ledger" 2>/dev/null; then
+  err "reservation crash fixture did not record its worktree reservation"
+else
+  kill -KILL "$reservation_crash_pid"
+  wait "$reservation_crash_pid" 2>/dev/null || true
+fi
+
+if [ -e "$tmp_dir/worktree-reservation-crash" ]; then
+  err "reservation crash fixture created its worktree before the test could interrupt it"
+fi
+
+reservation_recovery="$("$CHAIN" recover --ledger "$reservation_ledger" --stale-after-seconds 60 --now 2026-08-22T00:05:00Z)"
+assert_plan "uncreated worktree recovery" "$reservation_recovery" \
+  '{"recovered":1,"targets":["issue-reservation-crash"]}'
 
 lock_crash_ledger="$tmp_dir/.git-loopy/lock-crash.jsonl"
 CHAIN_RECORD_PAUSE_BEFORE_COMMIT=10 "$CHAIN" record \
