@@ -42,9 +42,9 @@ An [implement](./implement.md) route is the exception, because its ticket alread
 - A recommendation that opens a fresh session arrives as a runnable `copilot` command, not as flags you assemble yourself.
 - An `/implement` recommendation arrives with its background agent already running, and its resume command instead of a `copilot` command to paste.
 - The recommendation names whether to continue in this context or start a fresh session, matching the flow's own rules: grill → spec → tickets stays in one context, each `/implement` ticket starts in a new one.
-- In a repo that was never configured, it routes to [setup-agent-skills](./setup-git-loopy-skills.md) and nothing else.
+- In a repo that was never configured, it routes to [setup-git-loopy-skills](./setup-git-loopy-skills.md) and nothing else.
 - When the work is genuinely finished, it says so instead of inventing a next step.
 
 ## Where it fits
 
-`next` is the **router** — the standalone map that sits over the whole set. It is the node every other docs page links back to, so it never sits *in* a chain; it points *into* every chain. From here you'll most often land on [grill-with-docs](./grill-with-docs.md), the head of the main flow, or [triage](./triage.md), the on-ramp for work you didn't create. Its one hard prerequisite is [setup-agent-skills](./setup-git-loopy-skills.md), because the tracker config that skill writes is the state `next` reads. When even the router's own picture is stale, its [Source](https://github.com/bradcstevens/git-loopy-skills/tree/main/skills/next) is the map of record.
+`next` is the **router** — the standalone map that sits over the whole set. It is the node every other docs page links back to, so it never sits *in* a chain; it points *into* every chain. From here you'll most often land on [grill-with-docs](./grill-with-docs.md), the head of the main flow, or [triage](./triage.md), the on-ramp for work you didn't create. Its one hard prerequisite is [setup-git-loopy-skills](./setup-git-loopy-skills.md), because the tracker config that skill writes is the state `next` reads. When even the router's own picture is stale, its [Source](https://github.com/bradcstevens/git-loopy-skills/tree/main/skills/next) is the map of record.

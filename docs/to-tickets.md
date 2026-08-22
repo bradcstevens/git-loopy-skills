@@ -24,7 +24,7 @@ Reach for it once you have an agreed plan or a written spec and you want it spli
 
 ## Prerequisites
 
-`to-tickets` publishes into your issue tracker, so [setup-agent-skills](./setup-git-loopy-skills.md) must have configured the tracker and its triage label vocabulary for this repo first. On a real tracker it applies the ready-for-agent label as it publishes.
+`to-tickets` publishes into your issue tracker, so [setup-git-loopy-skills](./setup-git-loopy-skills.md) must have configured the tracker and its triage label vocabulary for this repo first. On a real tracker it applies the ready-for-agent label as it publishes.
 
 ## One artifact, two readings
 

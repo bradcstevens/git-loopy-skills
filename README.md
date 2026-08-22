@@ -87,7 +87,7 @@ situation matches. The rest you invoke by name.
 | push | `/push` | Publish current work by staging intended changes, committing, pushing, and opening a pull request when needed. |
 | [research](docs/research.md) | automatic | Investigate a question against high-trust primary sources and capture the findings as a Markdown file in the repo. |
 | [resolving-merge-conflicts](docs/resolving-merge-conflicts.md) | automatic | Use when you need to resolve an in-progress git merge/rebase conflict. |
-| setup-git-loopy-skills | `/setup-git-loopy-skills` | Configure this repo for the engineering skills — set up its issue tracker, triage label vocabulary, and domain doc layout. |
+| [setup-git-loopy-skills](docs/setup-git-loopy-skills.md) | `/setup-git-loopy-skills` | Configure this repo for the engineering skills — set up its issue tracker, triage label vocabulary, and domain doc layout. |
 | skill-router | `/skill-router` | Ask which skill or flow fits your situation. |
 | [tdd](docs/tdd.md) | automatic | Test-driven development. |
 | [teach](docs/teach.md) | `/teach` | Teach the user a new skill or concept, within this workspace. |
@@ -160,8 +160,8 @@ before sourcing or per invocation; `GIT_LOOPY_CLI` overrides which CLI is launch
 engineering set here (the idea → ship flow, the grill/spec/tickets/implement/review chain, and the
 deep-module and domain vocabulary that runs underneath it) is primarily inspired by that repo, which
 is MIT licensed. Skills have been renamed, rewritten, and extended for this toolchain — most
-visibly, its `/ask` router is replaced by the state-reading [`next`](docs/next.md), and
-`/setup-git-loopy-skills` by [`setup-agent-skills`](docs/setup-git-loopy-skills.md). Anything Azure,
+visibly, its `/ask` router is replaced by the state-reading [`next`](docs/next.md), and its
+`/setup-agent-skills` by [`setup-git-loopy-skills`](docs/setup-git-loopy-skills.md). Anything Azure,
 Microsoft, or Copilot-CLI specific originates here rather than upstream.
 
 **Downstream consumer — [git-loopy](https://github.com/bradcstevens/git-loopy).** This repo is the

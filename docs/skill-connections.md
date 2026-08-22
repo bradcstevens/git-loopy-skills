@@ -422,7 +422,7 @@ A candidate picked here becomes an *idea* for [`grill-with-docs`](./grill-with-d
 
 ## 9. Bootstrap
 
-[`setup-agent-skills`](./setup-git-loopy-skills.md) runs **once per repo**, before anything else. It
+[`setup-git-loopy-skills`](./setup-git-loopy-skills.md) runs **once per repo**, before anything else. It
 writes the config that four other skills read.
 
 ```mermaid
@@ -516,7 +516,7 @@ These have no workflow edges. Reach for them directly; they neither route onward
 | --- | --- | --- | --- |
 | `next` | 22 routes | routes to | The earliest unresolved gate decides which |
 | `next` | `handoff` | runs | The chosen route is `/implement` |
-| `next` | `setup-agent-skills` | reads config from | `docs/agents/issue-tracker.md` is missing |
+| `next` | `setup-git-loopy-skills` | reads config from | `docs/agents/issue-tracker.md` is missing |
 | `handoff` | `next` | routes to | Runs `/next` first if it is not the last output |
 | `handoff` | fresh session | routes to | Launches the sized runtime in the background |
 | `grilling` | `next` | routes to | At the conclusion of every grilling session |
@@ -546,7 +546,7 @@ These have no workflow edges. Reach for them directly; they neither route onward
 | `code-review` | `microsoft-docs`, `microsoft-code-reference` | runs inside | The diff touches Microsoft technologies |
 | `push` | `resolving-merge-conflicts` | routes to | The remote head moved |
 | `resolving-merge-conflicts` | `code-review` | routes to | A resolved head is a new candidate |
-| `setup-agent-skills` | `triage`, `domain-modeling` | reads config from | Writes the labels and domain layout they use |
+| `setup-git-loopy-skills` | `triage`, `domain-modeling` | reads config from | Writes the labels and domain layout they use |
 | `azure-mcaps-resource-deployment` | `microsoft-foundry` | routes to | Creating or configuring a Foundry resource |
 | eleven producers | the ticket | publishes to | On completing a transition they own |
 
@@ -568,4 +568,4 @@ These have no workflow edges. Reach for them directly; they neither route onward
 ## See also
 
 - [`next`](./next.md) — the router that picks the edge to walk
-- [`setup-agent-skills`](./setup-git-loopy-skills.md) — the config every workflow edge depends on
+- [`setup-git-loopy-skills`](./setup-git-loopy-skills.md) — the config every workflow edge depends on

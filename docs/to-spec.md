@@ -24,7 +24,7 @@ Reach for it once a change has been talked through and the domain language is se
 
 ## Prerequisites
 
-`to-spec` publishes into your issue tracker, so [setup-agent-skills](./setup-git-loopy-skills.md) must have configured the tracker and triage labels for this repo first. It applies the `ready-for-agent` label itself — no separate triage pass needed.
+`to-spec` publishes into your issue tracker, so [setup-git-loopy-skills](./setup-git-loopy-skills.md) must have configured the tracker and triage labels for this repo first. It applies the `ready-for-agent` label itself — no separate triage pass needed.
 
 ## What the spec includes
 

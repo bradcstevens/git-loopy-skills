@@ -1,18 +1,18 @@
 Quickstart:
 
 ```bash
-npx skills add bradcstevens/git-loopy-skills --skill=setup-agent-skills
+npx skills add bradcstevens/git-loopy-skills --skill=setup-git-loopy-skills
 ```
 
 ```bash
-npx skills update setup-agent-skills
+npx skills update setup-git-loopy-skills
 ```
 
 [Source](https://github.com/bradcstevens/git-loopy-skills/tree/main/skills/setup-git-loopy-skills)
 
 ## What it does
 
-`setup-agent-skills` teaches one repo how the engineering skills should behave in it — where issues live, what the triage labels are called, and where the domain docs sit — and records those answers as **config** the other skills read.
+`setup-git-loopy-skills` teaches one repo how the engineering skills should behave in it — where issues live, what the triage labels are called, and where the domain docs sit — and records those answers as **config** the other skills read.
 
 It writes config, it does not hard-code behaviour. The engineering chain assumes three files under `docs/agents/` exist; this skill is the one-time bootstrap that produces them, discovered from your actual repo (`git remote`, existing labels, existing `CONTEXT.md`) and confirmed with you rather than guessed. It is prompt-driven — explore, present what it found, confirm, then write — not a deterministic scaffold.
 
@@ -40,4 +40,4 @@ The output is a set of files under `docs/agents/` — `issue-tracker.md`, `domai
 
 ## Where it fits
 
-`setup-agent-skills` is a **run-once setup** — the foundation the whole engineering set stands on, not a step you repeat. Its neighbours are the skills that read what it writes: [triage](./triage.md), because it applies the label vocabulary configured here, and [to-spec](./to-spec.md) / [to-tickets](./to-tickets.md), because they publish into the issue tracker configured here. Run it first; everything downstream assumes it has. When you're unsure which skill or flow fits, [next](./next.md) routes you.
+`setup-git-loopy-skills` is a **run-once setup** — the foundation the whole engineering set stands on, not a step you repeat. Its neighbours are the skills that read what it writes: [triage](./triage.md), because it applies the label vocabulary configured here, and [to-spec](./to-spec.md) / [to-tickets](./to-tickets.md), because they publish into the issue tracker configured here. Run it first; everything downstream assumes it has. When you're unsure which skill or flow fits, [next](./next.md) routes you.
