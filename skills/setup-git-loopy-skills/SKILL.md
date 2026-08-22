@@ -140,28 +140,55 @@ Then write the docs files using the seed templates in this skill folder as a sta
 For "other" issue trackers, write `docs/agents/issue-tracker.md` from scratch using the user's description.
 
 Create `.github/hooks/git-loopy-chain.json` from the approved draft. It must be valid JSON
-with version `1`, a single `subagentStop` command hook, and a `bash` command that invokes the
-resolved absolute `next/chain.sh` with `complete`. The hook receives the event payload on
-standard input, so do not add a redirection or a wrapper that changes it. Use Python's
-`json` and `shlex` modules to quote the resolved path when building the draft rather than
-hand-escaping it.
+with version `1`, a single `subagentStop` command hook, and a `bash` command that invokes
+`.github/hooks/git-loopy-chain.sh` with `complete`. The hook receives the event payload on
+standard input, so do not add a redirection or a wrapper that changes it.
+
+**Do not write an absolute path into the hook.** The hook file is committed, and the chain
+script lives wherever the skill was installed, which differs on every machine and is absent
+in CI. A committed absolute path is therefore correct only on the machine that generated it
+and fails the hook validator everywhere else. Write the small resolver alongside it instead,
+so the committed hook names a repository-relative path that exists in every clone:
+
+```bash
+mkdir -p .github/hooks
+cat > .github/hooks/git-loopy-chain.sh <<'RESOLVER'
+#!/usr/bin/env bash
+set -euo pipefail
+subcommand="${1:?usage: git-loopy-chain.sh <subcommand>}"
+candidates=(
+  "${COPILOT_HOME:-$HOME/.copilot}/skills/next/chain.sh"
+  "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/skills/next/chain.sh"
+)
+for candidate in "${candidates[@]}"; do
+  if [ -x "$candidate" ]; then
+    exec "$candidate" "$subcommand"
+  fi
+done
+echo "git-loopy chain hook: no chain.sh found; looked in ${candidates[*]}" >&2
+exit 0
+RESOLVER
+chmod +x .github/hooks/git-loopy-chain.sh
+```
+
+The resolver exits `0` when it finds nothing, because a non-zero hook would fail and disrupt
+an agent that has nothing to do with the chain.
 
 Build the draft once, then display that exact file:
 
 ```bash
 hook_draft="$(mktemp "${TMPDIR:-/tmp}/git-loopy-chain.XXXXXX")"
-python3 - "$chain_script" "$hook_draft" <<'PY'
+python3 - "$hook_draft" <<'PY'
 import json
-import shlex
 import sys
 
-chain_script, hook_draft = sys.argv[1:]
+hook_draft = sys.argv[1]
 hook = {
     "version": 1,
     "hooks": {
         "subagentStop": [{
             "type": "command",
-            "bash": f"{shlex.quote(chain_script)} complete",
+            "bash": ".github/hooks/git-loopy-chain.sh complete",
         }],
     },
 }
@@ -180,10 +207,11 @@ mv "$hook_draft" .github/hooks/git-loopy-chain.json
 ```
 
 Always write the same `git-loopy-chain.json` path. If it already exists, replace only that
-file with the approved hook rather than creating another hook file. The hook belongs in the
-repository and should be committed with the other setup output. Re-running setup on another
-clone updates the absolute installed-script path for that clone. If the user rejects the draft,
-delete `"$hook_draft"` and leave the existing hook unchanged.
+file with the approved hook rather than creating another hook file. Both the hook and its
+resolver belong in the repository and should be committed with the other setup output. They
+carry no machine-specific paths, so re-running setup on another clone reproduces the same two
+files rather than churning them. If the user rejects the draft, delete `"$hook_draft"` and
+leave the existing hook unchanged.
 
 ### 5. Done
 
