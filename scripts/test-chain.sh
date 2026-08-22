@@ -67,6 +67,9 @@ fi
 if [ ! -d "$tmp_dir/worktree-1/.git" ] && [ ! -f "$tmp_dir/worktree-1/.git" ]; then
   err "record did not create the worktree before recording the spawn"
 fi
+if [ "$(git -C "$tmp_dir/worktree-1" rev-parse HEAD)" != "$(git -C "$tmp_dir" rev-parse HEAD)" ]; then
+  err "record did not create the worktree at the spawning commit"
+fi
 
 "$CHAIN" record \
   --ledger "$ledger" \
@@ -84,7 +87,7 @@ if [ "$(wc -l < "$ledger" | tr -d ' ')" -ne 2 ]; then
   err "record did not append a second row"
 fi
 
-CHAIN_RECORD_PAUSE_BEFORE_COMMIT=10 "$CHAIN" record \
+CHAIN_RECORD_PAUSE_BEFORE_COMMIT=1 "$CHAIN" record \
   --ledger "$ledger" \
   --route push \
   --target issue-4 \
@@ -268,6 +271,33 @@ if [ -e "$tmp_dir/worktree-published" ]; then
   err "published completion did not remove its worktree"
 fi
 
+default_worktree="$tmp_dir/worktree-default-ledger"
+(
+  cd "$tmp_dir"
+  "$CHAIN" record \
+    --route implement \
+    --target issue-default-ledger \
+    --session-id session-default-ledger \
+    --agent-id agent-default-ledger \
+    --agent-type implement-agent \
+    --agent-name implement-agent \
+    --spawn-time 2026-08-22T00:00:00Z \
+    --worktree "$default_worktree" \
+    --chain-depth 1
+)
+
+default_completion_output="$(
+  cd "$default_worktree"
+  PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete \
+    <<< "$(completion_payload agent-default-ledger 2026-08-22T00:11:00Z implement-agent implement-agent session-default-ledger)"
+)"
+assert_plan "linked worktree completion" "$default_completion_output" \
+  '{"continue":true,"outcome":"published","target":"issue-default-ledger"}'
+
+if [ -e "$default_worktree" ]; then
+  err "completion from a linked worktree did not remove its worktree"
+fi
+
 "$CHAIN" record \
   --ledger "$complete_ledger" \
   --route code-review \
@@ -302,6 +332,11 @@ then
   err "no-evidence completion did not close the matching ledger row"
 fi
 
+plan_ledger="$complete_ledger"
+no_evidence_target="$(plan /implement issue-no-evidence AFK-safe implement-agent gpt-5.6-terra high default "$tmp_dir/plan-no-evidence")"
+assert_plan "no-evidence target" "$no_evidence_target" \
+  '{"decision":"decline","reason":"target-failed","route":"/implement","target":"issue-no-evidence"}'
+
 "$CHAIN" record \
   --ledger "$complete_ledger" \
   --route implement \
@@ -326,7 +361,7 @@ if ! cmp -s "$complete_ledger.before-unmatched" "$complete_ledger"; then
   err "unmatched completion modified the ledger"
 fi
 
-recovery_ledger="$tmp_dir/.git-loopy/recovery-subagents.jsonl"
+recovery_ledger="$tmp_dir/recovery-subagents.jsonl"
 plan_ledger="$recovery_ledger"
 stale_worktree="$tmp_dir/worktree-stale"
 "$CHAIN" record \
@@ -377,7 +412,7 @@ assert_plan "target after recovery" "$recovered_target" \
   '{"decision":"decline","reason":"target-failed","route":"/implement","target":"issue-stale"}'
 
 reservation_ledger="$tmp_dir/.git-loopy/reservation-crash.jsonl"
-CHAIN_RECORD_PAUSE_BEFORE_WORKTREE=10 "$CHAIN" record \
+CHAIN_RECORD_PAUSE_BEFORE_WORKTREE=1 "$CHAIN" record \
   --ledger "$reservation_ledger" \
   --route implement \
   --target issue-reservation-crash \
@@ -409,7 +444,7 @@ assert_plan "uncreated worktree recovery" "$reservation_recovery" \
   '{"recovered":1,"targets":["issue-reservation-crash"]}'
 
 lock_crash_ledger="$tmp_dir/.git-loopy/lock-crash.jsonl"
-CHAIN_RECORD_PAUSE_BEFORE_COMMIT=10 "$CHAIN" record \
+CHAIN_RECORD_PAUSE_BEFORE_COMMIT=1 "$CHAIN" record \
   --ledger "$lock_crash_ledger" \
   --route implement \
   --target issue-lock-crash \
@@ -450,6 +485,24 @@ fi
 
 if [ -e "$lock_crash_ledger.lock" ]; then
   err "record did not recover the SIGKILL-stranded ledger lock"
+fi
+
+pidless_lock_ledger="$tmp_dir/.git-loopy/pidless-lock.jsonl"
+mkdir -p "$pidless_lock_ledger.lock"
+CHAIN_LOCK_STALE_SECONDS=0 "$CHAIN" record \
+  --ledger "$pidless_lock_ledger" \
+  --route implement \
+  --target issue-pidless-lock \
+  --session-id session-pidless-lock \
+  --agent-id agent-pidless-lock \
+  --agent-type implement-agent \
+  --agent-name implement-agent \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$tmp_dir/worktree-pidless-lock" \
+  --chain-depth 1
+
+if [ -e "$pidless_lock_ledger.lock" ]; then
+  err "record did not recover the PID-less stale ledger lock"
 fi
 
 exit "$fail"

@@ -47,6 +47,11 @@ release_lock() {
   lock_acquired=0
 }
 
+repository_root() {
+  git worktree list --porcelain |
+    awk '/^worktree / { sub(/^worktree /, ""); print; exit }'
+}
+
 remove_stale_lock() {
   local stale claim_dir
   stale="$(python3 - "$lock_dir" "${CHAIN_LOCK_STALE_SECONDS:-300}" <<'PY'
@@ -121,7 +126,7 @@ remove_worktree() {
   if [ -e "$worktree" ]; then
     git -C "$worktree" worktree remove --force "$worktree"
   else
-    ledger_root="$(dirname "$(dirname "$ledger")")"
+    ledger_root="$(repository_root)"
     git -C "$ledger_root" worktree prune
   fi
 }
@@ -220,7 +225,7 @@ plan() {
     [ -n "$worktree" ] || usage
 
   if [ -z "$ledger" ]; then
-    ledger="$(git rev-parse --show-toplevel)/.git-loopy/subagents.jsonl"
+    ledger="$(repository_root)/.git-loopy/subagents.jsonl"
   fi
 
   local worktree_held=0 collision_status
@@ -276,7 +281,7 @@ else:
                 if row["target"] == target and not row.get("finish_time"):
                     in_flight = True
                     break
-                if row["target"] == target and row.get("outcome") == "failed":
+                if row["target"] == target and row.get("outcome") in {"failed", "no-evidence"}:
                     target_failed = True
 
     if in_flight:
@@ -344,13 +349,14 @@ record() {
     echo "error: --chain-depth must be a non-negative integer" >&2
     exit 2
   }
-  local ledger_dir row
+  local ledger_dir row spawn_commit
   if [ -z "$ledger" ]; then
-    ledger="$(git rev-parse --show-toplevel)/.git-loopy/subagents.jsonl"
+    ledger="$(repository_root)/.git-loopy/subagents.jsonl"
   fi
   ledger_dir="$(dirname "$ledger")"
   lock_dir="$ledger.lock"
-  repo_root="$(git rev-parse --show-toplevel)"
+  spawn_commit="$(git rev-parse HEAD)"
+  repo_root="$(repository_root)"
   worktree="$(python3 -c 'import os; import sys; print(os.path.realpath(os.path.abspath(sys.argv[1])))' "$worktree")"
   mkdir -p "$ledger_dir"
 
@@ -403,7 +409,7 @@ PY
   if [ -n "${CHAIN_RECORD_PAUSE_BEFORE_WORKTREE:-}" ]; then
     sleep "$CHAIN_RECORD_PAUSE_BEFORE_WORKTREE"
   fi
-  if ! git -C "$repo_root" worktree add --detach "$worktree" HEAD; then
+  if ! git -C "$repo_root" worktree add --detach "$worktree" "$spawn_commit"; then
     mark_record_failed "$session_id" "$agent_id"
     exit 1
   fi
@@ -422,7 +428,7 @@ complete() {
   done
 
   if [ -z "$ledger" ]; then
-    ledger="$(git rev-parse --show-toplevel)/.git-loopy/subagents.jsonl"
+    ledger="$(repository_root)/.git-loopy/subagents.jsonl"
   fi
 
   local ledger_dir result
@@ -660,7 +666,7 @@ recover() {
   }
 
   if [ -z "$ledger" ]; then
-    ledger="$(git rev-parse --show-toplevel)/.git-loopy/subagents.jsonl"
+    ledger="$(repository_root)/.git-loopy/subagents.jsonl"
   fi
 
   local ledger_dir result
