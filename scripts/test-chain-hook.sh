@@ -23,10 +23,15 @@ setup_agent_stop_helper="$REPO/skills/setup-git-loopy-skills/git-loopy-agent-sto
 if ! grep -Fq 'setup-git-loopy-skills' "$agent_stop_helper"; then
   err "this repository hook does not use the setup helper as its canonical implementation"
 fi
-if ! grep -Fq \
-  'exec python3 "$(dirname "${BASH_SOURCE[0]}")/git-loopy-agent-stop.py"' \
+# The reenter branch must invoke the bundled helper, but must not exec away:
+# exec-ing skips the invocation log, which is the silence that log removes.
+if ! grep -Fq 'git-loopy-agent-stop.py' \
   "$REPO/skills/setup-git-loopy-skills/SKILL.md"; then
   err "setup would not route agentStop through its bundled helper"
+fi
+if grep -Fq 'exec python3 "$(dirname "${BASH_SOURCE[0]}")/git-loopy-agent-stop.py"' \
+  "$REPO/skills/setup-git-loopy-skills/SKILL.md"; then
+  err "setup execs the agentStop helper, bypassing the hook invocation log"
 fi
 
 python3 - "$REPO/.github/hooks/git-loopy-chain.json" "$hook" <<'PY'
