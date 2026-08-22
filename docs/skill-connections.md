@@ -24,7 +24,8 @@ Every edge in this document is one of five kinds. Read the arrows with these in 
 its caller. It also routes onward and has the spawned route publish durable evidence, like
 **routes to** and **publishes to**, while the ledger correlates that completion. It does neither by
 ending the caller's session nor by only writing a ticket comment. The fifth kind makes those
-combined lifecycle and ownership semantics explicit.
+combined lifecycle and ownership semantics explicit. Nor is it **reads config from**: spawning
+starts and owns executable work, rather than consuming configuration another skill wrote.
 
 One skill is a hub. [`next`](./next.md) is the **router** — it reads live state (tracker, branch,
 diff, worktrees) and names one action. When the AFK-safe chain gate approves, it reserves and
