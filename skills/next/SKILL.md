@@ -11,9 +11,9 @@ tracker unchanged.
 
 ## 1. Refresh the durable state
 
-Locate `docs/agents/issue-tracker.md` and `.github/hooks/git-loopy-chain.json`. If either is
-missing, the repository has not been configured for these skills: make
-`/setup-git-loopy-skills` the sole candidate. Otherwise read the file and refresh the
+Locate `docs/agents/issue-tracker.md` and `.github/hooks/git-loopy-chain.json`. A missing hook
+means the repository is not configured for these skills: make `/setup-git-loopy-skills` the sole
+candidate. Otherwise read the file and refresh the
 workstream referenced by the conversation from its configured tracker: issue or PR state,
 labels, assignees, comments, sub-issues, and blockers. Inspect the local branch, commits, and
 diff when review or publication may be next.
@@ -170,7 +170,41 @@ This step is complete when the action is marked `HITL` or `AFK-safe` and the
 task type, model, effort, and context tier are each named, with the pair traced
 either to a `task-type:` line in the routing map or to the fallback table.
 
-## 5. Return the recommendation
+## 5. Apply the phase-boundary procedure and chain gate
+
+At every intentional phase boundary, read the co-installed
+[`PHASE-BOUNDARIES.md`](PHASE-BOUNDARIES.md) and work its questions in order; the first yes wins:
+
+1. Can this session continue because the next phase needs this one as a primary source, or there is
+   enough smart-zone context?
+2. Is this context irrelevant to the next phase, so `/clear` is right?
+3. Does work need portability to a new harness, directory, colleague, or a mid-phase side task, so
+   `/handoff` is right?
+4. Can the task be done AFK, tightly scoped with no steering?
+5. Otherwise, `/compact`.
+
+Question 4 is the reasoning behind the chain's spawn gate. A yes marks the action `AFK-safe`, but
+the chain may spawn it only when it is also allowlisted: `/implement`, `/code-review`, `/research`,
+`/push`, or `/resolving-merge-conflicts`. An allowlisted route that is `HITL` reaches the checkpoint
+boundary instead; it does not become safe because the chain can run it.
+
+For an `AFK-safe` allowlisted action, consult `chain.sh plan` with the route, target, custom agent,
+runtime, and proposed worktree. Treat its returned JSON decision as authoritative. A `decline` means
+do not spawn; report its reason and leave the action at the checkpoint boundary. A `spawn` means
+reserve the returned worktree, launch the returned custom agent as a background **in-session
+subagent**, then bind its runtime identity to the reservation. The script owns the ledger, collision,
+and concurrency decisions; do not reimplement them in this skill.
+
+The chain stops and asks a human before an unexplained runaway: it permits a route at most **three**
+times for one target and a target lineage at most **eight** hops deep. A fourth repeat or ninth hop
+is declined. `subagentStop` closes the finished run's ledger row; `agentStop`, not `subagentStop`,
+carries re-entry into `/next`.
+
+The chain and `/handoff` have different lifetimes. The chain runs an in-session subagent alongside
+this session and ends with it. `/handoff` launches detached work that outlives this session. Keep
+`/handoff` separate; never use it as the chain's launcher.
+
+## 6. Return the recommendation
 
 Use this shape:
 
@@ -178,7 +212,7 @@ Use this shape:
 1. **<concrete action>** - `/<route>` - <HITL | AFK-safe>
 Target: <linked issue, PR, map, spec, branch, document, or current conversation>
 State: <Ready | Blocked by ...>
-Context: <Continue here | Fresh session | Fresh session in a new worktree>
+Context: <Continue here | Fresh session | Fresh session in a new worktree | Subagent>
 Runtime: `--model <model> --effort <level> --context <default | long_context>`
 Why now: <one sentence grounded in live state>
 
@@ -223,8 +257,8 @@ in the background instead.
 
 Emit the `Command` block only when `Context` names a fresh session the user
 launches — a `Continue here` recommendation is a prompt for this conversation and
-has no session to launch, and an `/implement` recommendation is launched for the
-user by step 6, so a second copyable launcher would put two agents on one
+has no session to launch, and a `Subagent` recommendation is launched by the
+chain gate in step 7, so a second copyable launcher would put two agents on one
 worktree. When the context is `Fresh session in a new worktree`, the
 command still runs from the current directory, because the prompt it carries
 opens with the `git worktree add` that moves the agent before it writes.
@@ -239,22 +273,19 @@ For a terminal workstream, return:
 **Complete:** <why no further workflow skill is needed>.
 ```
 
-## 6. Launch an `/implement` route
+## 7. Spawn a chain-approved route
 
-An `/implement` route arrives already specified by its ticket, so this skill
-starts it rather than handing it over. Run `/handoff` and give it the
-recommendation just returned — the prompt verbatim between the heredoc markers
-and the three `Runtime` flags spliced in — so a background agent picks the ticket
-up while the user keeps this session.
+Set `Context: Subagent` only for the `spawn` decision from step 5. Reserve the target before
+launching the returned custom agent in background mode, bind the returned agent identity
+immediately after launch, and carry the recommendation's paste-safe prompt and runtime into that
+agent. Do not launch a declined action, an action that reaches the checkpoint boundary, or an action
+whose phase-boundary choice is `/handoff`.
 
-A `HITL` implement route launches the same way; carry its open judgment into the
-prompt as an instruction to stop and report it, because a question the background
-agent raises reaches nobody.
-
-Every other route ends at step 5 and leaves the launch to the user.
+Every other route ends at step 6 and leaves a user-launched fresh session, continued session, or
+`/handoff` transition to its own documented behavior.
 
 Routing is complete when every active candidate has been classified and every
 recommendation names a live target, an exact invocation, a paste-safe prompt in
 its own code fence, a copyable `copilot` command whenever the user launches the
-fresh session, the correct context, a sized runtime, and any blocker — and an
-`/implement` recommendation has a background agent `/handoff` reports alive.
+fresh session, the correct context, a sized runtime, and any blocker — and every
+`Subagent` recommendation has a live, bound in-session agent.
