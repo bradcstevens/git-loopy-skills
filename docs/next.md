@@ -12,9 +12,9 @@ npx skills update next
 
 ## What it does
 
-`next` is the router over the skills in this repo. It reads the live state of your work and returns a single recommendation: the one action to take now, the skill that performs it, the exact invocation to paste, and the runtime to run it on — model, reasoning effort, and context tier.
+`next` is the router over the skills in this repo. It reads the live state of your work and returns a single recommendation: the one action to take now, the skill that performs it, the exact invocation to paste, and the runtime to run it on — model, reasoning effort, and context tier. For a narrowly defined set of unattended delivery routes, it can also spawn that recommendation as an in-session subagent.
 
-It **does no work itself**. It doesn't grill, write a spec, or fix anything — it leaves the repository and the issue tracker exactly as it found them and only orients. What separates it from a checklist is where it looks: not at what you told it in conversation, but at `docs/agents/issue-tracker.md`, the tracker itself, and your branch and diff. Concurrent sessions move that state underneath you, so the recommendation is drawn from live records rather than from a session summary.
+It does not itself grill, write a spec, or fix anything. It either orients at a checkpoint boundary or, when the chain gate approves, records and launches work owned by the spawned route. What separates it from a checklist is where it looks: not at what you told it in conversation, but at `docs/agents/issue-tracker.md`, the tracker itself, and your branch and diff. Concurrent sessions move that state underneath you, so the recommendation is drawn from live records rather than from a session summary.
 
 ## When to reach for it
 
@@ -32,7 +32,7 @@ Every recommendation is labelled **HITL** or **AFK-safe** — whether the next a
 
 A recommendation also names the **runtime** to run it on: `--model`, `--effort`, and `--context`, sized to the demand of the route it picked. Open judgement — grilling, wayfinding, spec writing, hard diagnosis — draws the strongest reasoning model at `xhigh`; ordinary build and review work draws a strong general model at `high`; mechanical, fully specified work draws a fast model at `medium`. An **AFK-safe** action gets one level more effort, because no human is mid-flight to catch a thin pass, and `long_context` is reserved for runs that must hold more at once than one default window holds. The flags come out verbatim, so [handoff](./handoff.md) can splice them straight into the background agent it launches.
 
-When the route calls for a fresh session, the recommendation also comes with the whole thing already assembled: a `Command` block holding the prompt in a quoted heredoc and the sized flags spliced into a `copilot --yolo -n "..." --model ... --effort ... --context ... -p "$PROMPT"` invocation. Select it, paste it, and the next session starts — named, so `copilot --yolo --resume="<name>"` finds it again. It's the same launch [handoff](./handoff.md) performs for you in the background, offered here as one copyable selection instead.
+When the route calls for a fresh session, the recommendation also comes with the whole thing already assembled: a `Command` block holding the prompt in a quoted heredoc and the sized flags spliced into a `copilot --yolo -n "..." --model ... --effort ... --context ... -p "$PROMPT"` invocation. Select it, paste it, and the next session starts — named, so `copilot --yolo --resume="<name>"` finds it again. It's the same detached launch [handoff](./handoff.md) performs for you in the background, offered here as one copyable selection instead.
 
 ## The chain it can spawn
 
@@ -71,4 +71,11 @@ every slot that batch freed.
 
 ## Where it fits
 
-`next` is the **router** — the standalone map that sits over the whole set. It is the node every other docs page links back to, so it never sits *in* a chain; it points *into* every chain. From here you'll most often land on [grill-with-docs](./grill-with-docs.md), the head of the main flow, or [triage](./triage.md), the on-ramp for work you didn't create. Its one hard prerequisite is [setup-git-loopy-skills](./setup-git-loopy-skills.md), because the tracker config and chain hook that skill writes are the state `next` reads. When even the router's own picture is stale, its [Source](https://github.com/bradcstevens/git-loopy-skills/tree/main/skills/next) is the map of record.
+`next` is the **router** — the standalone map that sits over the whole set. It points into every
+flow and carries the bounded chain when its gate approves. From here you'll most often land on
+[grill-with-docs](./grill-with-docs.md), the head of the main flow, or [triage](./triage.md), the
+on-ramp for work you didn't create. Its one hard prerequisite is
+[setup-git-loopy-skills](./setup-git-loopy-skills.md), because the tracker config and chain hook
+that skill writes are the state `next` reads. When even the router's own picture is stale, its
+[Source](https://github.com/bradcstevens/git-loopy-skills/tree/main/skills/next) is the map of
+record.

@@ -23,7 +23,8 @@ Every edge in this document is one of five kinds. Read the arrows with these in 
 publishes evidence like **routes to**. Neither existing kind therefore describes the chain.
 
 One skill is a hub. [`next`](./next.md) is the **router** — it reads live state (tracker, branch,
-diff, worktrees) and names one action. It does no work itself.
+diff, worktrees) and names one action. When the AFK-safe chain gate approves, it reserves and
+spawns that action as an in-session subagent.
 
 Eleven skills leave a durable evidence comment on the ticket they acted on and name the skill that
 succeeds them: `code-review`, `grill-with-docs`, `implement`, `prototype`, `push`,
@@ -75,12 +76,12 @@ flowchart LR
     next --> wayfinder
     next --> diag
     next --> ica
-    next -->|spawns when AFK-safe| implement
-    next -->|spawns when AFK-safe| review
-    next -->|spawns when AFK-safe| research
-    next -->|spawns when AFK-safe| push
-    next -->|spawns when AFK-safe| rmc
-    next --> handoff
+    next ==>|spawns when AFK-safe and allowlisted| implement
+    next ==>|spawns when AFK-safe and allowlisted| review
+    next ==>|spawns when AFK-safe and allowlisted| research
+    next ==>|spawns when AFK-safe and allowlisted| push
+    next ==>|spawns when AFK-safe and allowlisted| rmc
+    next -->|routes to| handoff
     handoff --> next
 
     grillme --> grilling
@@ -109,8 +110,7 @@ flowchart LR
     next --> questionnaire
 ```
 
-Solid arrows route or run inside; dotted arrows publish or read config. Labeled chain arrows are
-**spawns** edges.
+Solid arrows route, nest, or spawn; dotted arrows publish or read config.
 
 ---
 
@@ -185,10 +185,10 @@ sequenceDiagram
     else Fresh session, you drive
         U->>BG: run the copyable copilot command block
     else AFK-safe allowlisted route
-        NX->>CH: reserve worktree and ledger slot
-        CH->>SA: spawn an in-session subagent
-        SA->>CH: subagentStop closes its ledger row
-        CH->>NX: agentStop re-enters /next for the completed batch
+        NX->>NX: reserve and bind a ledger row
+        NX->>BG: spawn an in-session agent with the route and runtime
+        BG-->>NX: completion closes the ledger row
+        NX->>NX: agentStop re-enters /next for the successor
     else Fresh session, agent drives
         U->>HO: /handoff
         HO->>NX: run /next first if it is not the last output
@@ -529,8 +529,8 @@ These have no workflow edges. Reach for them directly; they neither route onward
 | From | To | Kind | When |
 | --- | --- | --- | --- |
 | `next` | 22 routes | routes to | The earliest unresolved gate decides which |
-| `next` | `implement`, `code-review`, `research`, `push`, `resolving-merge-conflicts` | spawns | The chain gate selected an AFK-safe allowlisted route and reserved its worktree |
-| `next` | `handoff` | routes to | Detached work must outlive the current session |
+| `next` | `implement`, `code-review`, `research`, `push`, `resolving-merge-conflicts` | spawns | Only when the route is both AFK-safe and allowlisted |
+| `next` | `handoff` | routes to | A detached session must outlive the current one |
 | `next` | `setup-git-loopy-skills` | reads config from | `docs/agents/issue-tracker.md` is missing |
 | `handoff` | `next` | routes to | Runs `/next` first if it is not the last output |
 | `handoff` | fresh session | routes to | Launches the sized runtime in the background |
@@ -578,8 +578,9 @@ These have no workflow edges. Reach for them directly; they neither route onward
   Every `/implement` ticket starts in a fresh one.
 - **Nesting owns nothing.** A skill running inside another's session hands its evidence back and
   records no transition of its own.
-- **Spawning owns a transition.** The chain's in-session subagent records its own evidence and
-  ledger state, unlike ordinary nested support.
+- **Spawning owns the transition.** The five allowlisted routes can run as in-session subagents
+  only after the AFK-safe gate passes; the ledger records their reservation, binding, completion,
+  and successor routing.
 - **Reviews come back.** `/code-review` findings return to `/implement`, which republishes a head
   and re-enters review. `/resolving-merge-conflicts` re-enters review too.
 - **Surveys do not build.** `/improve-codebase-architecture` and `/diagnosing-bugs` produce ideas

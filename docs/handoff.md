@@ -48,4 +48,4 @@ Three flags carry the weight. `-n`/`--name` is not decoration: a detached sessio
 
 ## Where it fits
 
-`handoff` sits at the seam between two sessions, and what crosses it is a running agent rather than a document. It is the background half of [next](./next.md)'s recommendation: same prompt, same sized runtime, launched for you instead of handed to you. It pairs with the artifact-producing skills those recommendations point at, most obviously [to-spec](./to-spec.md) and [to-tickets](./to-tickets.md), since a background agent with a spec to work from needs very little else.
+`handoff` sits at the seam between two sessions, and what crosses it is a running agent rather than a document. It is the detached background half of [next](./next.md)'s recommendation: same prompt, same sized runtime, launched for you instead of handed to you. Unlike the chain, it is the right transition when the work must survive this session. It pairs with the artifact-producing skills those recommendations point at, most obviously [to-spec](./to-spec.md) and [to-tickets](./to-tickets.md), since a background agent with a spec to work from needs very little else.
