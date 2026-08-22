@@ -60,7 +60,10 @@ if [ -d docs ]; then
   while IFS= read -r line; do
     doc="${line%%:*}"
     target="$(printf '%s\n' "${line#*:}" | sed -E 's/^\]\(\.\///; s/\)$//')"
-    [ -f "docs/$target" ] || err "$doc links to missing docs/$target"
+    # A relative link resolves against the directory of the file that carries
+    # it, not against docs/ — otherwise every cross-link inside docs/adr/ is
+    # reported missing.
+    [ -f "$(dirname "$doc")/$target" ] || err "$doc links to missing $(dirname "$doc")/$target"
   done < <(grep -roE '\]\(\./[a-z0-9.-]+\.md\)' docs | sort -u)
 fi
 
