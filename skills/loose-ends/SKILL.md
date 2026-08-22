@@ -8,10 +8,10 @@ disable-model-invocation: true
 
 `/loose-ends [--grace-days <non-negative-integer>]`
 
-`/continuation` reports what was recorded; `/loose-ends` reports what was never
-recorded. It is a user-invoked survey: it reads the issue tracker and, when available, the
-Continuation ledger; writes one static HTML report outside the repository; opens it; prints
-its absolute path; and stops.
+`/continuation` reports recorded actions; `/loose-ends` audits tracker conditions that need
+follow-up and Continuation claims the tracker contradicts. It is a user-invoked survey: it
+reads the issue tracker and, when available, the Continuation ledger; writes one static HTML
+report outside the repository; opens it; prints its absolute path; and stops.
 
 ## Non-negotiable posture
 
@@ -44,6 +44,11 @@ Markdown headings: `## Problem Statement`, `## Solution`, `## User Stories`, and
 `Never decomposed` structural finding's grace period; it never delays defect findings. For
 example, `/loose-ends --grace-days 0` exposes every eligible structural finding immediately.
 Reject any other argument with the invocation syntax before starting the audit.
+
+The native `git-loopy continuation reconcile --help` request contract and
+`git-loopy continuation capabilities` output own all Continuation terms, request fields, and
+supported operations. Read both only when performing the optional ledger pass; do not copy
+their contract or parse ledger comments in this skill.
 
 ## Audit
 
@@ -109,8 +114,9 @@ Reject any other argument with the invocation syntax before starting the audit.
     A missing `git-loopy` command, unavailable `reconcile` capability, or repository with no
     Continuation records means the ledger is absent: skip this pass without a finding,
     warning, or failure. Continue every tracker-only pass normally. Do not disguise a
-    present ledger's malformed record or failed read as absence; surface that read failure
-    rather than asserting a complete drift audit.
+    present ledger's malformed record or failed read as absence. Preserve the native error so
+    the report renders the incomplete-ledger state below rather than asserting a complete
+    drift audit.
 11. For every reported finding, fetch every page of its target issue's timeline when it was
     not already fetched and calculate created age and idle time using the activity definition
     above. Show those durations as evidence on every card, but never use them to delay an
@@ -139,6 +145,11 @@ installation has every instruction it needs:
 - Group findings by **follow-up action**, not finding class. This tracer renders
   **`/to-tickets` — decompose published specs**, **Close resolved issue**, **Close completed
   spec**, and **Reconcile Continuation ledger** when their associated findings exist.
+- A missing ledger has no report surface. A present ledger whose native read failed instead
+  renders one compact amber `Ledger audit incomplete` status card below the header. It states
+  that tracker-only findings are complete, drift findings are omitted, and includes the
+  escaped native error. It is not a finding, has no recommendation, and is excluded from the
+  finding count and follow-up groups.
 
 Every finding is a complete card containing:
 
@@ -162,28 +173,25 @@ Every finding is a complete card containing:
 The prompt must not contain formatting, line breaks, shell quoting, or explanatory text.
 
 For the immediate defect groups, replace the `Never decomposed` recommendation with the
-matching complete recommendation:
+matching complete recommendation. Each rendered card repeats the shared close-issue fields
+below so it remains self-contained:
+
+- **Interaction:** `HITL` — review the evidence before a human closes the issue.
+- **Context:** Current session.
+- **Runtime:** none.
+- **Prompt:** a separate code block containing exactly one physical ASCII line:
+  `gh issue close <issue-number> --repo <owner>/<repo>`
 
 - **Merged work, open issue**
   - **Follow-up:** Close resolved issue.
-  - **Interaction:** `HITL` — review the merged pull request and live-open issue before a
-    human closes it.
+  - **Evidence review:** the merged pull request and live-open issue.
   - **Target:** the linked open issue.
   - **State:** `Open; resolved by merged pull request #<pull-request-number>`.
-  - **Context:** Current session.
-  - **Runtime:** none.
-  - **Prompt:** a separate code block containing exactly one physical ASCII line:
-    `gh issue close <issue-number> --repo <owner>/<repo>`
 - **Completed spec still open**
   - **Follow-up:** Close completed spec.
-  - **Interaction:** `HITL` — review the closed native sub-issues before a human closes the
-    parent.
+  - **Evidence review:** the closed native sub-issues.
   - **Target:** the linked spec issue.
   - **State:** `Open; all <child-count> native sub-issues closed`.
-  - **Context:** Current session.
-  - **Runtime:** none.
-  - **Prompt:** a separate code block containing exactly one physical ASCII line:
-    `gh issue close <issue-number> --repo <owner>/<repo>`
 - **Ledger drift**
   - **Follow-up:** Reconcile Continuation ledger.
   - **Interaction:** `HITL` — inspect the native reconciliation evidence and choose the
