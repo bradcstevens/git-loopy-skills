@@ -26,6 +26,18 @@ Eligible issues are worked **oldest first**, by creation date. A newly filed iss
 
 What it does is **reorder**, and only reorder. An issue carrying `priority` is selected ahead of older ones, and two `priority` issues order oldest-first against each other. What it does **not** do is change eligibility: a `priority` issue still needs `ready-for-agent` to enter the pool, still has to pass the AFK-ready body discriminator (`## What to build` plus `## Acceptance criteria`), and still needs `parallel-safe` to be worked concurrently.
 
+## Intentional label
+
+`intentional` is the human assertion that every `/loose-ends` finding on this issue is deliberate. Like `parallel-safe` and `priority` it is not one of the five canonical triage roles, is not in the table above, and is **not renameable** — the audit reads that exact string. No skill ever applies it or infers the intent behind it.
+
+What it does is **suppress every finding**, and only for the issue carrying the label. Its granularity is **per-issue rather than per-finding-class**: it does not suppress selected classes while leaving others visible. It changes neither the issue's tracker state nor its eligibility for other workflows.
+
+## Idea label
+
+`idea` is the human assertion that an issue is an anchor created from a concluded grilling session. Like `parallel-safe` and `priority` it is not one of the five canonical triage roles, is not in the table above, and is **not renameable** — the tracker readers use that exact string. No skill ever applies it or infers that an issue is an idea.
+
+What it does is **keep the anchor out of the triage and `ready-for-agent` queues**, and only those queues. It marks concluded thinking rather than work waiting to be picked up; it does not itself create a spec or otherwise advance the workflow.
+
 ## Task-type labels
 
 `task-type:` labels are **not** triage roles either. Each one asserts the dominant risk of a ticket — the dimension whose failure is most expensive, not the one touching the most files — and `git-loopy` reads it to pick the model and reasoning effort that carry the run. The taxonomy is **closed at seven**, matching the keys in `git-loopy config routing list`:
@@ -60,11 +72,15 @@ done
 
 `git-loopy init`, run inside the repository, creates whichever triage, `parallel-safe`, and `priority` labels are absent and leaves the ones that already exist untouched. Re-running it creates nothing.
 
-Without `git-loopy`, create the two assertions by hand — `--force` makes this a create-or-update, so it is safe to re-run:
+Without `git-loopy`, create the assertions by hand — `--force` makes this a create-or-update, so it is safe to re-run:
 
 ```bash
 gh label create priority --force --color b60205 \
   --description "Human assertion: worked ahead of older issues. git-loopy never infers it. Eligibility unchanged."
 gh label create parallel-safe --force --color 5319e7 \
   --description "Human assertion alongside ready-for-agent: safe in its own Lane. git-loopy never infers it."
+gh label create intentional --force --color fbca04 \
+  --description "Human assertion: suppress all /loose-ends findings. Never inferred by git-loopy."
+gh label create idea --force --color cfd3d7 \
+  --description "Human assertion: concluded grilling anchor. Never inferred by git-loopy."
 ```
