@@ -8,14 +8,16 @@ disable-model-invocation: true
 
 `/loose-ends [--grace-days <non-negative-integer>]`
 
-`/continuation` reports what was recorded; `/loose-ends` reports what was never
-recorded. It is a user-invoked survey: it reads the issue tracker, writes one static HTML
-report outside the repository, opens it, prints its absolute path, and stops.
+`/continuation` reports recorded actions; `/loose-ends` audits tracker conditions that need
+follow-up and Continuation claims the tracker contradicts. It is a user-invoked survey: it
+reads the issue tracker and, when available, the Continuation ledger; writes one static HTML
+report outside the repository; opens it; prints its absolute path; and stops.
 
 ## Non-negotiable posture
 
-- **Read-only:** use only read operations against the tracker. Never create, edit, label,
-  comment on, assign, close, reopen, or otherwise mutate an issue or pull request.
+- **Read-only:** use only read operations against the tracker and native Continuation
+  consumer. Never create, edit, label, comment on, assign, close, reopen, publish, repair,
+  or otherwise mutate an issue, pull request, or ledger.
 - **No repository writes:** do not create files in the repository and do not publish a
   Continuation record. The generated report is the sole local write and belongs in the OS
   temp directory.
@@ -38,10 +40,15 @@ Markdown headings: `## Problem Statement`, `## Solution`, `## User Stories`, and
 `## Implementation Decisions`. Tickets use a distinct body shape. Never use
 `ready-for-agent` to distinguish the two: both specs and tickets carry that label.
 
-`--grace-days` defaults to `7`. It accepts a non-negative integer and overrides only this
-structural finding's grace period; for example, `/loose-ends --grace-days 0` exposes every
-eligible finding immediately. Reject any other argument with the invocation syntax before
-starting the audit.
+`--grace-days` defaults to `7`. It accepts a non-negative integer and overrides only the
+`Never decomposed` structural finding's grace period; it never delays defect findings. For
+example, `/loose-ends --grace-days 0` exposes every eligible structural finding immediately.
+Reject any other argument with the invocation syntax before starting the audit.
+
+The native `git-loopy continuation reconcile --help` request contract and
+`git-loopy continuation capabilities` output own all Continuation terms, request fields, and
+supported operations. Read both only when performing the optional ledger pass; do not copy
+their contract or parse ledger comments in this skill.
 
 ## Audit
 
@@ -53,9 +60,14 @@ starting the audit.
    human-applied `intentional` label. The audit never adds, removes, or infers this label.
 4. For each remaining spec-shaped issue, fetch all native GitHub sub-issues with the
    read-only `GET /repos/{owner}/{repo}/issues/{issue_number}/sub_issues` endpoint,
-   following pagination. A non-empty result means the spec was decomposed and produces no
-   finding in this tracer, regardless of the child states.
-5. For a spec with zero native sub-issues, fetch every page of the issue timeline
+   following pagination. A non-empty result suppresses only the `Never decomposed` finding:
+   retain each child's current state for the completed-parent defect check.
+5. For every remaining spec with one or more native sub-issues, report `Completed spec still
+   open` immediately when every child is currently closed and the parent is currently open.
+   Evidence must link the parent, enumerate every child with its live closed state, and give
+   the child count. Do not apply a grace period or substitute timestamps for these states.
+   Its follow-up action is **Close completed spec**.
+6. For each remaining spec with zero native sub-issues, fetch every page of the issue timeline
    read-only. Determine activity from the newest of:
    - a comment event;
    - a label-added or label-removed event;
@@ -65,17 +77,50 @@ starting the audit.
    Do not use the issue's general `updated_at` value: it does not express this audit's
    definition of activity. If none of those events exists, use `created_at` as the idle
    baseline.
-6. Calculate both durations at report-generation time:
+7. Calculate both durations at report-generation time:
    - **Created age:** now minus `created_at`.
    - **Idle time:** now minus the most recent qualifying activity, or `created_at` when no
      qualifying activity exists.
 
    Hold the finding when idle time is less than the grace period. Report it once idle time
    reaches or exceeds the grace period.
-7. For each eligible issue, create a `Never decomposed` finding. Its evidence must
+8. For each eligible issue, create a `Never decomposed` finding. Its evidence must
    enumerate the four matching headings from the authoritative fingerprint and state that
    the native sub-issue query returned zero children. Keep the finding's raw evidence in
    the report so the user can judge the classification.
+9. Independently enumerate every merged pull request in the repository through GitHub's
+   read-only GraphQL API, following pagination for both pull requests and each pull
+   request's `closingIssuesReferences`. Use that native closing-reference relationship; a
+   generic mention or cross-reference is not evidence that the pull request resolved an
+   issue. For each referenced issue, read its current live state and labels. When it is
+   currently open and does not carry `intentional`, report `Merged work, open issue`
+   immediately. Evidence must link the merged pull request, include its merge timestamp,
+   and link the live-open issue. Its follow-up action is **Close resolved issue**. A merge
+   is evidence, never a substitute for querying the issue's live state.
+10. Run this final pass only when the native `git-loopy continuation` capability advertises
+    `reconcile` and a Continuation ledger has records for this repository. Request its
+    machine-readable reconciliation projection using the configured trusted-producer policy;
+    do not parse ledger comments independently or reimplement native reconciliation.
+
+    For every explicit tracker-state claim in that projection, fetch the claim's target from
+    the live tracker and compare its actual state with the state the record claims. A future
+    `completion_condition` is an objective, not a claim about current state, and must not
+    create drift merely because it is unfinished. When a record's current-state claim and
+    the live target differ, and the target does not carry `intentional`, report `Ledger
+    drift` immediately. Evidence must preserve the record carrier and claim, alongside the
+    live tracker state that contradicts it. Its follow-up action is **Reconcile Continuation
+    ledger**.
+
+    A missing `git-loopy` command, unavailable `reconcile` capability, or repository with no
+    Continuation records means the ledger is absent: skip this pass without a finding,
+    warning, or failure. Continue every tracker-only pass normally. Do not disguise a
+    present ledger's malformed record or failed read as absence. Preserve the native error so
+    the report renders the incomplete-ledger state below rather than asserting a complete
+    drift audit.
+11. For every reported finding, fetch every page of its target issue's timeline when it was
+    not already fetched and calculate created age and idle time using the activity definition
+    above. Show those durations as evidence on every card, but never use them to delay an
+    immediate defect finding.
 
 ## Report
 
@@ -84,7 +129,7 @@ Create one timestamped, static HTML file at
 systems or `%TEMP%` on Windows. Resolve it to an absolute path before writing. The HTML
 must contain all finding data at generation time: it must not make tracker requests or
 depend on application code after it is opened. HTML-escape every tracker-provided field
-before interpolation.
+and every Continuation-record field before interpolation.
 
 Use the architecture survey's dark-only presentation scaffold locally so a single-skill
 installation has every instruction it needs:
@@ -95,16 +140,23 @@ installation has every instruction it needs:
   `border-slate-800`, `text-slate-100`, `text-slate-200`, and `text-slate-400`; use tinted
   emerald for actionable findings and amber only for held or cautionary context.
 - Header metadata shows the repository, exact generation timestamp, the effective grace
-  period, and the finding count. Do not add a generic introduction paragraph.
+  period, that defects are immediate, and the finding count. Do not add a generic
+  introduction paragraph.
 - Group findings by **follow-up action**, not finding class. This tracer renders
-  **`/to-tickets` — decompose published specs**.
+  **`/to-tickets` — decompose published specs**, **Close resolved issue**, **Close completed
+  spec**, and **Reconcile Continuation ledger** when their associated findings exist.
+- A missing ledger has no report surface. A present ledger whose native read failed instead
+  renders one compact amber `Ledger audit incomplete` status card below the header. It states
+  that tracker-only findings are complete, drift findings are omitted, and includes the
+  escaped native error. It is not a finding, has no recommendation, and is excluded from the
+  finding count and follow-up groups.
 
 Every finding is a complete card containing:
 
 1. Issue number, HTML-escaped title, and link.
-2. `Never decomposed` badge and the evidence block.
-3. Created age and idle time shown side by side; say `No qualifying activity since
-   creation` when that is the idle baseline.
+2. Finding-class badge and the evidence block.
+3. Created age and idle time shown side by side; say `No qualifying activity since creation`
+   when that is the idle baseline.
 4. A full **Recommendation** block:
    - **Follow-up:** `/to-tickets`
    - **Interaction:** `HITL` — the decomposition needs human approval.
@@ -120,9 +172,41 @@ Every finding is a complete card containing:
 
 The prompt must not contain formatting, line breaks, shell quoting, or explanatory text.
 
+For the immediate defect groups, replace the `Never decomposed` recommendation with the
+matching complete recommendation. Each rendered card repeats the shared close-issue fields
+below so it remains self-contained:
+
+- **Interaction:** `HITL` — review the evidence before a human closes the issue.
+- **Context:** Current session.
+- **Runtime:** none.
+- **Prompt:** a separate code block containing exactly one physical ASCII line:
+  `gh issue close <issue-number> --repo <owner>/<repo>`
+
+- **Merged work, open issue**
+  - **Follow-up:** Close resolved issue.
+  - **Evidence review:** the merged pull request and live-open issue.
+  - **Target:** the linked open issue.
+  - **State:** `Open; resolved by merged pull request #<pull-request-number>`.
+- **Completed spec still open**
+  - **Follow-up:** Close completed spec.
+  - **Evidence review:** the closed native sub-issues.
+  - **Target:** the linked spec issue.
+  - **State:** `Open; all <child-count> native sub-issues closed`.
+- **Ledger drift**
+  - **Follow-up:** Reconcile Continuation ledger.
+  - **Interaction:** `HITL` — inspect the native reconciliation evidence and choose the
+    repair; the audit must not change the record or tracker.
+  - **Target:** the linked issue whose live state contradicts the linked record carrier.
+  - **State:** `Ledger claims <claimed-state>; tracker is <live-state>`.
+  - **Context:** Fresh session.
+  - **Runtime:** the native Continuation command's configured trusted-producer policy.
+  - **Prompt:** a separate code block containing exactly one physical ASCII line:
+    `git-loopy continuation reconcile --input <reconciliation-request.json> --terminal`
+
 When there are no eligible findings, render the same header and a clean empty-state card:
-`No loose ends found` and `No open spec has exceeded the effective grace period without
-native sub-issues.` This is a normal successful report, including on an empty tracker.
+`No loose ends found` and `No reportable tracker defect or open spec has exceeded the
+effective grace period without native sub-issues.` This is a normal successful report,
+including on an empty tracker or when the Continuation ledger is absent.
 
 After writing the report, open it with the platform opener (`open` on macOS, `xdg-open` on
 Linux, or `start` on Windows), then print the absolute file path in the terminal. End the
