@@ -72,7 +72,7 @@ done
 
 `git-loopy init`, run inside the repository, creates whichever triage, `parallel-safe`, and `priority` labels are absent and leaves the ones that already exist untouched. Re-running it creates nothing.
 
-Without `git-loopy`, create the two assertions by hand — `--force` makes this a create-or-update, so it is safe to re-run:
+Without `git-loopy`, create the assertions by hand — `--force` makes this a create-or-update, so it is safe to re-run:
 
 ```bash
 gh label create priority --force --color b60205 \

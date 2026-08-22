@@ -10,7 +10,7 @@ Issues live in this repo's GitHub Issues, managed with the `gh` CLI. See `docs/a
 
 ### Triage labels
 
-Default vocabulary — `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`, plus the non-renameable `parallel-safe` and `priority` assertions. See `docs/agents/triage-labels.md`.
+Default vocabulary — `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`, plus the non-renameable `parallel-safe`, `priority`, `intentional`, and `idea` assertions. See `docs/agents/triage-labels.md`.
 
 ### Domain docs
 
