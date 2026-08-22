@@ -68,12 +68,12 @@ PY
 }
 
 run_hook() {
-  local repo="$1" agent_id="$2"
+  local repo="$1" agent_id="$2" resolver="${3:-$RESOLVER}"
 
   set +e
   hook_output="$(
     cd "$repo"
-    COPILOT_HOME="$home" "$RESOLVER" --event subagentStop complete \
+    COPILOT_HOME="$home" "$resolver" --event subagentStop complete \
       <<< "$(payload "$agent_id")" 2>"$tmp_dir/hook.stderr"
   )"
   hook_status=$?
@@ -140,6 +140,44 @@ fi
 
 if ! git -C "$REPO" check-ignore -q .git-loopy/hook-invocations.jsonl; then
   err "hook log is not ignored by git"
+fi
+
+template_repo="$tmp_dir/template-repo"
+mkdir "$template_repo"
+init_repo "$template_repo"
+python3 - "$REPO/skills/setup-git-loopy-skills/SKILL.md" "$template_repo" <<'PY'
+import os
+import pathlib
+import sys
+
+skill_path = pathlib.Path(sys.argv[1])
+repo_path = pathlib.Path(sys.argv[2])
+source = skill_path.read_text(encoding="utf-8")
+
+for name, marker in (
+    ("git-loopy-chain.sh", "RESOLVER"),
+    ("git-loopy-hook-log.sh", "LOGGER"),
+):
+    start = f"cat > .github/hooks/{name} <<'{marker}'\n"
+    try:
+        script = source.split(start, 1)[1].split(f"\n{marker}\n", 1)[0] + "\n"
+    except IndexError as error:
+        raise SystemExit(f"missing {name} setup template") from error
+    destination = repo_path / ".github" / "hooks" / name
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    destination.write_text(script, encoding="utf-8")
+    os.chmod(destination, 0o755)
+PY
+
+run_hook "$template_repo" matched-agent "$template_repo/.github/hooks/git-loopy-chain.sh"
+if [ "$hook_status" -ne 0 ]; then
+  err "setup-generated hook exited $hook_status"
+fi
+if [ "$hook_output" != '{"continue":true,"outcome":"published","target":"issue-matched"}' ]; then
+  err "setup-generated hook changed the chain decision"
+fi
+if [ ! -f "$template_repo/.git-loopy/hook-invocations.jsonl" ]; then
+  err "setup-generated hook did not install hook logging"
 fi
 
 blocked_repo="$tmp_dir/blocked-repo"
