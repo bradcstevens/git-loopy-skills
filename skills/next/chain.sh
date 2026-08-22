@@ -319,7 +319,14 @@ concurrency_limit() {
   printf '%s\n' "$limit"
 }
 
-evaluate_target_guard() {
+allowlisted_route() {
+  case "$1" in
+    /implement|/code-review|/research|/push|/resolving-merge-conflicts) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+evaluate_and_record_target_guard() {
   local route="$1" target="$2" requested_depth="${3:-}"
 
   python3 - "$ledger" "$route" "$target" "$requested_depth" <<'PY'
@@ -330,7 +337,13 @@ import sys
 import tempfile
 
 ledger_path, route, target, requested_depth = sys.argv[1:]
+requested_depth = int(requested_depth) if requested_depth else 0
 if not os.path.exists(ledger_path):
+    print(json.dumps({
+        "reason": None,
+        "target": target,
+        "next_chain_depth": max(1, requested_depth),
+    }, separators=(",", ":")))
     raise SystemExit
 
 try:
@@ -345,7 +358,22 @@ bound_rows = [
     for index, row in enumerate(rows)
     if row.get("target") == target and row.get("agent_id")
 ]
+recorded_depth = max(
+    (
+        row.get("chain_depth", 0)
+        for _, row in bound_rows
+        if isinstance(row.get("chain_depth"), int)
+    ),
+    default=0,
+)
+next_chain_depth = max(recorded_depth + 1, requested_depth, 1)
+
 if not bound_rows:
+    print(json.dumps({
+        "reason": None,
+        "target": target,
+        "next_chain_depth": next_chain_depth,
+    }, separators=(",", ":")))
     raise SystemExit
 
 halt_reason = None
@@ -368,21 +396,15 @@ elif halt_reason is None:
     if repetitions >= 3:
         halt_reason = "route-repetition-limit"
     else:
-        recorded_depth = max(
-            (
-                row.get("chain_depth", 0)
-                for _, row in bound_rows
-                if isinstance(row.get("chain_depth"), int)
-            ),
-            default=0,
-        )
-        candidate_depth = recorded_depth + 1
-        if requested_depth:
-            candidate_depth = max(candidate_depth, int(requested_depth))
-        if candidate_depth > 8:
+        if next_chain_depth > 8:
             halt_reason = "chain-depth-limit"
 
 if halt_reason is None:
+    print(json.dumps({
+        "reason": None,
+        "target": target,
+        "next_chain_depth": next_chain_depth,
+    }, separators=(",", ":")))
     raise SystemExit
 
 _, halt_row = bound_rows[-1]
@@ -408,6 +430,7 @@ if halt_row.get("halt_reason") != halt_reason:
 print(json.dumps({
     "reason": halt_reason,
     "target": target,
+    "next_chain_depth": next_chain_depth,
 }, separators=(",", ":")))
 PY
 }
@@ -438,8 +461,11 @@ plan() {
     ledger="$(repository_root)/.git-loopy/subagents.jsonl"
   fi
 
-  local worktree_held=0 collision_status max_concurrency guard=""
+  local worktree_held=0 collision_status max_concurrency guard="" route_allowed=0
   max_concurrency="$(concurrency_limit)" || return $?
+  if allowlisted_route "$route"; then
+    route_allowed=1
+  fi
   if ledger_has_open_worktree "$worktree"; then
     worktree_held=1
   else
@@ -449,37 +475,27 @@ plan() {
     fi
   fi
 
-  if [[ "$safety" = "AFK-safe" ]] && case "$route" in
-    /implement|/code-review|/research|/push|/resolving-merge-conflicts) true ;;
-    *) false ;;
-  esac
-  then
+  if [ "$safety" = "AFK-safe" ] && [ "$route_allowed" -eq 1 ]; then
     mkdir -p "$(dirname "$ledger")"
     lock_dir="$ledger.lock"
     acquire_lock
-    guard="$(evaluate_target_guard "$route" "$target")"
+    guard="$(evaluate_and_record_target_guard "$route" "$target")"
     release_lock
   fi
 
-  python3 - "$ledger" "$route" "$target" "$safety" "$agent" "$model" "$effort" "$context_tier" "$worktree" "$worktree_held" "$max_concurrency" "$guard" <<'PY'
+  python3 - "$ledger" "$route" "$target" "$safety" "$agent" "$model" "$effort" "$context_tier" "$worktree" "$worktree_held" "$max_concurrency" "$route_allowed" "$guard" <<'PY'
 import json
 import os
 import sys
 
-ledger, route, target, safety, agent, model, effort, context_tier, worktree, worktree_held, max_concurrency, guard = sys.argv[1:]
+ledger, route, target, safety, agent, model, effort, context_tier, worktree, worktree_held, max_concurrency, route_allowed, guard = sys.argv[1:]
 worktree = os.path.realpath(os.path.abspath(worktree))
 worktree_held = worktree_held == "1"
 max_concurrency = int(max_concurrency)
+route_allowed = route_allowed == "1"
 guard = json.loads(guard) if guard else None
-allowlisted_routes = {
-    "/implement",
-    "/code-review",
-    "/research",
-    "/push",
-    "/resolving-merge-conflicts",
-}
 
-if route not in allowlisted_routes:
+if not route_allowed:
     decision = {
         "decision": "decline",
         "reason": "route-not-allowlisted",
@@ -519,7 +535,7 @@ else:
             "route": route,
             "target": target,
         }
-    elif guard:
+    elif guard and guard["reason"]:
         decision = {
             "decision": "decline",
             "reason": "target-halted",
@@ -622,11 +638,12 @@ reserve() {
     fi
   fi
 
-  guard="$(evaluate_target_guard "$route" "$target" "$chain_depth")"
-  if [ -n "$guard" ]; then
+  guard="$(evaluate_and_record_target_guard "$route" "$target" "$chain_depth")"
+  if [ "$(python3 -c 'import json; import sys; print(json.load(sys.stdin)["reason"] or "")' <<< "$guard")" ]; then
     echo "error: target-halted: $(python3 -c 'import json; import sys; print(json.load(sys.stdin)["reason"])' <<< "$guard")" >&2
     exit 1
   fi
+  chain_depth="$(python3 -c 'import json; import sys; print(json.load(sys.stdin)["next_chain_depth"])' <<< "$guard")"
 
   open_reservations="$(python3 - "$ledger" <<'PY'
 import json

@@ -562,6 +562,45 @@ then
   err "eighth hop did not record the depth halt before re-entry"
 fi
 
+depth_increment_ledger="$tmp_dir/.git-loopy/depth-increment-subagents.jsonl"
+reserve_and_bind \
+  --ledger "$depth_increment_ledger" \
+  --route implement \
+  --target issue-depth-increment \
+  --session-id session-depth-increment-1 \
+  --agent-id agent-depth-increment-1 \
+  --agent-type implement-agent \
+  --agent-name implement-agent \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$tmp_dir/worktree-depth-increment-1" \
+  --chain-depth 1
+
+PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete --ledger "$depth_increment_ledger" \
+  <<< "$(completion_payload agent-depth-increment-1 2026-08-22T00:11:00Z implement-agent implement-agent session-depth-increment-1)" \
+  >/dev/null
+
+"$CHAIN" reserve \
+  --ledger "$depth_increment_ledger" \
+  --route code-review \
+  --target issue-depth-increment \
+  --spawn-time 2026-08-22T00:12:00Z \
+  --worktree "$tmp_dir/worktree-depth-increment-2" \
+  --chain-depth 1
+
+if ! python3 - "$depth_increment_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger]
+
+row = next(row for row in rows if row["worktree"].endswith("worktree-depth-increment-2"))
+assert row["chain_depth"] == 2
+PY
+then
+  err "reserve did not derive the next target lineage depth"
+fi
+
 guard_ledger="$tmp_dir/.git-loopy/guard-subagents.jsonl"
 python3 - "$guard_ledger" <<'PY'
 import json
