@@ -8,6 +8,7 @@ usage:
     --agent AGENT --model MODEL --effort EFFORT --context-tier TIER [--ledger PATH]
   chain.sh record --route ROUTE --target TARGET --session-id ID \
     --spawn-time TIMESTAMP --worktree PATH --chain-depth N [--ledger PATH]
+  chain.sh complete [--ledger PATH] < subagent-stop-payload.json
 EOF
   exit 2
 }
@@ -182,11 +183,205 @@ PY
   rmdir "$lock_dir"
 }
 
+complete() {
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --ledger) ledger="${2:?missing value for --ledger}"; shift 2 ;;
+      *) usage ;;
+    esac
+  done
+
+  if [ -z "$ledger" ]; then
+    ledger="$(git rev-parse --show-toplevel)/.git-loopy/subagents.jsonl"
+  fi
+
+  local ledger_dir result
+  ledger_dir="$(dirname "$ledger")"
+  mkdir -p "$ledger_dir"
+  lock_dir="$ledger.lock"
+
+  while ! mkdir "$lock_dir" 2>/dev/null; do
+    sleep 0.01
+  done
+  lock_acquired=1
+
+  tmp="$(mktemp "$ledger_dir/.subagents.XXXXXX")"
+  result="$(
+    python3 -c '
+import datetime
+import json
+import os
+import subprocess
+import sys
+
+ledger_path, output_path = sys.argv[1:]
+required_fields = (
+    "sessionId",
+    "timestamp",
+    "cwd",
+    "transcriptPath",
+    "agentId",
+    "agentType",
+    "agentName",
+    "agentDisplayName",
+    "response",
+    "stopReason",
+)
+
+try:
+    payload = json.load(sys.stdin)
+except json.JSONDecodeError as error:
+    print(f"error: invalid subagent-stop payload: {error}", file=sys.stderr)
+    raise SystemExit(2)
+
+if not isinstance(payload, dict):
+    print("error: subagent-stop payload must be a JSON object", file=sys.stderr)
+    raise SystemExit(2)
+
+missing = [field for field in required_fields if field not in payload]
+if missing:
+    print(
+        "error: subagent-stop payload is missing " + ", ".join(missing),
+        file=sys.stderr,
+    )
+    raise SystemExit(2)
+
+invalid = [field for field in required_fields if not isinstance(payload[field], str)]
+if invalid:
+    print(
+        "error: subagent-stop payload has non-string " + ", ".join(invalid),
+        file=sys.stderr,
+    )
+    raise SystemExit(2)
+
+agent_id = payload["agentId"]
+if not agent_id:
+    print("error: subagent-stop payload has an empty agentId", file=sys.stderr)
+    raise SystemExit(2)
+
+rows = []
+if os.path.exists(ledger_path):
+    try:
+        with open(ledger_path, encoding="utf-8") as ledger:
+            rows = [json.loads(line) for line in ledger if line.strip()]
+    except json.JSONDecodeError as error:
+        print(f"error: invalid spawn ledger: {error}", file=sys.stderr)
+        raise SystemExit(2)
+
+# The spawn records the subagent identifier in session_id so this lifecycle
+# payload can resolve the single run it is completing.
+matches = [
+    index
+    for index, row in enumerate(rows)
+    if row.get("session_id") == agent_id and not row.get("finish_time")
+]
+
+if not matches:
+    print(json.dumps({
+        "continue": False,
+        "reason": "unmatched-payload",
+        "agent_id": agent_id,
+    }, separators=(",", ":")))
+    raise SystemExit(0)
+
+if len(matches) > 1:
+    print(json.dumps({
+        "continue": False,
+        "reason": "ambiguous-payload",
+        "agent_id": agent_id,
+    }, separators=(",", ":")))
+    raise SystemExit(0)
+
+row = rows[matches[0]]
+target = row.get("target")
+spawn_time = row.get("spawn_time")
+if not isinstance(target, str) or not target:
+    print("error: matching spawn ledger row has no target", file=sys.stderr)
+    raise SystemExit(2)
+if not isinstance(spawn_time, str) or not spawn_time:
+    print("error: matching spawn ledger row has no spawn_time", file=sys.stderr)
+    raise SystemExit(2)
+
+try:
+    spawn_at = datetime.datetime.fromisoformat(spawn_time.replace("Z", "+00:00"))
+except ValueError as error:
+    print(f"error: matching spawn ledger row has invalid spawn_time: {error}", file=sys.stderr)
+    raise SystemExit(2)
+
+tracker = subprocess.run(
+    ["gh", "issue", "view", target, "--json", "comments"],
+    capture_output=True,
+    cwd=payload["cwd"],
+    text=True,
+)
+if tracker.returncode:
+    sys.stderr.write(tracker.stderr)
+    raise SystemExit(tracker.returncode)
+
+try:
+    comments = json.loads(tracker.stdout).get("comments", [])
+except json.JSONDecodeError as error:
+    print(f"error: tracker returned invalid comment data: {error}", file=sys.stderr)
+    raise SystemExit(2)
+if not isinstance(comments, list):
+    print("error: tracker returned comments in an invalid format", file=sys.stderr)
+    raise SystemExit(2)
+
+has_evidence = False
+for comment in comments:
+    created_at = comment.get("createdAt") if isinstance(comment, dict) else None
+    if not isinstance(created_at, str):
+        continue
+    try:
+        comment_at = datetime.datetime.fromisoformat(created_at.replace("Z", "+00:00"))
+    except ValueError:
+        continue
+    if comment_at >= spawn_at:
+        has_evidence = True
+        break
+
+outcome = "published" if has_evidence else "no-evidence"
+row["finish_time"] = (
+    datetime.datetime.now(datetime.timezone.utc)
+    .isoformat(timespec="seconds")
+    .replace("+00:00", "Z")
+)
+row["outcome"] = outcome
+
+with open(output_path, "w", encoding="utf-8") as output:
+    for updated_row in rows:
+        output.write(json.dumps(updated_row, separators=(",", ":")) + "\n")
+
+print(json.dumps({
+    "continue": has_evidence,
+    "outcome": outcome,
+    "target": target,
+}, separators=(",", ":")))
+' "$ledger" "$tmp"
+  )"
+
+  if python3 -c '
+import json
+import sys
+
+raise SystemExit(0 if json.load(sys.stdin).get("reason") is None else 1)
+' <<< "$result"; then
+    mv "$tmp" "$ledger"
+  else
+    rm -f "$tmp"
+  fi
+  tmp=""
+  lock_acquired=0
+  rmdir "$lock_dir"
+  printf '%s\n' "$result"
+}
+
 [ "$#" -gt 0 ] || usage
 command="$1"
 shift
 case "$command" in
   plan) plan "$@" ;;
   record) record "$@" ;;
+  complete) complete "$@" ;;
   *) usage ;;
 esac
