@@ -35,6 +35,15 @@ def acquire_lock(lock_dir: str) -> bool:
         try:
             os.mkdir(lock_dir)
         except FileExistsError:
+            if lock_is_stale(lock_dir):
+                reclaimed = f"{lock_dir}.reclaim.{os.getpid()}"
+                try:
+                    os.replace(lock_dir, reclaimed)
+                    os.unlink(os.path.join(reclaimed, "pid"))
+                    os.rmdir(reclaimed)
+                except OSError:
+                    pass
+                continue
             if time.monotonic() >= deadline:
                 return False
             time.sleep(0.05)
@@ -48,6 +57,38 @@ def acquire_lock(lock_dir: str) -> bool:
         with open(os.path.join(lock_dir, "pid"), "w", encoding="utf-8") as owner:
             owner.write(f"{os.getpid()}\t{' '.join(start)}\n")
         return True
+
+
+def lock_is_stale(lock_dir: str) -> bool:
+    try:
+        with open(os.path.join(lock_dir, "pid"), encoding="utf-8") as owner:
+            pid_text, owner_start = owner.read().rstrip("\n").split("\t", 1)
+            pid = int(pid_text)
+    except (FileNotFoundError, ValueError):
+        try:
+            stale_after = int(os.environ.get("CHAIN_LOCK_STALE_SECONDS", "300"))
+        except ValueError:
+            return False
+        try:
+            return stale_after >= 0 and time.time() - os.stat(lock_dir).st_mtime >= stale_after
+        except FileNotFoundError:
+            return False
+
+    try:
+        if pid <= 0:
+            raise ProcessLookupError
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return True
+    except PermissionError:
+        return False
+
+    current_start = subprocess.run(
+        ["ps", "-o", "lstart=", "-p", str(pid)],
+        capture_output=True,
+        text=True,
+    ).stdout.split()
+    return " ".join(current_start) != owner_start
 
 
 def release_lock(lock_dir: str) -> None:

@@ -159,6 +159,21 @@ if [ "$ordinary_output" != '{"decision":"allow","reason":"no-unrouted-completion
 fi
 
 write_fixture_ledger
+mkdir "$fixture_ledger.lock"
+printf '999999\tstale process\n' > "$fixture_ledger.lock/pid"
+stale_lock_output="$(
+  COPILOT_HOME="$tmp_dir/missing-copilot-home" \
+    "$REPO/.github/hooks/git-loopy-chain.sh" reenter \
+    <<< "$(agent_stop_payload false)"
+)"
+if [ "$stale_lock_output" != '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","target":"issue-26"}' ]; then
+  err "agentStop did not reclaim a stale ledger lock"
+fi
+if [ -e "$fixture_ledger.lock" ]; then
+  err "agentStop left the reclaimed ledger lock behind"
+fi
+
+write_fixture_ledger
 active_output="$(
   COPILOT_HOME="$tmp_dir/missing-copilot-home" \
     "$REPO/.github/hooks/git-loopy-chain.sh" reenter \
