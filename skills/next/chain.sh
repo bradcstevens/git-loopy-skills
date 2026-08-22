@@ -7,9 +7,10 @@ usage:
   chain.sh plan --route ROUTE --target TARGET --safety SAFETY \
     --agent AGENT --model MODEL --effort EFFORT --context-tier TIER \
     --worktree PATH [--ledger PATH]
-  chain.sh record --route ROUTE --target TARGET --session-id ID --agent-id ID \
-    --agent-type TYPE --agent-name NAME --spawn-time TIMESTAMP --worktree PATH \
-    --chain-depth N [--ledger PATH]
+  chain.sh reserve --route ROUTE --target TARGET --spawn-time TIMESTAMP \
+    --worktree PATH --chain-depth N [--ledger PATH]
+  chain.sh bind --worktree PATH --session-id ID --agent-id ID \
+    --agent-type TYPE --agent-name NAME [--ledger PATH]
   chain.sh complete [--ledger PATH] < subagent-stop-payload.json
   chain.sh recover --stale-after-seconds N [--now TIMESTAMP] [--ledger PATH]
 
@@ -237,15 +238,17 @@ PY
 }
 
 mark_record_failed() {
-  local session_id="$1" agent_id="$2"
+  local worktree="$1"
 
   tmp="$(mktemp "$(dirname "$ledger")/.subagents.XXXXXX")"
-  python3 - "$ledger" "$tmp" "$session_id" "$agent_id" <<'PY'
+  python3 - "$ledger" "$tmp" "$worktree" <<'PY'
 import datetime
 import json
+import os
 import sys
 
-ledger_path, output_path, session_id, agent_id = sys.argv[1:]
+ledger_path, output_path, worktree = sys.argv[1:]
+worktree = os.path.realpath(os.path.abspath(worktree))
 with open(ledger_path, encoding="utf-8") as ledger:
     rows = [json.loads(line) for line in ledger if line.strip()]
 
@@ -253,8 +256,8 @@ matches = [
     row
     for row in rows
     if (
-        row.get("session_id") == session_id
-        and row.get("agent_id") == agent_id
+        isinstance(row.get("worktree"), str)
+        and os.path.realpath(os.path.abspath(row["worktree"])) == worktree
         and not row.get("finish_time")
     )
 ]
@@ -275,6 +278,16 @@ with open(output_path, "w", encoding="utf-8") as output:
 PY
   mv "$tmp" "$ledger"
   tmp=""
+}
+
+concurrency_limit() {
+  local limit="${CHAIN_MAX_CONCURRENCY:-10}"
+
+  [[ "$limit" =~ ^[1-9][0-9]*$ ]] || {
+    echo "error: CHAIN_MAX_CONCURRENCY must be a positive integer" >&2
+    return 2
+  }
+  printf '%s\n' "$limit"
 }
 
 plan() {
@@ -303,7 +316,8 @@ plan() {
     ledger="$(repository_root)/.git-loopy/subagents.jsonl"
   fi
 
-  local worktree_held=0 collision_status
+  local worktree_held=0 collision_status max_concurrency
+  max_concurrency="$(concurrency_limit)" || return $?
   if ledger_has_open_worktree "$worktree"; then
     worktree_held=1
   else
@@ -313,14 +327,15 @@ plan() {
     fi
   fi
 
-  python3 - "$ledger" "$route" "$target" "$safety" "$agent" "$model" "$effort" "$context_tier" "$worktree" "$worktree_held" <<'PY'
+  python3 - "$ledger" "$route" "$target" "$safety" "$agent" "$model" "$effort" "$context_tier" "$worktree" "$worktree_held" "$max_concurrency" <<'PY'
 import json
 import os
 import sys
 
-ledger, route, target, safety, agent, model, effort, context_tier, worktree, worktree_held = sys.argv[1:]
+ledger, route, target, safety, agent, model, effort, context_tier, worktree, worktree_held, max_concurrency = sys.argv[1:]
 worktree = os.path.realpath(os.path.abspath(worktree))
 worktree_held = worktree_held == "1"
+max_concurrency = int(max_concurrency)
 allowlisted_routes = {
     "/implement",
     "/code-review",
@@ -346,6 +361,7 @@ elif safety != "AFK-safe":
 else:
     in_flight = False
     target_failed = False
+    open_reservations = 0
     if os.path.exists(ledger):
         with open(ledger, encoding="utf-8") as ledger_file:
             for raw_line in ledger_file:
@@ -353,6 +369,8 @@ else:
                 if not line:
                     continue
                 row = json.loads(line)
+                if not row.get("finish_time"):
+                    open_reservations += 1
                 if row["target"] == target and not row.get("finish_time"):
                     in_flight = True
                     break
@@ -381,6 +399,13 @@ else:
             "target": target,
             "worktree": worktree,
         }
+    elif open_reservations >= max_concurrency:
+        decision = {
+            "decision": "decline",
+            "reason": "concurrency-limit",
+            "route": route,
+            "target": target,
+        }
     else:
         decision = {
             "decision": "spawn",
@@ -397,18 +422,13 @@ print(json.dumps(decision, separators=(",", ":")))
 PY
 }
 
-record() {
-  local route="" target="" session_id="" agent_id="" agent_type="" agent_name=""
-  local spawn_time="" worktree="" chain_depth=""
+reserve() {
+  local route="" target="" spawn_time="" worktree="" chain_depth=""
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --route) route="${2:?missing value for --route}"; shift 2 ;;
       --target) target="${2:?missing value for --target}"; shift 2 ;;
-      --session-id) session_id="${2:?missing value for --session-id}"; shift 2 ;;
-      --agent-id) agent_id="${2:?missing value for --agent-id}"; shift 2 ;;
-      --agent-type) agent_type="${2:?missing value for --agent-type}"; shift 2 ;;
-      --agent-name) agent_name="${2:?missing value for --agent-name}"; shift 2 ;;
       --spawn-time) spawn_time="${2:?missing value for --spawn-time}"; shift 2 ;;
       --worktree) worktree="${2:?missing value for --worktree}"; shift 2 ;;
       --chain-depth) chain_depth="${2:?missing value for --chain-depth}"; shift 2 ;;
@@ -417,14 +437,13 @@ record() {
     esac
   done
 
-  [ -n "$route" ] && [ -n "$target" ] && [ -n "$session_id" ] &&
-    [ -n "$agent_id" ] && [ -n "$agent_type" ] && [ -n "$agent_name" ] &&
-    [ -n "$spawn_time" ] && [ -n "$worktree" ] && [ -n "$chain_depth" ] || usage
+  [ -n "$route" ] && [ -n "$target" ] && [ -n "$spawn_time" ] &&
+    [ -n "$worktree" ] && [ -n "$chain_depth" ] || usage
   [[ "$chain_depth" =~ ^[0-9]+$ ]] || {
     echo "error: --chain-depth must be a non-negative integer" >&2
     exit 2
   }
-  local ledger_dir row spawn_commit worktree_branch
+  local ledger_dir row spawn_commit worktree_branch max_concurrency open_reservations
   if [ -z "$ledger" ]; then
     ledger="$(repository_root)/.git-loopy/subagents.jsonl"
   fi
@@ -432,9 +451,10 @@ record() {
   lock_dir="$ledger.lock"
   spawn_commit="$(git rev-parse HEAD)"
   repo_root="$(repository_root)"
-  worktree_branch="git-loopy/${session_id//[![:alnum:]._-]/-}"
+  worktree_branch="git-loopy/reservation-${$}-${RANDOM}"
   worktree="$(python3 -c 'import os; import sys; print(os.path.realpath(os.path.abspath(sys.argv[1])))' "$worktree")"
   mkdir -p "$ledger_dir"
+  max_concurrency="$(concurrency_limit)" || return $?
 
   acquire_lock
 
@@ -449,25 +469,44 @@ record() {
     fi
   fi
 
+  open_reservations="$(python3 - "$ledger" <<'PY'
+import json
+import os
+import sys
+
+ledger_path = sys.argv[1]
+if not os.path.exists(ledger_path):
+    print(0)
+    raise SystemExit
+
+with open(ledger_path, encoding="utf-8") as ledger:
+    print(sum(
+        1
+        for line in ledger
+        if line.strip() and not json.loads(line).get("finish_time")
+    ))
+PY
+)"
+  if [ "$open_reservations" -ge "$max_concurrency" ]; then
+    echo "error: concurrency-limit: $max_concurrency" >&2
+    exit 1
+  fi
+
   tmp="$(mktemp "$ledger_dir/.subagents.XXXXXX")"
-  row="$(python3 - "$route" "$target" "$session_id" "$agent_id" "$agent_type" "$agent_name" "$spawn_time" "$worktree" "$chain_depth" <<'PY'
+  row="$(python3 - "$route" "$target" "$spawn_time" "$worktree" "$chain_depth" <<'PY'
 import json
 import sys
 
-route, target, session_id, agent_id, agent_type, agent_name, spawn_time, worktree, chain_depth = sys.argv[1:]
+route, target, spawn_time, worktree, chain_depth = sys.argv[1:]
 row = {
     "route": route,
     "target": target,
-    "session_id": session_id,
     "spawn_time": spawn_time,
     "worktree": worktree,
     "chain_depth": int(chain_depth),
     "finish_time": "",
     "outcome": "",
 }
-row["agent_id"] = agent_id
-row["agent_type"] = agent_type
-row["agent_name"] = agent_name
 print(json.dumps(row, separators=(",", ":")))
 PY
 )"
@@ -477,21 +516,103 @@ PY
   fi
   printf '%s\n' "$row" >> "$tmp"
 
-  if [ -n "${CHAIN_RECORD_PAUSE_BEFORE_COMMIT:-}" ]; then
-    sleep "$CHAIN_RECORD_PAUSE_BEFORE_COMMIT"
+  if [ -n "${CHAIN_RESERVE_PAUSE_BEFORE_COMMIT:-}" ]; then
+    sleep "$CHAIN_RESERVE_PAUSE_BEFORE_COMMIT"
   fi
   mv "$tmp" "$ledger"
   tmp=""
-  if [ -n "${CHAIN_RECORD_PAUSE_BEFORE_WORKTREE:-}" ]; then
-    sleep "$CHAIN_RECORD_PAUSE_BEFORE_WORKTREE"
+  if [ -n "${CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE:-}" ]; then
+    sleep "$CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE"
   fi
   if ! git -C "$repo_root" worktree add -b "$worktree_branch" "$worktree" "$spawn_commit"; then
-    mark_record_failed "$session_id" "$agent_id"
+    mark_record_failed "$worktree"
     exit 1
   fi
   created_worktree=1
   created_worktree_path="$worktree"
   created_worktree=0
+  release_lock
+}
+
+bind() {
+  local session_id="" agent_id="" agent_type="" agent_name="" worktree=""
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --session-id) session_id="${2:?missing value for --session-id}"; shift 2 ;;
+      --agent-id) agent_id="${2:?missing value for --agent-id}"; shift 2 ;;
+      --agent-type) agent_type="${2:?missing value for --agent-type}"; shift 2 ;;
+      --agent-name) agent_name="${2:?missing value for --agent-name}"; shift 2 ;;
+      --worktree) worktree="${2:?missing value for --worktree}"; shift 2 ;;
+      --ledger) ledger="${2:?missing value for --ledger}"; shift 2 ;;
+      *) usage ;;
+    esac
+  done
+
+  [ -n "$session_id" ] && [ -n "$agent_id" ] && [ -n "$agent_type" ] &&
+    [ -n "$agent_name" ] && [ -n "$worktree" ] || usage
+
+  local ledger_dir
+  if [ -z "$ledger" ]; then
+    ledger="$(repository_root)/.git-loopy/subagents.jsonl"
+  fi
+  ledger_dir="$(dirname "$ledger")"
+  lock_dir="$ledger.lock"
+  worktree="$(python3 -c 'import os; import sys; print(os.path.realpath(os.path.abspath(sys.argv[1])))' "$worktree")"
+  mkdir -p "$ledger_dir"
+  acquire_lock
+
+  tmp="$(mktemp "$ledger_dir/.subagents.XXXXXX")"
+  if ! python3 - "$ledger" "$tmp" "$worktree" "$session_id" "$agent_id" "$agent_type" "$agent_name" <<'PY'
+import json
+import os
+import sys
+
+ledger_path, output_path, worktree, session_id, agent_id, agent_type, agent_name = sys.argv[1:]
+rows = []
+if os.path.exists(ledger_path):
+    with open(ledger_path, encoding="utf-8") as ledger:
+        rows = [json.loads(line) for line in ledger if line.strip()]
+
+reservations = [
+    index
+    for index, row in enumerate(rows)
+    if (
+        isinstance(row.get("worktree"), str)
+        and os.path.realpath(os.path.abspath(row["worktree"])) == worktree
+        and not row.get("finish_time")
+        and not row.get("agent_id")
+    )
+]
+if not reservations:
+    print(f"error: reservation not found for worktree: {worktree}", file=sys.stderr)
+    raise SystemExit(1)
+if len(reservations) > 1:
+    print(f"error: ambiguous reservation for worktree: {worktree}", file=sys.stderr)
+    raise SystemExit(1)
+if any(row.get("agent_id") == agent_id for row in rows):
+    print(f"error: agent identity already bound: {agent_id}", file=sys.stderr)
+    raise SystemExit(1)
+
+row = rows[reservations[0]]
+row["session_id"] = session_id
+row["agent_id"] = agent_id
+row["agent_type"] = agent_type
+row["agent_name"] = agent_name
+
+with open(output_path, "w", encoding="utf-8") as output:
+    for row in rows:
+        output.write(json.dumps(row, separators=(",", ":")) + "\n")
+PY
+  then
+    rm -f "$tmp"
+    tmp=""
+    release_lock
+    return 1
+  fi
+
+  mv "$tmp" "$ledger"
+  tmp=""
   release_lock
 }
 
@@ -601,6 +722,24 @@ matches = [
 ]
 
 if not matches:
+    payload_worktree = os.path.realpath(os.path.abspath(payload["cwd"]))
+    unbound_matches = [
+        index
+        for index, row in enumerate(rows)
+        if (
+            isinstance(row.get("worktree"), str)
+            and os.path.realpath(os.path.abspath(row["worktree"])) == payload_worktree
+            and not row.get("finish_time")
+            and not row.get("agent_id")
+        )
+    ]
+    if len(unbound_matches) == 1:
+        print(json.dumps({
+            "continue": False,
+            "reason": "unbound-reservation",
+            "worktree": payload_worktree,
+        }, separators=(",", ":")))
+        raise SystemExit(0)
     print(json.dumps({
         "continue": False,
         "reason": "unmatched-payload",
@@ -855,7 +994,8 @@ command="$1"
 shift
 case "$command" in
   plan) plan "$@" ;;
-  record) record "$@" ;;
+  reserve) reserve "$@" ;;
+  bind) bind "$@" ;;
   complete) complete "$@" ;;
   recover) recover "$@" ;;
   *) usage ;;
