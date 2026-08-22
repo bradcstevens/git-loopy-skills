@@ -237,6 +237,33 @@ raise SystemExit(1)
 PY
 }
 
+ledger_has_open_target() {
+  python3 - "$ledger" "$1" <<'PY'
+import json
+import os
+import sys
+
+ledger, target = sys.argv[1:]
+if not os.path.exists(ledger):
+    raise SystemExit(1)
+
+with open(ledger, encoding="utf-8") as ledger_file:
+    for raw_line in ledger_file:
+        line = raw_line.strip()
+        if not line:
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError as error:
+            print(f"error: invalid spawn ledger: {error}", file=sys.stderr)
+            raise SystemExit(2)
+        if row.get("target") == target and not row.get("finish_time"):
+            raise SystemExit(0)
+
+raise SystemExit(1)
+PY
+}
+
 mark_record_failed() {
   local worktree="$1"
 
@@ -283,8 +310,8 @@ PY
 concurrency_limit() {
   local limit="${CHAIN_MAX_CONCURRENCY:-10}"
 
-  [[ "$limit" =~ ^[1-9][0-9]*$ ]] || {
-    echo "error: CHAIN_MAX_CONCURRENCY must be a positive integer" >&2
+  [[ "$limit" =~ ^[1-9][0-9]*$ ]] && [ "$limit" -le 10 ] || {
+    echo "error: CHAIN_MAX_CONCURRENCY must be an integer from 1 through 10" >&2
     return 2
   }
   printf '%s\n' "$limit"
@@ -461,6 +488,16 @@ reserve() {
   local collision_status
   if ledger_has_open_worktree "$worktree"; then
     echo "error: worktree-in-flight: $worktree" >&2
+    exit 1
+  else
+    collision_status=$?
+    if [ "$collision_status" -ne 1 ]; then
+      return "$collision_status"
+    fi
+  fi
+
+  if ledger_has_open_target "$target"; then
+    echo "error: target-in-flight: $target" >&2
     exit 1
   else
     collision_status=$?

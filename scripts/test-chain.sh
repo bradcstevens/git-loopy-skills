@@ -149,7 +149,7 @@ fi
 CHAIN_RESERVE_PAUSE_BEFORE_COMMIT=1 "$CHAIN" reserve \
   --ledger "$ledger" \
   --route push \
-  --target issue-4 \
+  --target issue-interrupted \
   --spawn-time 2026-08-22T00:02:00Z \
   --worktree "$tmp_dir/worktree-3" \
   --chain-depth 3 &
@@ -194,7 +194,24 @@ if ! cmp -s "$ledger.before-duplicate-bind" "$ledger"; then
   err "duplicate agent binding modified the ledger"
 fi
 
+cp "$ledger" "$ledger.before-duplicate-target"
+if "$CHAIN" reserve \
+  --ledger "$ledger" \
+  --route code-review \
+  --target issue-4 \
+  --spawn-time 2026-08-22T00:04:00Z \
+  --worktree "$tmp_dir/worktree-duplicate-target" \
+  --chain-depth 2 \
+  2>/dev/null
+then
+  err "reserve accepted a target that was already in flight"
+fi
+if ! cmp -s "$ledger.before-duplicate-target" "$ledger"; then
+  err "duplicate target reservation modified the ledger"
+fi
+
 cp "$ledger" "$ledger.before-missing-bind"
+missing_bind_error="$tmp_dir/missing-bind.err"
 if "$CHAIN" bind \
   --ledger "$ledger" \
   --worktree "$tmp_dir/worktree-missing-reservation" \
@@ -202,9 +219,12 @@ if "$CHAIN" bind \
   --agent-id agent-missing \
   --agent-type research-agent \
   --agent-name research-agent \
-  2>/dev/null
+  2>"$missing_bind_error"
 then
   err "bind accepted a missing reservation"
+fi
+if ! grep -q "reservation not found for worktree" "$missing_bind_error"; then
+  err "bind did not report the missing reservation"
 fi
 if ! cmp -s "$ledger.before-missing-bind" "$ledger"; then
   err "missing reservation binding modified the ledger"
@@ -275,6 +295,20 @@ concurrency_limit="$(
 )"
 assert_plan "unbound reservation concurrency" "$concurrency_limit" \
   '{"decision":"decline","reason":"concurrency-limit","route":"/implement","target":"issue-concurrency-candidate"}'
+if CHAIN_MAX_CONCURRENCY=11 "$CHAIN" plan \
+  --ledger "$concurrency_ledger" \
+  --route /implement \
+  --target issue-invalid-concurrency \
+  --safety AFK-safe \
+  --agent implement-agent \
+  --model gpt-5.6-terra \
+  --effort high \
+  --context-tier default \
+  --worktree "$tmp_dir/worktree-invalid-concurrency" \
+  2>/dev/null
+then
+  err "plan accepted a concurrency ceiling above ten"
+fi
 
 outside_route="$(plan /triage issue-6 AFK-safe triage-agent gpt-5.6-terra high default "$tmp_dir/plan-outside")"
 assert_plan "outside route" "$outside_route" \
