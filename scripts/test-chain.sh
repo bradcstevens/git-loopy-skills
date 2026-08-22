@@ -95,4 +95,65 @@ if grep -q interrupted "$ledger"; then
   err "interrupted append committed an incomplete record"
 fi
 
+plan_ledger="$tmp_dir/.git-loopy/plan-subagents.jsonl"
+plan() {
+  "$CHAIN" plan \
+    --ledger "$plan_ledger" \
+    --route "$1" \
+    --target "$2" \
+    --safety "$3" \
+    --agent "$4" \
+    --model "$5" \
+    --effort "$6" \
+    --context-tier "$7"
+}
+
+assert_plan() {
+  local case_name="$1" output="$2" expected="$3"
+
+  if ! python3 - "$output" "$expected" <<'PY'
+import json
+import sys
+
+assert json.loads(sys.argv[1]) == json.loads(sys.argv[2])
+PY
+  then
+    err "$case_name decision did not match"
+  fi
+}
+
+outside_route="$(plan /triage issue-6 AFK-safe triage-agent gpt-5.6-terra high default)"
+assert_plan "outside route" "$outside_route" \
+  '{"decision":"decline","reason":"route-not-allowlisted","route":"/triage","target":"issue-6"}'
+
+hitl_route="$(plan /implement issue-6 HITL implement-agent gpt-5.6-terra high default)"
+assert_plan "HITL route" "$hitl_route" \
+  '{"decision":"decline","reason":"action-not-afk-safe","route":"/implement","target":"issue-6"}'
+
+afk_safe_route="$(plan /implement issue-6 AFK-safe implement-agent gpt-5.6-terra xhigh long_context)"
+assert_plan "AFK-safe route" "$afk_safe_route" \
+  '{"decision":"spawn","route":"/implement","target":"issue-6","agent":"implement-agent","model":"gpt-5.6-terra","effort":"xhigh","context_tier":"long_context"}'
+
+if [ -e "$plan_ledger" ]; then
+  err "plan created a ledger"
+fi
+
+"$CHAIN" record \
+  --ledger "$plan_ledger" \
+  --route implement \
+  --target issue-6 \
+  --session-id session-3 \
+  --spawn-time 2026-08-22T00:03:00Z \
+  --worktree "$tmp_dir/worktree-4" \
+  --chain-depth 1
+cp "$plan_ledger" "$plan_ledger.before"
+
+in_flight_target="$(plan /code-review issue-6 AFK-safe code-review-agent gpt-5.6-sol xhigh default)"
+assert_plan "in-flight target" "$in_flight_target" \
+  '{"decision":"decline","reason":"target-in-flight","route":"/code-review","target":"issue-6"}'
+
+if ! cmp -s "$plan_ledger.before" "$plan_ledger"; then
+  err "plan modified the ledger"
+fi
+
 exit "$fail"
