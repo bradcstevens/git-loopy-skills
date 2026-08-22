@@ -146,36 +146,16 @@ standard input, so do not add a redirection or a wrapper that changes it. Use Py
 `json` and `shlex` modules to quote the resolved path when building the draft rather than
 hand-escaping it.
 
-Build and display the draft with:
+Build the draft once, then display that exact file:
 
 ```bash
-python3 - "$chain_script" <<'PY'
+hook_draft="$(mktemp "${TMPDIR:-/tmp}/git-loopy-chain.XXXXXX")"
+python3 - "$chain_script" "$hook_draft" <<'PY'
 import json
 import shlex
 import sys
 
-print(json.dumps({
-    "version": 1,
-    "hooks": {
-        "subagentStop": [{
-            "type": "command",
-            "bash": f"{shlex.quote(sys.argv[1])} complete",
-        }],
-    },
-}, indent=2) + "\n")
-PY
-```
-
-Only after the user approves that displayed JSON, write it in place:
-
-```bash
-python3 - "$chain_script" ".github/hooks/git-loopy-chain.json" <<'PY'
-import json
-import os
-import shlex
-import sys
-
-chain_script, hook_path = sys.argv[1:]
+chain_script, hook_draft = sys.argv[1:]
 hook = {
     "version": 1,
     "hooks": {
@@ -185,18 +165,25 @@ hook = {
         }],
     },
 }
-hook_dir = os.path.dirname(hook_path)
-os.makedirs(hook_dir, exist_ok=True)
-with open(hook_path, "w", encoding="utf-8") as hook_file:
+with open(hook_draft, "w", encoding="utf-8") as hook_file:
     json.dump(hook, hook_file, indent=2)
     hook_file.write("\n")
 PY
+cat "$hook_draft"
+```
+
+Only after the user approves that displayed JSON, write it in place:
+
+```bash
+mkdir -p .github/hooks
+mv "$hook_draft" .github/hooks/git-loopy-chain.json
 ```
 
 Always write the same `git-loopy-chain.json` path. If it already exists, replace only that
 file with the approved hook rather than creating another hook file. The hook belongs in the
 repository and should be committed with the other setup output. Re-running setup on another
-clone updates the absolute installed-script path for that clone.
+clone updates the absolute installed-script path for that clone. If the user rejects the draft,
+delete `"$hook_draft"` and leave the existing hook unchanged.
 
 ### 5. Done
 
