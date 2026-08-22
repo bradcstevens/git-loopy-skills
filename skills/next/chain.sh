@@ -822,17 +822,19 @@ import subprocess
 import sys
 
 ledger_path, output_path, metadata_path = sys.argv[1:]
+# Required because `complete` reads them, and for no other reason. sessionId,
+# agentId, agentType and agentName find the ledger row; cwd locates the
+# repository and the worktree; timestamp closes the row. Everything else the
+# runtime sends — transcriptPath, agentDisplayName, response, stopReason, and
+# whatever a later release adds — is optional, because a field that is required
+# and never read rejects real payloads and silences the whole chain (#41).
 required_fields = (
     "sessionId",
     "timestamp",
     "cwd",
-    "transcriptPath",
     "agentId",
     "agentType",
     "agentName",
-    "agentDisplayName",
-    "response",
-    "stopReason",
 )
 
 try:

@@ -24,7 +24,9 @@ from trusting documented behaviour that nobody had exercised:
 - Returning a block decision from a repo-scoped `agentStop` hook does stop the parent exiting; it
   takes another turn with the hook's reason injected as context.
 - The payload carries `sessionId`, `timestamp`, `cwd`, `transcriptPath`, `stopReason`, and
-  `stop_hook_active`.
+  `stop_hook_active`. This is what one spike saw, not a guarantee — see
+  [ADR-0005](./0005-hook-payload-fields-are-required-only-where-they-are-read.md) for why the hooks
+  validate only the fields they read.
 - `stop_hook_active` is present — `false` on a natural stop, `true` on a turn that a block forced.
   It is the loop-breaker, and the chain must consult it rather than blocking unconditionally.
 - The runtime permits **8 consecutive blocks** before it stops re-prompting and exits cleanly. The

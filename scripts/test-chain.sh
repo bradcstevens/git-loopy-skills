@@ -746,6 +746,157 @@ if ! cmp -s "$complete_ledger.before-unmatched" "$complete_ledger"; then
   err "unmatched completion modified the ledger"
 fi
 
+# Real payloads from built-in agent types carry only what the runtime chooses to
+# send. `complete` must require nothing beyond the fields it reads: requiring an
+# unread one rejected every live completion, and the chain went silent (#41).
+minimal_payload() {
+  local agent_id="$1" agent_type="$2" agent_name="$3" session_id="$4" payload_cwd="$5"
+  printf '%s' '{"sessionId":"'"$session_id"'","timestamp":"2026-08-22T00:11:00Z","cwd":"'"$payload_cwd"'","agentId":"'"$agent_id"'","agentType":"'"$agent_type"'","agentName":"'"$agent_name"'"}'
+}
+
+minimal_ledger="$tmp_dir/.git-loopy/minimal-subagents.jsonl"
+reserve_and_bind \
+  --ledger "$minimal_ledger" \
+  --route implement \
+  --target issue-minimal \
+  --session-id session-minimal \
+  --agent-id agent-minimal \
+  --agent-type code-review \
+  --agent-name code-review \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$tmp_dir/worktree-minimal" \
+  --chain-depth 1
+
+minimal_output="$(
+  PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete --ledger "$minimal_ledger" \
+    <<< "$(minimal_payload agent-minimal code-review code-review session-minimal "$tmp_dir")"
+)"
+assert_plan "minimal completion" "$minimal_output" \
+  '{"continue":true,"outcome":"published","target":"issue-minimal"}'
+
+if ! python3 - "$minimal_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger]
+
+assert len(rows) == 1, rows
+assert rows[0]["finish_time"] == "2026-08-22T00:11:00Z", rows
+assert rows[0]["outcome"] == "published", rows
+assert not rows[0].get("routed"), rows
+PY
+then
+  err "a payload carrying only the fields complete reads did not close its ledger row"
+fi
+
+# Every field the runtime may add is optional, including ones no release has sent
+# yet: a conditional field must never be able to stop the chain again.
+optional_ledger="$tmp_dir/.git-loopy/optional-subagents.jsonl"
+reserve_and_bind \
+  --ledger "$optional_ledger" \
+  --route implement \
+  --target issue-optional \
+  --session-id session-optional \
+  --agent-id agent-optional \
+  --agent-type implement-agent \
+  --agent-name implement-agent \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$tmp_dir/worktree-optional" \
+  --chain-depth 1
+
+optional_output="$(
+  PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete --ledger "$optional_ledger" \
+    <<< '{"sessionId":"session-optional","timestamp":"2026-08-22T00:11:00Z","cwd":"'"$tmp_dir"'","transcriptPath":"'"$tmp_dir"'/transcript.jsonl","agentId":"agent-optional","agentType":"implement-agent","agentName":"implement-agent","agentDisplayName":"Implement agent","response":"Completed the route.","stopReason":"end_turn","permissionMode":"default","unreleasedFutureField":{"nested":[1,2,3]}}'
+)"
+assert_plan "every-optional-field completion" "$optional_output" \
+  '{"continue":true,"outcome":"published","target":"issue-optional"}'
+
+# The fields that remain required are exactly the ones complete reads, and each
+# is still named when it is absent.
+required_ledger="$tmp_dir/.git-loopy/required-subagents.jsonl"
+reserve_and_bind \
+  --ledger "$required_ledger" \
+  --route implement \
+  --target issue-required \
+  --session-id session-required \
+  --agent-id agent-required \
+  --agent-type implement-agent \
+  --agent-name implement-agent \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$tmp_dir/worktree-required" \
+  --chain-depth 1
+cp "$required_ledger" "$required_ledger.before-missing"
+
+payload_without() {
+  python3 -c '
+import json
+import sys
+
+payload = json.loads(sys.argv[1])
+del payload[sys.argv[2]]
+print(json.dumps(payload, separators=(",", ":")))
+' "$1" "$2"
+}
+
+required_payload="$(completion_payload agent-required 2026-08-22T00:11:00Z implement-agent implement-agent session-required)"
+for required_field in sessionId timestamp cwd agentId agentType agentName; do
+  missing_error="$tmp_dir/missing-$required_field.err"
+  if PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete \
+    --ledger "$required_ledger" \
+    <<< "$(payload_without "$required_payload" "$required_field")" \
+    >/dev/null 2>"$missing_error"
+  then
+    err "complete accepted a payload missing $required_field"
+  fi
+  if ! grep -q "subagent-stop payload is missing $required_field" "$missing_error"; then
+    err "complete did not name the missing $required_field"
+  fi
+done
+
+if ! cmp -s "$required_ledger.before-missing" "$required_ledger"; then
+  err "a payload missing a required field modified the ledger"
+fi
+if [ -e "$required_ledger.lock" ]; then
+  err "a rejected payload left the ledger lock behind"
+fi
+
+# The whole point of closing the row: agentStop must then find it unrouted, or
+# the chain does nothing and reports nothing wrong.
+reentry_repo="$tmp_dir/reentry-repository"
+git init --quiet "$reentry_repo"
+git -C "$reentry_repo" -c user.name=test -c user.email=test@example.com \
+  commit --quiet --allow-empty -m initial
+(
+  cd "$reentry_repo"
+  reserve_and_bind \
+    --route implement \
+    --target issue-reentry \
+    --session-id session-reentry \
+    --agent-id agent-reentry \
+    --agent-type code-review \
+    --agent-name code-review \
+    --spawn-time 2026-08-22T00:00:00Z \
+    --worktree "$reentry_repo/worktree-reentry" \
+    --chain-depth 1
+)
+
+reentry_output="$(
+  cd "$reentry_repo"
+  PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete \
+    <<< "$(minimal_payload agent-reentry code-review code-review session-reentry "$reentry_repo")"
+)"
+assert_plan "re-entry completion" "$reentry_output" \
+  '{"continue":true,"outcome":"published","target":"issue-reentry"}'
+
+reentry_decision="$(
+  python3 "$REPO/skills/setup-git-loopy-skills/git-loopy-agent-stop.py" \
+    <<< '{"cwd":"'"$reentry_repo"'","timestamp":"2026-08-22T00:12:00Z","stop_hook_active":false}'
+)"
+if [ "$reentry_decision" != '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","target":"issue-reentry"}' ]; then
+  err "agentStop did not see a real completion as an unrouted run"
+fi
+
 recovery_ledger="$tmp_dir/recovery-subagents.jsonl"
 plan_ledger="$recovery_ledger"
 stale_worktree="$tmp_dir/worktree-stale"
