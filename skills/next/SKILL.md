@@ -276,11 +276,14 @@ user-launched fresh session.
 
 ## 7. Spawn a chain-approved route
 
-Set `Context: Subagent` only for the `spawn` decision from step 5. Reserve the target before
-launching the returned custom agent in background mode, bind the returned agent identity
-immediately after launch, and carry the recommendation's paste-safe prompt and runtime into that
-agent. Do not launch a declined action, an action that reaches the checkpoint boundary, or an action
-whose phase-boundary choice is anything other than `Subagent`.
+Set `Context: Subagent` only for the `spawn` decision from step 5. For the serial first hop,
+reserve the current working directory with `chain.sh reserve --in-place` before launching the
+returned custom agent in background mode. Record `COPILOT_AGENT_SESSION_ID` with `--session-id`
+on that reservation: it is the deterministic parent-session value the completion payload will
+carry, so the transcript can be correlated even before the runtime returns the agent identity.
+Bind that returned identity immediately after launch, then carry the recommendation's paste-safe
+prompt and runtime into the agent. Do not launch a declined action, an action that reaches the
+checkpoint boundary, or an action whose phase-boundary choice is anything other than `Subagent`.
 
 Every other route ends at step 6 and leaves a user-launched fresh session, continued session, or
 `/handoff` transition to its own documented behavior.

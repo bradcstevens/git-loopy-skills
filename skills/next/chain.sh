@@ -8,7 +8,7 @@ usage:
     --agent AGENT --model MODEL --effort EFFORT --context-tier TIER \
     --worktree PATH [--ledger PATH]
   chain.sh reserve --route ROUTE --target TARGET --spawn-time TIMESTAMP \
-    --worktree PATH --chain-depth N [--ledger PATH]
+    --worktree PATH --chain-depth N [--session-id ID] [--in-place] [--ledger PATH]
   chain.sh bind --worktree PATH --session-id ID --agent-id ID \
     --agent-type TYPE --agent-name NAME [--ledger PATH]
   chain.sh complete [--ledger PATH] < subagent-stop-payload.json
@@ -582,7 +582,7 @@ PY
 }
 
 reserve() {
-  local route="" target="" spawn_time="" worktree="" chain_depth=""
+  local route="" target="" spawn_time="" worktree="" chain_depth="" session_id="" in_place=0
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -591,6 +591,8 @@ reserve() {
       --spawn-time) spawn_time="${2:?missing value for --spawn-time}"; shift 2 ;;
       --worktree) worktree="${2:?missing value for --worktree}"; shift 2 ;;
       --chain-depth) chain_depth="${2:?missing value for --chain-depth}"; shift 2 ;;
+      --session-id) session_id="${2:?missing value for --session-id}"; shift 2 ;;
+      --in-place) in_place=1; shift ;;
       --ledger) ledger="${2:?missing value for --ledger}"; shift 2 ;;
       *) usage ;;
     esac
@@ -608,9 +610,11 @@ reserve() {
   fi
   ledger_dir="$(dirname "$ledger")"
   lock_dir="$ledger.lock"
-  spawn_commit="$(git rev-parse HEAD)"
-  repo_root="$(repository_root)"
-  worktree_branch="git-loopy/reservation-${$}-${RANDOM}"
+  if [ "$in_place" -eq 0 ]; then
+    spawn_commit="$(git rev-parse HEAD)"
+    repo_root="$(repository_root)"
+    worktree_branch="git-loopy/reservation-${$}-${RANDOM}"
+  fi
   worktree="$(python3 -c 'import os; import sys; print(os.path.realpath(os.path.abspath(sys.argv[1])))' "$worktree")"
   mkdir -p "$ledger_dir"
   max_concurrency="$(concurrency_limit)" || return $?
@@ -669,11 +673,11 @@ PY
   fi
 
   tmp="$(mktemp "$ledger_dir/.subagents.XXXXXX")"
-  row="$(python3 - "$route" "$target" "$spawn_time" "$worktree" "$chain_depth" <<'PY'
+  row="$(python3 - "$route" "$target" "$spawn_time" "$worktree" "$chain_depth" "$session_id" "$in_place" <<'PY'
 import json
 import sys
 
-route, target, spawn_time, worktree, chain_depth = sys.argv[1:]
+route, target, spawn_time, worktree, chain_depth, session_id, in_place = sys.argv[1:]
 row = {
     "route": route,
     "target": target,
@@ -683,6 +687,10 @@ row = {
     "finish_time": "",
     "outcome": "",
 }
+if session_id:
+    row["session_id"] = session_id
+if in_place == "1":
+    row["in_place"] = True
 print(json.dumps(row, separators=(",", ":")))
 PY
 )"
@@ -697,6 +705,10 @@ PY
   fi
   mv "$tmp" "$ledger"
   tmp=""
+  if [ "$in_place" -eq 1 ]; then
+    release_lock
+    return
+  fi
   if [ -n "${CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE:-}" ]; then
     sleep "$CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE"
   fi
@@ -771,6 +783,14 @@ if any(row.get("agent_id") == agent_id for row in rows):
     raise SystemExit(1)
 
 row = rows[reservations[0]]
+reserved_session_id = row.get("session_id")
+if reserved_session_id not in (None, "", session_id):
+    print(
+        "error: reservation session identity does not match: "
+        f"{reserved_session_id}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
 row["session_id"] = session_id
 row["agent_id"] = agent_id
 row["agent_type"] = agent_type
@@ -804,7 +824,7 @@ complete() {
     ledger="$(repository_root)/.git-loopy/subagents.jsonl"
   fi
 
-  local ledger_dir result
+  local ledger_dir result completed_worktree in_place
   ledger_dir="$(dirname "$ledger")"
   mkdir -p "$ledger_dir"
   lock_dir="$ledger.lock"
@@ -1021,6 +1041,7 @@ with open(output_path, "w", encoding="utf-8") as output:
         output.write(json.dumps(updated_row, separators=(",", ":")) + "\n")
 with open(metadata_path, "w", encoding="utf-8") as metadata:
     metadata.write(worktree + "\n")
+    metadata.write("true\n" if row.get("in_place") is True else "false\n")
 
 print(json.dumps({
     "continue": has_evidence and "halt_reason" not in row,
@@ -1036,7 +1057,11 @@ import sys
 
 raise SystemExit(0 if json.load(sys.stdin).get("reason") is None else 1)
 ' <<< "$result"; then
-    remove_worktree "$(cat "$metadata")"
+    completed_worktree="$(sed -n '1p' "$metadata")"
+    in_place="$(sed -n '2p' "$metadata")"
+    if [ "$in_place" != "true" ]; then
+      remove_worktree "$completed_worktree"
+    fi
     mv "$tmp" "$ledger"
   else
     rm -f "$tmp"
@@ -1146,7 +1171,8 @@ for row in rows:
             .replace("+00:00", "Z")
         )
         row["outcome"] = "failed"
-        recovered_worktrees.append(worktree)
+        if row.get("in_place") is not True:
+            recovered_worktrees.append(worktree)
         recovered_targets.append(target)
 
 with open(output_path, "w", encoding="utf-8") as output:

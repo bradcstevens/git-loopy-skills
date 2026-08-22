@@ -130,6 +130,70 @@ then
   err "bind did not attach the runtime identity to the reservation"
 fi
 
+in_place_ledger="$tmp_dir/.git-loopy/in-place-subagents.jsonl"
+worktree_count_before_in_place="$(
+  git -C "$tmp_dir" worktree list --porcelain | awk '/^worktree / {print}' | wc -l | tr -d ' '
+)"
+(
+  cd "$tmp_dir"
+  "$CHAIN" reserve \
+    --ledger "$in_place_ledger" \
+    --route code-review \
+    --target issue-serial-hop \
+    --spawn-time 2026-08-22T00:02:00Z \
+    --worktree "$tmp_dir" \
+    --chain-depth 1 \
+    --session-id session-serial-hop \
+    --in-place
+)
+if ! python3 - "$in_place_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger]
+
+assert rows == [{
+    "route": "code-review",
+    "target": "issue-serial-hop",
+    "spawn_time": "2026-08-22T00:02:00Z",
+    "worktree": sys.argv[1].replace("/.git-loopy/in-place-subagents.jsonl", ""),
+    "chain_depth": 1,
+    "finish_time": "",
+    "outcome": "",
+    "session_id": "session-serial-hop",
+    "in_place": True,
+}]
+PY
+then
+  err "in-place reserve did not persist the deterministic session before spawn"
+fi
+if [ "$(git -C "$tmp_dir" worktree list --porcelain | awk '/^worktree / {print}' | wc -l | tr -d ' ')" -ne "$worktree_count_before_in_place" ]; then
+  err "in-place reserve created a linked worktree"
+fi
+cp "$in_place_ledger" "$in_place_ledger.before-mismatched-bind"
+if "$CHAIN" bind \
+  --ledger "$in_place_ledger" \
+  --worktree "$tmp_dir" \
+  --session-id session-wrong \
+  --agent-id agent-serial-hop \
+  --agent-type code-review-agent \
+  --agent-name code-review-agent \
+  2>/dev/null
+then
+  err "bind accepted a session identity different from the reservation"
+fi
+if ! cmp -s "$in_place_ledger.before-mismatched-bind" "$in_place_ledger"; then
+  err "mismatched session binding modified the reservation"
+fi
+"$CHAIN" bind \
+  --ledger "$in_place_ledger" \
+  --worktree "$tmp_dir" \
+  --session-id session-serial-hop \
+  --agent-id agent-serial-hop \
+  --agent-type code-review-agent \
+  --agent-name code-review-agent
+
 reserve_and_bind \
   --ledger "$ledger" \
   --route code-review \
@@ -401,6 +465,61 @@ completion_payload() {
   fi
   printf '%s' '{"sessionId":"'"$session_id"'","timestamp":'"$timestamp_json"',"cwd":"'"$cwd"'","transcriptPath":"'"$tmp_dir"'/transcript.jsonl","agentId":"'"$agent_id"'","agentType":"'"$agent_type"'","agentName":"'"$agent_name"'","agentDisplayName":"Implement agent","response":"Completed the route.","stopReason":"end_turn"}'
 }
+
+serial_repo="$tmp_dir/serial-reentry-repository"
+git init --quiet "$serial_repo"
+git -C "$serial_repo" -c user.name=test -c user.email=test@example.com \
+  commit --quiet --allow-empty -m initial
+(
+  cd "$serial_repo"
+  "$CHAIN" reserve \
+    --route code-review \
+    --target issue-serial-hop \
+    --spawn-time 2026-08-22T00:02:00Z \
+    --worktree "$serial_repo" \
+    --chain-depth 1 \
+    --session-id session-serial-hop \
+    --in-place
+  "$CHAIN" bind \
+    --worktree "$serial_repo" \
+    --session-id session-serial-hop \
+    --agent-id agent-serial-hop \
+    --agent-type code-review-agent \
+    --agent-name code-review-agent
+)
+serial_ledger="$serial_repo/.git-loopy/subagents.jsonl"
+serial_completion_output="$(
+  cd "$serial_repo"
+  PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete \
+    <<< "$(completion_payload agent-serial-hop 2026-08-22T00:11:00Z code-review-agent code-review-agent session-serial-hop "$serial_repo")"
+)"
+assert_plan "serial in-place completion" "$serial_completion_output" \
+  '{"continue":true,"outcome":"published","target":"issue-serial-hop"}'
+if [ ! -d "$serial_repo/.git" ] && [ ! -f "$serial_repo/.git" ]; then
+  err "in-place completion removed the spawning worktree"
+fi
+serial_reentry="$(
+  python3 "$REPO/skills/setup-git-loopy-skills/git-loopy-agent-stop.py" \
+    <<< '{"cwd":"'"$serial_repo"'","timestamp":"2026-08-22T00:12:00Z","stop_hook_active":false}'
+)"
+if [ "$serial_reentry" != '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","target":"issue-serial-hop"}' ]; then
+  err "serial completion did not re-enter /next through agentStop"
+fi
+if ! python3 - "$serial_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    row = json.loads(ledger.readline())
+
+assert row["finish_time"] == "2026-08-22T00:11:00Z", row
+assert row["outcome"] == "published", row
+assert row["routed"] is True, row
+assert row["routed_at"] == "2026-08-22T00:12:00Z", row
+PY
+then
+  err "serial hop did not close and route its ledger row"
+fi
 
 unbound_ledger="$tmp_dir/.git-loopy/unbound-subagents.jsonl"
 unbound_worktree="$tmp_dir/worktree-unbound"
