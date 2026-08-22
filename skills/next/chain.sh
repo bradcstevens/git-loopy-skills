@@ -7,7 +7,8 @@ usage:
   chain.sh plan --route ROUTE --target TARGET --safety SAFETY \
     --agent AGENT --model MODEL --effort EFFORT --context-tier TIER [--ledger PATH]
   chain.sh record --route ROUTE --target TARGET --session-id ID \
-    --spawn-time TIMESTAMP --worktree PATH --chain-depth N [--agent-id ID] [--ledger PATH]
+    --spawn-time TIMESTAMP --worktree PATH --chain-depth N \
+    [--agent-id ID --agent-type TYPE --agent-name NAME] [--ledger PATH]
   chain.sh complete [--ledger PATH] < subagent-stop-payload.json
 EOF
   exit 2
@@ -115,7 +116,8 @@ PY
 }
 
 record() {
-  local route="" target="" session_id="" agent_id="" spawn_time="" worktree="" chain_depth=""
+  local route="" target="" session_id="" agent_id="" agent_type="" agent_name=""
+  local spawn_time="" worktree="" chain_depth=""
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -123,6 +125,8 @@ record() {
       --target) target="${2:?missing value for --target}"; shift 2 ;;
       --session-id) session_id="${2:?missing value for --session-id}"; shift 2 ;;
       --agent-id) agent_id="${2:?missing value for --agent-id}"; shift 2 ;;
+      --agent-type) agent_type="${2:?missing value for --agent-type}"; shift 2 ;;
+      --agent-name) agent_name="${2:?missing value for --agent-name}"; shift 2 ;;
       --spawn-time) spawn_time="${2:?missing value for --spawn-time}"; shift 2 ;;
       --worktree) worktree="${2:?missing value for --worktree}"; shift 2 ;;
       --chain-depth) chain_depth="${2:?missing value for --chain-depth}"; shift 2 ;;
@@ -137,6 +141,14 @@ record() {
     echo "error: --chain-depth must be a non-negative integer" >&2
     exit 2
   }
+  if [ -n "$agent_id" ] && { [ -z "$agent_type" ] || [ -z "$agent_name" ]; }; then
+    echo "error: --agent-id requires --agent-type and --agent-name" >&2
+    exit 2
+  fi
+  if [ -z "$agent_id" ] && { [ -n "$agent_type" ] || [ -n "$agent_name" ]; }; then
+    echo "error: --agent-type and --agent-name require --agent-id" >&2
+    exit 2
+  fi
 
   local ledger_dir row
   if [ -z "$ledger" ]; then
@@ -152,11 +164,11 @@ record() {
   lock_acquired=1
 
   tmp="$(mktemp "$ledger_dir/.subagents.XXXXXX")"
-  row="$(python3 - "$route" "$target" "$session_id" "$agent_id" "$spawn_time" "$worktree" "$chain_depth" <<'PY'
+  row="$(python3 - "$route" "$target" "$session_id" "$agent_id" "$agent_type" "$agent_name" "$spawn_time" "$worktree" "$chain_depth" <<'PY'
 import json
 import sys
 
-route, target, session_id, agent_id, spawn_time, worktree, chain_depth = sys.argv[1:]
+route, target, session_id, agent_id, agent_type, agent_name, spawn_time, worktree, chain_depth = sys.argv[1:]
 row = {
     "route": route,
     "target": target,
@@ -169,6 +181,8 @@ row = {
 }
 if agent_id:
     row["agent_id"] = agent_id
+    row["agent_type"] = agent_type
+    row["agent_name"] = agent_name
 print(json.dumps(row, separators=(",", ":")))
 PY
 )"
@@ -250,12 +264,22 @@ if missing:
     )
     raise SystemExit(2)
 
-invalid = [field for field in required_fields if not isinstance(payload[field], str)]
+invalid = [
+    field
+    for field in required_fields
+    if field != "timestamp" and not isinstance(payload[field], str)
+]
 if invalid:
     print(
         "error: subagent-stop payload has non-string " + ", ".join(invalid),
         file=sys.stderr,
     )
+    raise SystemExit(2)
+if isinstance(payload["timestamp"], bool) or not isinstance(
+    payload["timestamp"],
+    (str, int, float),
+):
+    print("error: subagent-stop payload has non-string timestamp", file=sys.stderr)
     raise SystemExit(2)
 
 agent_id = payload["agentId"]
@@ -275,7 +299,12 @@ if os.path.exists(ledger_path):
 matches = [
     index
     for index, row in enumerate(rows)
-    if row.get("agent_id") == agent_id and not row.get("finish_time")
+    if (
+        row.get("agent_id") == agent_id
+        and row.get("agent_type") == payload["agentType"]
+        and row.get("agent_name") == payload["agentName"]
+        and not row.get("finish_time")
+    )
 ]
 
 if not matches:
@@ -309,10 +338,20 @@ try:
 except ValueError as error:
     print(f"error: matching spawn ledger row has invalid spawn_time: {error}", file=sys.stderr)
     raise SystemExit(2)
+timestamp = payload["timestamp"]
 try:
-    finish_at = datetime.datetime.fromisoformat(payload["timestamp"].replace("Z", "+00:00"))
-except ValueError as error:
+    if isinstance(timestamp, str):
+        finish_at = datetime.datetime.fromisoformat(timestamp.replace("Z", "+00:00"))
+    else:
+        finish_at = datetime.datetime.fromtimestamp(
+            timestamp / 1000,
+            tz=datetime.timezone.utc,
+        )
+except (TypeError, ValueError, OverflowError) as error:
     print(f"error: subagent-stop payload has invalid timestamp: {error}", file=sys.stderr)
+    raise SystemExit(2)
+if finish_at.tzinfo is None:
+    print("error: subagent-stop payload timestamp must include a timezone", file=sys.stderr)
     raise SystemExit(2)
 
 tracker = subprocess.run(
@@ -349,7 +388,9 @@ for comment in comments:
 
 outcome = "published" if has_evidence else "no-evidence"
 row["finish_time"] = (
-    finish_at.isoformat(timespec="seconds").replace("+00:00", "Z")
+    finish_at.astimezone(datetime.timezone.utc)
+    .isoformat(timespec="seconds")
+    .replace("+00:00", "Z")
 )
 row["outcome"] = outcome
 

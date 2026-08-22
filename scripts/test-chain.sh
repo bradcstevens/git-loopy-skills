@@ -182,17 +182,27 @@ complete_ledger="$tmp_dir/.git-loopy/complete-subagents.jsonl"
   --target issue-published \
   --session-id agent-published \
   --agent-id agent-published \
+  --agent-type implement-agent \
+  --agent-name implement-agent \
   --spawn-time 2026-08-22T00:00:00Z \
   --worktree "$tmp_dir/worktree-published" \
   --chain-depth 1
 
 completion_payload() {
-  printf '%s' '{"sessionId":"parent-session","timestamp":"2026-08-22T00:11:00Z","cwd":"'"$tmp_dir"'","transcriptPath":"'"$tmp_dir"'/transcript.jsonl","agentId":"'"$1"'","agentType":"implement-agent","agentName":"implement-agent","agentDisplayName":"Implement agent","response":"Completed the route.","stopReason":"end_turn"}'
+  local agent_id="$1" timestamp="${2:-2026-08-22T00:11:00Z}"
+  local agent_name="${3:-implement-agent}" agent_type="${4:-implement-agent}"
+  local timestamp_json
+  if [[ "$timestamp" =~ ^[0-9]+$ ]]; then
+    timestamp_json="$timestamp"
+  else
+    timestamp_json="$(python3 -c 'import json; import sys; print(json.dumps(sys.argv[1]))' "$timestamp")"
+  fi
+  printf '%s' '{"sessionId":"parent-session","timestamp":'"$timestamp_json"',"cwd":"'"$tmp_dir"'","transcriptPath":"'"$tmp_dir"'/transcript.jsonl","agentId":"'"$agent_id"'","agentType":"'"$agent_type"'","agentName":"'"$agent_name"'","agentDisplayName":"Implement agent","response":"Completed the route.","stopReason":"end_turn"}'
 }
 
 published_output="$(
   PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete --ledger "$complete_ledger" \
-    <<< "$(completion_payload agent-published)"
+    <<< "$(completion_payload agent-published 1787357460000)"
 )"
 assert_plan "published completion" "$published_output" \
   '{"continue":true,"outcome":"published","target":"issue-published"}'
@@ -209,6 +219,8 @@ assert rows == [{
     "target": "issue-published",
     "session_id": "agent-published",
     "agent_id": "agent-published",
+    "agent_type": "implement-agent",
+    "agent_name": "implement-agent",
     "spawn_time": "2026-08-22T00:00:00Z",
     "worktree": sys.argv[1].replace("/.git-loopy/complete-subagents.jsonl", "/worktree-published"),
     "chain_depth": 1,
@@ -227,13 +239,15 @@ fi
   --target issue-no-evidence \
   --session-id agent-no-evidence \
   --agent-id agent-no-evidence \
+  --agent-type code-review-agent \
+  --agent-name code-review-agent \
   --spawn-time 2026-08-22T00:00:00Z \
   --worktree "$tmp_dir/worktree-no-evidence" \
   --chain-depth 2
 
 no_evidence_output="$(
   PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=no-evidence "$CHAIN" complete --ledger "$complete_ledger" \
-    <<< "$(completion_payload agent-no-evidence)"
+    <<< "$(completion_payload agent-no-evidence 2026-08-22T00:11:00Z code-review-agent code-review-agent)"
 )"
 assert_plan "no-evidence completion" "$no_evidence_output" \
   '{"continue":false,"outcome":"no-evidence","target":"issue-no-evidence"}'
@@ -253,10 +267,22 @@ then
   err "no-evidence completion did not close the matching ledger row"
 fi
 
+"$CHAIN" record \
+  --ledger "$complete_ledger" \
+  --route implement \
+  --target issue-unmatched \
+  --session-id agent-unmatched \
+  --agent-id agent-unmatched \
+  --agent-type implement-agent \
+  --agent-name implement-agent \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$tmp_dir/worktree-unmatched" \
+  --chain-depth 3
+
 cp "$complete_ledger" "$complete_ledger.before-unmatched"
 unmatched_output="$(
   PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete --ledger "$complete_ledger" \
-    <<< "$(completion_payload agent-unmatched)"
+    <<< "$(completion_payload agent-unmatched 2026-08-22T00:11:00Z wrong-agent)"
 )"
 assert_plan "unmatched completion" "$unmatched_output" \
   '{"continue":false,"reason":"unmatched-payload","agent_id":"agent-unmatched"}'
