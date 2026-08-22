@@ -12,10 +12,12 @@ err() {
 }
 
 cleanup() {
+  cd "$REPO"
   rm -rf "$tmp_dir"
 }
 trap cleanup EXIT
 
+parent_worktrees_before="$(git -C "$REPO" worktree list --porcelain)"
 git -C "$tmp_dir" init --quiet
 git -C "$tmp_dir" -c user.name=test -c user.email=test@example.com commit --quiet --allow-empty -m initial
 ledger="$tmp_dir/.git-loopy/subagents.jsonl"
@@ -37,6 +39,8 @@ fi
   --worktree "$tmp_dir/worktree-1" \
   --chain-depth 1
 )
+
+cd "$tmp_dir"
 
 if [ ! -f "$ledger" ]; then
   err "record did not create the ledger"
@@ -503,6 +507,10 @@ CHAIN_LOCK_STALE_SECONDS=0 "$CHAIN" record \
 
 if [ -e "$pidless_lock_ledger.lock" ]; then
   err "record did not recover the PID-less stale ledger lock"
+fi
+
+if [ "$(git -C "$REPO" worktree list --porcelain)" != "$parent_worktrees_before" ]; then
+  err "chain tests modified the parent repository worktree registry"
 fi
 
 exit "$fail"

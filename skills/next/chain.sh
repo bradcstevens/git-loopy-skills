@@ -12,6 +12,8 @@ usage:
     --chain-depth N [--ledger PATH]
   chain.sh complete [--ledger PATH] < subagent-stop-payload.json
   chain.sh recover --stale-after-seconds N [--now TIMESTAMP] [--ledger PATH]
+
+A PID-less ledger lock is recoverable after CHAIN_LOCK_STALE_SECONDS (default: 300).
 EOF
   exit 2
 }
