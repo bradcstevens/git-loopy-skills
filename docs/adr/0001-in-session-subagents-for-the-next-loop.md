@@ -7,6 +7,26 @@ block and force continuation — which is what makes "always run `/next` when a 
 guarantee rather than a hope. A detached process has no such signal back into the session that
 launched it.
 
+## Correction: the stated mechanism above is wrong
+
+The reasoning in the opening paragraph — that `subagentStop` blocking is what re-enters `/next` —
+does not survive contact with the runtime. Blocking that event forces **the subagent** to take
+another turn; it never wakes the parent session, and the parent is where `/next` has to run. The
+spike that appeared to confirm it recorded the hook firing twice, which is the subagent stopping,
+being blocked, working again, and stopping again.
+
+**The decision this ADR records still stands.** In-session subagents remain the choice, and a
+grilling session re-examined and kept it. Only the grounds were mistaken.
+
+The corrected design splits the work across two events: `subagentStop` closes the ledger row, and a
+separate `agentStop` hook — the only event that can make the parent take another turn — carries
+re-entry into `/next`. That design gets its own ADR once a spike confirms `agentStop` can block the
+parent, because replacing one unverified mechanism with another is how this error happened the
+first time.
+
+The error is left in place above rather than edited away: a reader who inherits this file should be
+able to see what was believed and why it was wrong.
+
 ## Consequences
 
 - **Subagents cannot be despawned.** The CLI exposes no kill, stop, or release API. A finished

@@ -11,6 +11,7 @@ Scaffold the per-repo configuration that the engineering skills assume:
 - **Issue tracker** — where issues live (GitHub by default; local markdown is also supported out of the box)
 - **Triage labels** — the strings used for the five canonical triage roles
 - **Domain docs** — where `CONTEXT.md` and ADRs live, and the consumer rules for reading them
+- **Chain hook** — the repository-scoped `subagentStop` hook that completes an in-session route
 
 This is a prompt-driven skill, not a deterministic script. Explore, present what you found, confirm with the user, then write.
 
@@ -26,6 +27,7 @@ Look at the current repo to understand its starting state. Read whatever exists;
 - `docs/adr/` and any `src/*/docs/adr/` directories
 - `docs/agents/` — does this skill's prior output already exist?
 - `.scratch/` — sign that a local-markdown issue tracker convention is already in use
+- `.github/hooks/git-loopy-chain.json` — does the chain hook already exist?
 - Is the `triage` skill installed? (a `triage` skill folder alongside this one, or `triage` in your available skills.) This decides whether Section B runs at all.
 - Monorepo signals — a `pnpm-workspace.yaml`, a `workspaces` field in `package.json`, or a populated `packages/*` with its own `src/`. Present only in a genuinely large multi-package repo; their absence means single-context, which is almost every repo.
 
@@ -34,6 +36,30 @@ Look at the current repo to understand its starting state. Read whatever exists;
 Summarise what's present and what's missing. Then take the sections in order — one section, one answer, then the next.
 
 Lead each section with the recommended answer so the user can accept it in a word. Give a one-line explainer only when the choice genuinely branches; skip the section entirely when exploration already settled it (Section B when `triage` isn't installed, Section C when there's no monorepo).
+
+**Before the sections, check chain prerequisites.**
+
+Resolve the installed chain script before drafting any files. Start with the directory that
+contains this installed `setup-git-loopy-skills` skill, then use its sibling
+`next/chain.sh`; never assume that the current repository is the skill source. A local
+`.agents/skills` installation takes precedence over a user installation. The candidate must
+be an executable regular file. If no sibling chain script exists, tell the user that `/next`
+must be installed alongside this skill and stop without writing a hook.
+
+Set `setup_skill_dir` to the directory holding the active `SKILL.md`, then resolve and verify:
+
+```bash
+chain_script="$(cd "$setup_skill_dir/../next" && pwd)/chain.sh"
+[ -f "$chain_script" ] && [ -x "$chain_script" ] ||
+  { echo "Install /next beside /setup-git-loopy-skills before enabling the chain." >&2; exit 1; }
+```
+
+Also give this warning before proceeding:
+
+> Copilot silently does not run repository hooks in an untrusted folder. Verify that this
+> repository's absolute path, or a parent path, is in Copilot's `trustedFolders` setting
+> before relying on the chain. A fresh clone outside a trusted folder will otherwise look as
+> though the hook trigger failed, with no error.
 
 **Section A — Issue tracker.**
 
@@ -70,6 +96,7 @@ Show the user a draft of:
 
 - The `## Agent skills` block to add to `AGENTS.md` is being edited (see step 4 for selection rules)
 - The contents of `docs/agents/issue-tracker.md`, `docs/agents/domain.md`, and `docs/agents/triage-labels.md` (the last only when `triage` is installed)
+- `.github/hooks/git-loopy-chain.json`, with the resolved absolute chain-script path and its `complete` argument
 
 Let them edit before writing.
 
@@ -112,6 +139,84 @@ Then write the docs files using the seed templates in this skill folder as a sta
 
 For "other" issue trackers, write `docs/agents/issue-tracker.md` from scratch using the user's description.
 
+Create `.github/hooks/git-loopy-chain.json` from the approved draft. It must be valid JSON
+with version `1`, a single `subagentStop` command hook, and a `bash` command that invokes
+`.github/hooks/git-loopy-chain.sh` with `complete`. The hook receives the event payload on
+standard input, so do not add a redirection or a wrapper that changes it.
+
+**Do not write an absolute path into the hook.** The hook file is committed, and the chain
+script lives wherever the skill was installed, which differs on every machine and is absent
+in CI. A committed absolute path is therefore correct only on the machine that generated it
+and fails the hook validator everywhere else. Write the small resolver alongside it instead,
+so the committed hook names a repository-relative path that exists in every clone:
+
+```bash
+mkdir -p .github/hooks
+cat > .github/hooks/git-loopy-chain.sh <<'RESOLVER'
+#!/usr/bin/env bash
+set -euo pipefail
+subcommand="${1:?usage: git-loopy-chain.sh <subcommand>}"
+candidates=(
+  "${COPILOT_HOME:-$HOME/.copilot}/skills/next/chain.sh"
+  "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/skills/next/chain.sh"
+)
+for candidate in "${candidates[@]}"; do
+  if [ -x "$candidate" ]; then
+    exec "$candidate" "$subcommand"
+  fi
+done
+echo "git-loopy chain hook: no chain.sh found; looked in ${candidates[*]}" >&2
+exit 0
+RESOLVER
+chmod +x .github/hooks/git-loopy-chain.sh
+```
+
+The resolver exits `0` when it finds nothing, because a non-zero hook would fail and disrupt
+an agent that has nothing to do with the chain.
+
+Build the draft once, then display that exact file:
+
+```bash
+hook_draft="$(mktemp "${TMPDIR:-/tmp}/git-loopy-chain.XXXXXX")"
+python3 - "$hook_draft" <<'PY'
+import json
+import sys
+
+hook_draft = sys.argv[1]
+hook = {
+    "version": 1,
+    "hooks": {
+        "subagentStop": [{
+            "type": "command",
+            "bash": ".github/hooks/git-loopy-chain.sh complete",
+        }],
+    },
+}
+with open(hook_draft, "w", encoding="utf-8") as hook_file:
+    json.dump(hook, hook_file, indent=2)
+    hook_file.write("\n")
+PY
+cat "$hook_draft"
+```
+
+Only after the user approves that displayed JSON, write it in place:
+
+```bash
+mkdir -p .github/hooks
+mv "$hook_draft" .github/hooks/git-loopy-chain.json
+```
+
+Always write the same `git-loopy-chain.json` path. If it already exists, replace only that
+file with the approved hook rather than creating another hook file. Both the hook and its
+resolver belong in the repository and should be committed with the other setup output. They
+carry no machine-specific paths, so re-running setup on another clone reproduces the same two
+files rather than churning them. If the user rejects the draft, delete `"$hook_draft"` and
+leave the existing hook unchanged.
+
 ### 5. Done
 
-Tell the user the setup is complete and which engineering skills will now read from these files. Mention they can edit `docs/agents/*.md` directly later — re-running this skill is only necessary if they want to switch issue trackers or restart from scratch.
+Tell the user the setup is complete and which engineering skills will now read from these
+files. State the hook path and the resolved chain script. Remind them that repository hooks
+run only in trusted folders. Mention they can edit `docs/agents/*.md` directly later —
+re-running this skill is only necessary if they want to switch issue trackers, update the
+installed script path, or restart from scratch.

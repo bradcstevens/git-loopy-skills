@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hooks": {
+    "subagentStop": [
+      {
+        "type": "command",
+        "bash": ".github/hooks/git-loopy-chain.sh complete"
+      }
+    ]
+  }
+}

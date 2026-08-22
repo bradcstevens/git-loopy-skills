@@ -52,6 +52,22 @@ which worktree, how it ended, and how deep its lineage runs. Holds what neither 
 nor the CLI's own session records capture.
 _Avoid_: Log, history
 
+**Reservation**:
+A ledger row written before its run exists, claiming a concurrency slot and a worktree. It carries
+the route and target but no agent identity yet, because the runtime assigns that only once the
+agent starts.
+_Avoid_: Placeholder, pending row
+
+**Binding**:
+Attaching the runtime-assigned agent identity to a reservation, which is what later lets a
+completion payload find its row.
+
+**Orphaned reservation**:
+A reservation that never got bound, because the spawn failed or its parent died in between. It
+holds a slot no agent will ever release, so it is reclaimed by checking whether the parent is still
+alive, with a timeout as backstop.
+_Avoid_: Stale row, dangling row
+
 **In flight**:
 Describes a target currently held by a running agent. An in-flight target is spoken for: routing a
 second agent at it would duplicate or corrupt the work.
