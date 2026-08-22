@@ -53,6 +53,8 @@ Set `setup_skill_dir` to the directory holding the active `SKILL.md`, then resol
 chain_script="$(cd "$setup_skill_dir/../next" && pwd)/chain.sh"
 [ -f "$chain_script" ] && [ -x "$chain_script" ] ||
   { echo "Install /next beside /setup-git-loopy-skills before enabling the chain." >&2; exit 1; }
+[ -f "$setup_skill_dir/git-loopy-agent-stop.py" ] ||
+  { echo "The bundled agentStop helper is missing; reinstall /setup-git-loopy-skills." >&2; exit 1; }
 ```
 
 Also give this warning before proceeding:
@@ -152,7 +154,8 @@ redirection or a wrapper that changes it.
 script lives wherever the skill was installed, which differs on every machine and is absent
 in CI. A committed absolute path is therefore correct only on the machine that generated it
 and fails the hook validator everywhere else. Write the small resolver alongside it instead,
-so the committed hook names a repository-relative path that exists in every clone:
+so the committed hook names a repository-relative path that exists in every clone. Also copy
+the `agentStop` decision helper bundled with this skill:
 
 ```bash
 mkdir -p .github/hooks
@@ -186,7 +189,11 @@ candidates=(
 for candidate in "${candidates[@]}"; do
   if [ -x "$candidate" ]; then
     set +e
-    decision="$("$candidate" "$subcommand" <<< "$payload")"
+    if [ "$subcommand" = "reenter" ]; then
+      decision="$(python3 "$(dirname "${BASH_SOURCE[0]}")/git-loopy-agent-stop.py" <<< "$payload")"
+    else
+      decision="$("$candidate" "$subcommand" <<< "$payload")"
+    fi
     chain_status=$?
     set -e
     log_invocation "$chain_status" "$decision"
@@ -268,6 +275,8 @@ with open(log_path, "a", encoding="utf-8") as log_file:
 PY
 LOGGER
 chmod +x .github/hooks/git-loopy-chain.sh .github/hooks/git-loopy-hook-log.sh
+install -m 755 "$setup_skill_dir/git-loopy-agent-stop.py" \
+  .github/hooks/git-loopy-agent-stop.py
 
 # Keep runtime state local to this working copy.
 if ! grep -qxF ".git-loopy/" .gitignore 2>/dev/null; then
