@@ -174,8 +174,20 @@ def owed_a_route(row: object) -> bool:
     )
 
 
+def route_attempts(row: dict) -> int:
+    """How many times a route has been asked for on this row.
+
+    The count is the request itself, because the helper writes it whatever the
+    payload carried. The request *time* is only provenance: it comes from
+    `timestamp`, which ADR-0005 keeps optional because nothing read it, so a
+    request resting on it would be unconfirmable whenever it is absent.
+    """
+    attempts = row.get("route_attempts")
+    return attempts if isinstance(attempts, int) and attempts > 0 else 0
+
+
 def awaiting_confirmation(row: object) -> bool:
-    return owed_a_route(row) and bool(row.get("route_requested_at"))
+    return owed_a_route(row) and route_attempts(row) > 0
 
 
 def confirm_route_request(payload: dict, ledger_path: str | None) -> None:
@@ -268,8 +280,7 @@ if not isinstance(target, str) or not target:
     decision("invalid-completed-row")
     raise SystemExit(0)
 
-attempts = unrouted.get("route_attempts")
-attempts = attempts if isinstance(attempts, int) and attempts > 0 else 0
+attempts = route_attempts(unrouted)
 
 if attempts >= MAX_ROUTE_ATTEMPTS:
     # Every request so far went unconfirmed, so asking again will not land
@@ -286,7 +297,11 @@ if attempts >= MAX_ROUTE_ATTEMPTS:
 unrouted["route_attempts"] = attempts + 1
 # The first request time is the one worth keeping: with the attempt count it
 # says how long this hop has been owed, not merely when it was last asked for.
-unrouted.setdefault("route_requested_at", payload.get("timestamp"))
+# Keeping it means skipping an absent one rather than storing a null, which
+# would claim the first slot and lose every later time the payload did carry.
+requested_at = payload.get("timestamp")
+if requested_at and not unrouted.get("route_requested_at"):
+    unrouted["route_requested_at"] = requested_at
 if not write_ledger(ledger_path, rows):
     decision("ledger-update-failed")
     raise SystemExit(0)

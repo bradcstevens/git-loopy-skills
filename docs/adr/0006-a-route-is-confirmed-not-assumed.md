@@ -25,16 +25,26 @@ exactly the thing a route request is waiting on. Reading it as confirmation asks
 runtime.
 
 It is deliberately indirect. `stop_hook_active` says a turn was forced, not that `/next` ran inside
-it, and any stop hook could have forced it. The chain accepts that: an over-confirmed route stalls
-in the same visible place a natural stop does, whereas an unconfirmed route that is silently
-consumed leaves nothing to notice at all. Correlating harder would mean reading the transcript,
-which is a much larger dependency for a much smaller gain.
+it, and any stop hook could have forced it, so a turn some other hook forced can over-confirm a
+request the operator had in fact dismissed. The chain accepts that, because the confirmation names
+its target in the decision it emits, so the hook invocation log (#27) shows the hop and the turn
+credited with it — whereas the pre-emptive write it replaces named nothing at all. Correlating
+harder would mean reading the transcript, which is a much larger dependency for a much smaller
+gain: it narrows a case that needs a second blocking hook in the same session, and the old defect
+fired on every dismissal.
 
 ## Consequences
 
 - **`routed` means routed.** The "already routed" test is satisfied only by a confirmed route, so a
   dismissed prompt, an interrupted turn, or an exited session leaves the row owed and a later
   `agentStop` blocks again for the same target.
+- **The attempt count is the request, not the request time.** `route_attempts` is written by the
+  helper itself, so it is on the row whatever the payload carried. `route_requested_at` comes from
+  `timestamp`, which [ADR-0005](./0005-hook-payload-fields-are-required-only-where-they-are-read.md)
+  leaves optional because nothing read it; gating confirmation on it would make an absent
+  `timestamp` produce a request that can never be confirmed, and so re-block to the cap and abandon
+  a hop that had actually landed. The time stays as provenance and is omitted rather than stored
+  null, so an absent one cannot claim the first-request slot.
 - **Re-blocking is capped at three attempts per row.** ADR-0004 requires the chain's own guard to
   trip inside the runtime's ceiling of 8, so the halt is explained rather than the runtime halting
   it first with no visible reason. Three matches the repetition guard `/next` already applies per

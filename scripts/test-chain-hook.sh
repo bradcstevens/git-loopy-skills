@@ -118,8 +118,13 @@ PY
 }
 
 agent_stop_payload() {
-  local stop_hook_active="$1" timestamp="${2:-2026-08-22T00:01:00Z}"
-  printf '%s' '{"cwd":"'"$fixture_worktree"'","timestamp":"'"$timestamp"'","stop_hook_active":'"$stop_hook_active"'}'
+  local stop_hook_active="$1" timestamp="${2-2026-08-22T00:01:00Z}"
+  local fields='"cwd":"'"$fixture_worktree"'","stop_hook_active":'"$stop_hook_active"
+
+  # An empty timestamp stands for a payload carrying no `timestamp` field at
+  # all. ADR-0005 keeps such a field optional, so the helper has to cope.
+  [ -z "$timestamp" ] || fields="$fields"',"timestamp":"'"$timestamp"'"'
+  printf '{%s}' "$fields"
 }
 
 reenter() {
@@ -212,6 +217,33 @@ then
 fi
 
 assert_decision "a routed completion" "$(reenter false 2026-08-22T00:04:00Z)" \
+  '{"decision":"allow","reason":"no-unrouted-completion"}'
+
+# The attempt count is the request; the request time is only provenance. A
+# payload carrying no `timestamp` — which nothing required before confirmation
+# existed, per ADR-0005 — must still leave a request the forced turn can
+# confirm, or a hop that actually landed is re-blocked and then abandoned under
+# a target that was in fact routed.
+write_fixture_ledger
+assert_decision "an untimestamped request" "$(reenter false "")" "$block_decision"
+
+if ! python3 - "$fixture_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    row = json.loads(ledger.readline())
+
+assert row["route_attempts"] == 1, row
+assert "route_requested_at" not in row, row
+PY
+then
+  err "agentStop recorded a route request time it can never confirm"
+fi
+
+assert_decision "an untimestamped confirmation" "$(reenter true "")" \
+  '{"decision":"allow","reason":"stop-hook-active","confirmed":"issue-26"}'
+assert_decision "a completion routed without a timestamp" "$(reenter false)" \
   '{"decision":"allow","reason":"no-unrouted-completion"}'
 
 # ADR-0004: the runtime permits 8 consecutive blocks and then exits without

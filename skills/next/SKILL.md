@@ -208,9 +208,9 @@ round again.
 The chain stops and asks a human before an unexplained runaway: it permits a route at most **three**
 times for one target and a target lineage at most **eight** hops deep. A fourth repeat or ninth hop
 is declined. `subagentStop` closes the finished run's ledger row; `agentStop`, not `subagentStop`,
-carries re-entry into `/next`. That re-entry is a request until the parent takes the turn it forced:
-a dismissed prompt is asked again, at most three times, and then abandoned under a reason naming its
-target rather than dropped in silence.
+carries re-entry into `/next`. Re-entry records a **route request**, which becomes a route only once
+the parent takes the turn it forced: a dismissed prompt is asked again, at most three times, and
+then abandoned under a reason naming its target rather than dropped in silence.
 
 The chain and `/handoff` have different lifetimes. The chain runs an in-session subagent alongside
 this session and ends with it. `/handoff` launches detached work that outlives this session. Keep
