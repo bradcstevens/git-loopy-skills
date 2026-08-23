@@ -43,7 +43,11 @@ AFK-safe target and one of its five allowlisted routes — `/implement`, `/code-
 ledger before starting the in-session subagent, then binds the run to that reservation.
 
 The ledger records each reservation, binding, worktree, completion, and per-target chain depth so the
-chain neither duplicates in-flight work nor exceeds ten concurrent runs. It stops at a checkpoint
+chain neither duplicates in-flight work nor exceeds ten concurrent runs. A reservation also records
+its reserving parent's process identity: recovery reclaims an unbound orphan immediately when that
+parent is gone, or after its timeout backstop, marking it `reclaimed` rather than as a completed run.
+Bound and in-flight runs are never candidates for that recovery. Every `plan` runs recovery before
+checking capacity, so reclaimed slots immediately become available to the next candidate. It stops at a checkpoint
 boundary rather than spawning when the route is HITL or not allowlisted, a route repeats four times
 for a target, or a target would take its ninth hop. `subagentStop` closes the completed ledger row;
 `agentStop` re-enters `/next` for the batch of completed, unrouted runs, allowing one fill to replace

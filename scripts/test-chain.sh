@@ -21,6 +21,12 @@ parent_worktrees_before="$(git -C "$REPO" worktree list --porcelain | awk '/^wor
 git -C "$tmp_dir" init --quiet
 git -C "$tmp_dir" -c user.name=test -c user.email=test@example.com commit --quiet --allow-empty -m initial
 ledger="$tmp_dir/.git-loopy/subagents.jsonl"
+export CHAIN_RESERVATION_STALE_SECONDS=999999999
+
+timezone_stable_start="$(TZ=UTC ps -o lstart= -p "$$" | xargs)"
+if [ "$(TZ=America/Denver python3 "$REPO/skills/next/claim-recovery.py" owner-gone "$$" "$timezone_stable_start")" != "false" ]; then
+  err "claim recovery treated a live parent as gone after a timezone change"
+fi
 
 reserve_and_bind() {
   local route="" target="" session_id="" agent_id="" agent_type="" agent_name=""
@@ -77,14 +83,17 @@ cd "$tmp_dir"
 if [ ! -f "$ledger" ]; then
   err "reserve did not create the ledger"
 else
-  python3 - "$ledger" <<'PY' || exit 1
+  python3 - "$ledger" "$$" <<'PY' || exit 1
 import json
 import sys
 
 with open(sys.argv[1], encoding="utf-8") as ledger:
     rows = [json.loads(line) for line in ledger]
 assert len(rows) == 1
-assert rows[0] == {
+assert {
+    key: rows[0][key]
+    for key in ("route", "target", "spawn_time", "worktree", "chain_depth", "finish_time", "outcome")
+} == {
     "route": "implement",
     "target": "issue-4",
     "spawn_time": "2026-08-22T00:00:00Z",
@@ -93,6 +102,8 @@ assert rows[0] == {
     "finish_time": "",
     "outcome": "",
 }
+assert rows[0]["parent_pid"] == int(sys.argv[2])
+assert isinstance(rows[0]["parent_start"], str) and rows[0]["parent_start"]
 PY
 fi
 
@@ -370,7 +381,7 @@ for slot in $(seq 1 10); do
     --ledger "$fan_out_ledger" \
     --route implement \
     --target "issue-fan-out-$slot" \
-    --spawn-time "2026-08-22T00:0${slot}:00Z" \
+    --spawn-time "2026-08-22T00:$(printf '%02d' "$slot"):00Z" \
     --worktree "$fan_out_worktree" \
     --chain-depth 1
 done
@@ -621,7 +632,13 @@ import sys
 with open(sys.argv[1], encoding="utf-8") as ledger:
     rows = [json.loads(line) for line in ledger]
 
-assert rows == [{
+assert [{
+    key: row[key]
+    for key in (
+        "route", "target", "session_id", "agent_id", "agent_type", "agent_name",
+        "spawn_time", "worktree", "chain_depth", "finish_time", "outcome",
+    )
+} for row in rows] == [{
     "route": "implement",
     "target": "issue-published",
     "session_id": "session-published",
@@ -1106,11 +1123,11 @@ assert_plan "stale target before recovery" "$stale_target" \
   '{"decision":"decline","reason":"target-in-flight","route":"/implement","target":"issue-stale"}'
 
 recovery_output="$("$CHAIN" recover --ledger "$recovery_ledger" --stale-after-seconds 60 --now 2026-08-22T00:05:00Z)"
-assert_plan "stale worktree recovery" "$recovery_output" \
-  '{"recovered":1,"targets":["issue-stale"]}'
+assert_plan "bound run recovery" "$recovery_output" \
+  '{"recovered":0,"targets":[]}'
 
-if [ -e "$stale_worktree" ]; then
-  err "recovery did not remove the stale worktree"
+if [ ! -e "$stale_worktree" ]; then
+  err "recovery disturbed the bound run worktree"
 fi
 
 if ! python3 - "$recovery_ledger" <<'PY'
@@ -1121,16 +1138,127 @@ with open(sys.argv[1], encoding="utf-8") as ledger:
     rows = [json.loads(line) for line in ledger]
 
 row = next(row for row in rows if row["session_id"] == "session-stale")
-assert row["finish_time"] == "2026-08-22T00:05:00Z"
-assert row["outcome"] == "failed"
+assert row["finish_time"] == ""
+assert row["outcome"] == ""
+assert "reclaimed_at" not in row
 PY
 then
-  err "recovery did not close the stale ledger row as failed"
+  err "recovery modified a bound run"
 fi
 
 recovered_target="$(plan /implement issue-stale AFK-safe implement-agent gpt-5.6-terra high default "$tmp_dir/plan-recovered")"
 assert_plan "target after recovery" "$recovered_target" \
-  '{"decision":"decline","reason":"target-failed","route":"/implement","target":"issue-stale"}'
+  '{"decision":"decline","reason":"target-in-flight","route":"/implement","target":"issue-stale"}'
+
+orphan_ledger="$tmp_dir/.git-loopy/orphan-subagents.jsonl"
+orphan_worktree="$tmp_dir/worktree-orphan"
+"$CHAIN" reserve \
+  --ledger "$orphan_ledger" \
+  --route implement \
+  --target issue-orphan \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$orphan_worktree" \
+  --chain-depth 1
+
+live_parent_output="$("$CHAIN" recover --ledger "$orphan_ledger" --stale-after-seconds 60 --now 2026-08-22T00:00:30Z)"
+assert_plan "live parent before timeout" "$live_parent_output" \
+  '{"recovered":0,"targets":[]}'
+if [ ! -e "$orphan_worktree" ]; then
+  err "recovery removed a live parent's reservation before its timeout"
+fi
+
+timeout_output="$("$CHAIN" recover --ledger "$orphan_ledger" --stale-after-seconds 60 --now 2026-08-22T00:05:00Z)"
+assert_plan "live parent timeout" "$timeout_output" \
+  '{"recovered":1,"targets":["issue-orphan"]}'
+if [ -e "$orphan_worktree" ]; then
+  err "recovery did not release the timed-out reservation worktree"
+fi
+if ! python3 - "$orphan_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    row = json.loads(ledger.readline())
+
+assert row["finish_time"] == "2026-08-22T00:05:00Z"
+assert row["outcome"] == "reclaimed"
+assert row["reclaimed_at"] == "2026-08-22T00:05:00Z"
+PY
+then
+  err "timeout recovery did not distinguish the reclaimed reservation"
+fi
+
+dead_parent_ledger="$tmp_dir/.git-loopy/dead-parent-subagents.jsonl"
+dead_parent_worktree="$tmp_dir/worktree-dead-parent"
+bash -c '
+  "$1" reserve --ledger "$2" --route implement --target issue-dead-parent \
+    --spawn-time 2026-08-22T00:00:00Z --worktree "$3" --chain-depth 1
+  :
+' bash "$CHAIN" "$dead_parent_ledger" "$dead_parent_worktree"
+dead_parent_output="$("$CHAIN" recover --ledger "$dead_parent_ledger" --stale-after-seconds 3600 --now 2026-08-22T00:00:01Z)"
+assert_plan "dead parent recovery" "$dead_parent_output" \
+  '{"recovered":1,"targets":["issue-dead-parent"]}'
+if [ -e "$dead_parent_worktree" ]; then
+  err "recovery did not release a dead parent's reservation worktree"
+fi
+
+automatic_ledger="$tmp_dir/.git-loopy/automatic-recovery-subagents.jsonl"
+automatic_worktree="$tmp_dir/worktree-automatic-recovery"
+bash -c '
+  "$1" reserve --ledger "$2" --route implement --target issue-automatic-recovery \
+    --spawn-time 2026-08-22T00:00:00Z --worktree "$3" --chain-depth 1
+  :
+' bash "$CHAIN" "$automatic_ledger" "$automatic_worktree"
+automatic_output="$(
+  CHAIN_MAX_CONCURRENCY=1 CHAIN_RESERVATION_STALE_SECONDS=3600 "$CHAIN" plan \
+    --ledger "$automatic_ledger" \
+    --route /implement \
+    --target issue-automatic-candidate \
+    --safety AFK-safe \
+    --agent implement-agent \
+    --model gpt-5.6-terra \
+    --effort high \
+    --context-tier default \
+    --worktree "$tmp_dir/worktree-automatic-candidate"
+)"
+assert_plan "automatic orphan recovery before planning" "$automatic_output" \
+  '{"decision":"spawn","route":"/implement","target":"issue-automatic-candidate","agent":"implement-agent","model":"gpt-5.6-terra","effort":"high","context_tier":"default","worktree":"'"$tmp_dir"'/worktree-automatic-candidate"}'
+if [ -e "$automatic_worktree" ]; then
+  err "plan did not reclaim the dead parent's worktree before checking capacity"
+fi
+
+concurrent_ledger="$tmp_dir/.git-loopy/concurrent-recovery-subagents.jsonl"
+concurrent_worktree="$tmp_dir/worktree-concurrent-recovery"
+bash -c '
+  "$1" reserve --ledger "$2" --route implement --target issue-concurrent-recovery \
+    --spawn-time 2026-08-22T00:00:00Z --worktree "$3" --chain-depth 1
+  :
+' bash "$CHAIN" "$concurrent_ledger" "$concurrent_worktree"
+"$CHAIN" recover --ledger "$concurrent_ledger" --stale-after-seconds 3600 \
+  --now 2026-08-22T00:00:01Z > "$tmp_dir/recover-one.json" &
+recover_one_pid=$!
+"$CHAIN" recover --ledger "$concurrent_ledger" --stale-after-seconds 3600 \
+  --now 2026-08-22T00:00:01Z > "$tmp_dir/recover-two.json" &
+recover_two_pid=$!
+wait "$recover_one_pid"
+wait "$recover_two_pid"
+if ! python3 - "$tmp_dir/recover-one.json" "$tmp_dir/recover-two.json" "$concurrent_ledger" <<'PY'
+import json
+import sys
+
+results = [json.load(open(path, encoding="utf-8")) for path in sys.argv[1:3]]
+assert sorted(result["recovered"] for result in results) == [0, 1], results
+with open(sys.argv[3], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger if line.strip()]
+assert len(rows) == 1, rows
+assert rows[0]["outcome"] == "reclaimed", rows
+PY
+then
+  err "concurrent reclaimers did not leave one reclaimed reservation"
+fi
+if [ -e "$concurrent_worktree" ]; then
+  err "concurrent reclaimers left the reclaimed worktree behind"
+fi
 
 reservation_ledger="$tmp_dir/.git-loopy/reservation-crash.jsonl"
 CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE=1 "$CHAIN" reserve \
