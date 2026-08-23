@@ -545,7 +545,7 @@ These have no workflow edges. Reach for them directly; they neither route onward
 | `next` | 22 routes | routes to | The earliest unresolved gate decides which |
 | `next` | `implement`, `code-review`, `research`, `push`, `resolving-merge-conflicts` | spawns | Only when the route is both AFK-safe and allowlisted |
 | `subagentStop` | `chain.sh complete` | runs inside | Closes the completed subagent's ledger row |
-| `agentStop` | `git-loopy-chain.sh reenter` | runs inside | Invokes the re-entry helper when completion needs a successor |
+| `agentStop` | `.github/hooks/git-loopy-chain.sh reenter` | runs inside | Invokes the re-entry helper when completion needs a successor |
 | `next` | `handoff` | routes to | A detached session must outlive the current one |
 | `next` | `setup-git-loopy-skills` | reads config from | `docs/agents/issue-tracker.md` is missing |
 | `handoff` | `next` | routes to | Runs `/next` first if it is not the last output |
