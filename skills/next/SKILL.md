@@ -259,8 +259,11 @@ marker command, before the agent writes anything else:
 ```bash
 git worktree add <worktree> <start-point>
 mkdir -p <worktree>/.git-loopy
-printf '%s\t%s\n' "$$" "$(ps -o lstart= -p "$$" | xargs)" > <worktree>/.git-loopy/worktree-owner
+printf '%s\t%s\n' "$PPID" "$(ps -o lstart= -p "$PPID" | xargs)" > <worktree>/.git-loopy/worktree-owner
 ```
+
+`$PPID` is the long-lived agent process that owns the worktree; do not record
+the short-lived shell's `$$`.
 
 The marker is a single line containing the owning process PID, a tab, and that
 process's `ps -o lstart=` value. A reader checks liveness with `kill -0 PID`
