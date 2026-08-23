@@ -530,6 +530,51 @@ cat > "$fake_bin/gh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
+  case "${CHAIN_GATE_CASE:-allow}" in
+    allow)
+      printf '%s\n' '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"head-50","statusCheckRollup":[{"name":"tests","state":"COMPLETED","conclusion":"SUCCESS"}]}'
+      ;;
+    draft)
+      printf '%s\n' '{"mergeable":"MERGEABLE","isDraft":true,"headRefOid":"head-50","statusCheckRollup":[{"name":"tests","state":"COMPLETED","conclusion":"SUCCESS"}]}'
+      ;;
+    not-mergeable)
+      printf '%s\n' '{"mergeable":"CONFLICTING","isDraft":false,"headRefOid":"head-50","statusCheckRollup":[{"name":"tests","state":"COMPLETED","conclusion":"SUCCESS"}]}'
+      ;;
+    no-review)
+      printf '%s\n' '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"head-50","statusCheckRollup":[{"name":"tests","state":"COMPLETED","conclusion":"SUCCESS"}]}'
+      ;;
+    malformed-review)
+      printf '%s\n' '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"head-50","statusCheckRollup":[{"name":"tests","state":"COMPLETED","conclusion":"SUCCESS"}]}'
+      ;;
+    red-check)
+      printf '%s\n' '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"head-50","statusCheckRollup":[{"name":"tests","state":"COMPLETED","conclusion":"FAILURE"}]}'
+      ;;
+    red-state)
+      printf '%s\n' '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"head-50","statusCheckRollup":[{"name":"tests","state":"FAILURE"}]}'
+      ;;
+    pending-check)
+      printf '%s\n' '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"head-50","statusCheckRollup":[{"name":"tests","state":"IN_PROGRESS","conclusion":""}]}'
+      ;;
+    *)
+      echo "unknown gate case" >&2
+      exit 1
+      ;;
+  esac
+  exit 0
+fi
+
+if [ "$1" = "issue" ] && [ "$2" = "view" ] && [ "${CHAIN_GATE_CASE:-}" != "" ]; then
+  if [ "${CHAIN_GATE_CASE}" = "no-review" ]; then
+    printf '%s\n' '{"comments":[]}'
+  elif [ "${CHAIN_GATE_CASE}" = "malformed-review" ]; then
+    printf '%s\n' '{"comments":[{"body":"review-clean evidence is missing for head-50"}]}'
+  else
+    printf '%s\n' '{"comments":[{"body":"review-clean head-50"}]}'
+  fi
+  exit 0
+fi
+
 if [ "$1" != "issue" ] || [ "$2" != "view" ] || [ "$4" != "--json" ] || [ "$5" != "comments" ]; then
   echo "unexpected gh invocation: $*" >&2
   exit 1
@@ -542,6 +587,36 @@ else
 fi
 SH
 chmod +x "$fake_bin/gh"
+
+assert_gate() {
+  local case_name="$1" gate_case="$2" expected_status="$3" expected_json="$4"
+  local output status
+  set +e
+  output="$(PATH="$fake_bin:$PATH" CHAIN_GATE_CASE="$gate_case" "$CHAIN" gate --pull-request 50 --ticket 50 2>/dev/null)"
+  status=$?
+  set -e
+  if [ "$status" -ne "$expected_status" ]; then
+    err "$case_name returned status $status instead of $expected_status"
+  fi
+  assert_plan "$case_name" "$output" "$expected_json"
+}
+
+assert_gate "merge gate allows complete evidence" allow 0 \
+  '{"decision":"allow","pull_request":"50","reason":"merge-evidence-complete"}'
+assert_gate "merge gate refuses draft pull request" draft 1 \
+  '{"decision":"refuse","pull_request":"50","missing":["pull-request-not-draft"],"reason":"pull-request-not-draft"}'
+assert_gate "merge gate refuses non-mergeable pull request" not-mergeable 1 \
+  '{"decision":"refuse","pull_request":"50","missing":["pull-request-mergeable"],"reason":"pull-request-mergeable"}'
+assert_gate "merge gate refuses missing review evidence" no-review 1 \
+  '{"decision":"refuse","pull_request":"50","missing":["review-clean-evidence-comment"],"reason":"review-clean-evidence-comment"}'
+assert_gate "merge gate refuses malformed review evidence" malformed-review 1 \
+  '{"decision":"refuse","pull_request":"50","missing":["review-clean-evidence-comment"],"reason":"review-clean-evidence-comment"}'
+assert_gate "merge gate refuses red check" red-check 1 \
+  '{"decision":"refuse","pull_request":"50","missing":["checks-green"],"reason":"checks-green"}'
+assert_gate "merge gate refuses state-based red check" red-state 1 \
+  '{"decision":"refuse","pull_request":"50","missing":["checks-green"],"reason":"checks-green"}'
+assert_gate "merge gate refuses pending check" pending-check 1 \
+  '{"decision":"refuse","pull_request":"50","missing":["checks-complete"],"reason":"checks-complete"}'
 
 complete_ledger="$tmp_dir/.git-loopy/complete-subagents.jsonl"
 reserve_and_bind \

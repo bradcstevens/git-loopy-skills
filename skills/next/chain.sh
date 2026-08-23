@@ -9,6 +9,7 @@ usage:
     --worktree PATH [--ledger PATH]
   chain.sh plan --no-ready [--ledger PATH]
   chain.sh plan --all-collide [--ledger PATH]
+  chain.sh gate --pull-request NUMBER --ticket NUMBER [--repo OWNER/REPO]
   chain.sh reserve --route ROUTE --target TARGET --spawn-time TIMESTAMP \
     --worktree PATH --chain-depth N --parent-pid PID [--ledger PATH]
   chain.sh bind --worktree PATH --session-id ID --agent-id ID \
@@ -449,6 +450,7 @@ if not route_allowed:
         "route": route,
         "target": target,
     }
+
 elif safety != "AFK-safe":
     decision = {
         "decision": "decline",
@@ -525,6 +527,120 @@ else:
         }
 
 print(json.dumps(decision, separators=(",", ":")))
+PY
+}
+
+gate() {
+  local pull_request="" ticket="" repo=""
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --pull-request|--pr)
+        [ -z "$pull_request" ] || usage
+        pull_request="${2:?missing value for $1}"; shift 2 ;;
+      --ticket|--target)
+        [ -z "$ticket" ] || usage
+        ticket="${2:?missing value for $1}"; shift 2 ;;
+      --repo)
+        [ -z "$repo" ] || usage
+        repo="${2:?missing value for --repo}"; shift 2 ;;
+      *) usage ;;
+    esac
+  done
+
+  [ -n "$pull_request" ] && [ -n "$ticket" ] || usage
+  [[ "$pull_request" =~ ^[1-9][0-9]*$ ]] && [[ "$ticket" =~ ^[1-9][0-9]*$ ]] || usage
+
+  local -a gh_args=(pr view "$pull_request")
+  [ -z "$repo" ] || gh_args+=(--repo "$repo")
+  gh_args+=(--json mergeable,isDraft,headRefOid,statusCheckRollup)
+
+  local evidence
+  if ! evidence="$(gh "${gh_args[@]}")"; then
+    echo '{"decision":"refuse","reason":"pull-request-evidence-unavailable"}'
+    return 2
+  fi
+
+  local comments
+  local -a issue_args=(issue view "$ticket")
+  [ -z "$repo" ] || issue_args+=(--repo "$repo")
+  issue_args+=(--json comments)
+  if ! comments="$(gh "${issue_args[@]}")"; then
+    echo '{"decision":"refuse","reason":"ticket-evidence-unavailable"}'
+    return 2
+  fi
+
+  python3 - "$pull_request" "$evidence" "$comments" <<'PY'
+import json
+import re
+import sys
+
+pull_request, raw, raw_comments = sys.argv[1:]
+try:
+    view = json.loads(raw)
+    ticket_view = json.loads(raw_comments)
+except json.JSONDecodeError:
+    print(json.dumps({
+        "decision": "refuse",
+        "reason": "pull-request-evidence-invalid",
+        "pull_request": pull_request,
+    }, separators=(",", ":")))
+    raise SystemExit(2)
+
+missing = []
+if view.get("isDraft") is True:
+    missing.append("pull-request-not-draft")
+if view.get("mergeable") != "MERGEABLE":
+    missing.append("pull-request-mergeable")
+
+comments = ticket_view.get("comments") or []
+head_sha = view.get("headRefOid")
+review_clean = isinstance(head_sha, str) and bool(head_sha) and any(
+    isinstance(comment, dict)
+    and isinstance(comment.get("body"), str)
+    and re.fullmatch(r"\s*review-clean\s+" + re.escape(head_sha) + r"\s*", comment["body"])
+    for comment in comments
+)
+if not review_clean:
+    missing.append("review-clean-evidence-comment")
+
+checks = view.get("statusCheckRollup") or []
+red_checks = []
+pending_checks = []
+for check in checks:
+    if not isinstance(check, dict):
+        pending_checks.append("unknown")
+        continue
+    conclusion = str(check.get("conclusion") or "").upper()
+    state = str(check.get("state") or "").upper()
+    name = check.get("name") or check.get("context") or "unknown"
+    if state in {"FAILURE", "ERROR", "CANCELLED", "TIMED_OUT"} or conclusion in {
+        "FAILURE", "ERROR", "CANCELLED", "TIMED_OUT"
+    }:
+        red_checks.append(name)
+    elif state in {"PENDING", "QUEUED", "IN_PROGRESS", "EXPECTED"} or (
+        not conclusion and state not in {"SUCCESS"}
+    ):
+        pending_checks.append(name)
+    elif conclusion != "SUCCESS" and state != "SUCCESS":
+        red_checks.append(name)
+
+if red_checks:
+    missing.append("checks-green")
+if pending_checks:
+    missing.append("checks-complete")
+
+decision = {
+    "decision": "allow" if not missing else "refuse",
+    "pull_request": pull_request,
+}
+if missing:
+    decision["missing"] = missing
+    decision["reason"] = ",".join(missing)
+else:
+    decision["reason"] = "merge-evidence-complete"
+print(json.dumps(decision, separators=(",", ":")))
+raise SystemExit(0 if not missing else 1)
 PY
 }
 
@@ -1166,6 +1282,7 @@ command="$1"
 shift
 case "$command" in
   plan) plan "$@" ;;
+  gate) gate "$@" ;;
   reserve) reserve "$@" ;;
   bind) bind "$@" ;;
   complete) complete "$@" ;;
