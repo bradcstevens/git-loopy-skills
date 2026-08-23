@@ -17,12 +17,12 @@ Every edge in this document is one of five kinds. Read the arrows with these in 
 | **Runs inside** | Nested in the caller's session; owns no transition and records nothing of its own | `/implement` → `/tdd` |
 | **Publishes to** | Leaves a durable evidence comment that a later session reads back | `/code-review` → the ticket |
 | **Reads config from** | Depends on files another skill wrote | `/next` → `/setup-git-loopy-skills` |
-| **Spawns** | Launches an in-session subagent that owns a transition, publishes its own tracker evidence, and has completion correlated by the chain ledger | `/next` → `/code-review` |
+| **Spawns** | Launches an in-session subagent that owns a transition, publishes its own tracker evidence, and has completion correlated by the spawn ledger | `/next` → `/code-review` |
 
 **Spawns is not a synonym for any existing kind.** It is nested in the caller's session like
 **runs inside**, but the spawned route owns its transition rather than merely returning evidence to
 its caller. It also routes onward and has the spawned route publish durable evidence, like
-**routes to** and **publishes to**, while the ledger correlates that completion. It does neither by
+**routes to** and **publishes to**, while the spawn ledger correlates that completion. It does neither by
 ending the caller's session nor by only writing a ticket comment. The fifth kind makes those
 combined lifecycle and ownership semantics explicit. Nor is it **reads config from**: spawning
 starts and owns executable work, rather than consuming configuration another skill wrote.
@@ -176,7 +176,6 @@ sequenceDiagram
     actor U as You
     participant SK as any workflow skill
     participant NX as /next
-    participant CH as chain and spawn ledger
     participant HO as /handoff
     participant BG as fresh session
     participant SA as in-session subagent
@@ -191,13 +190,13 @@ sequenceDiagram
         NX-->>U: one action, HITL or AFK-safe, plus model, effort, context
         U->>BG: run the copyable copilot command block
     else AFK-safe allowlisted route
-        NX->>NX: chain.sh plan checks the ledger and concurrency
+        NX->>NX: chain.sh plan checks the spawn ledger and concurrency
         alt plan returns spawn
-            NX->>NX: reserve a ledger row
+            NX->>NX: reserve a row in the spawn ledger
             NX->>SA: spawn with the route and runtime
             NX->>NX: bind the returned agent identity
             NX-->>U: one AFK-safe action; its chain is running
-            SA-->>NX: subagentStop closes the ledger row
+            SA-->>NX: subagentStop closes the spawn ledger row
             NX->>NX: agentStop re-enters /next for the successor
         else plan returns decline
             NX-->>U: report the reason at the checkpoint boundary
@@ -583,7 +582,7 @@ These have no workflow edges. Reach for them directly; they neither route onward
 
 | Event | Configured command | Effect |
 | --- | --- | --- |
-| `subagentStop` | `.github/hooks/git-loopy-chain.sh complete` | Closes the bound run's spawn-ledger row |
+| `subagentStop` | `.github/hooks/git-loopy-chain.sh complete` | Closes the bound run's spawn ledger row |
 | `agentStop` | `.github/hooks/git-loopy-chain.sh reenter` | Re-enters `/next` once for every completed, unrouted batch |
 
 ## Rules that govern the edges
@@ -593,7 +592,7 @@ These have no workflow edges. Reach for them directly; they neither route onward
 - **Nesting owns nothing.** A skill running inside another's session hands its evidence back and
   records no transition of its own.
 - **Spawning owns the transition.** The five allowlisted routes can run as in-session subagents
-  only after the AFK-safe gate passes; the ledger records their reservation, binding, completion,
+  only after the AFK-safe gate passes; the spawn ledger records their reservation, binding, completion,
   and successor routing.
 - **Reviews come back.** `/code-review` findings return to `/implement`, which republishes a head
   and re-enters review. `/resolving-merge-conflicts` re-enters review too.

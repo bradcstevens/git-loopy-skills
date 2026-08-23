@@ -50,7 +50,7 @@ parent is gone, or after `CHAIN_RESERVATION_STALE_SECONDS` (300 seconds by defau
 `reclaimed` rather than as a completed run. Bound and in-flight runs are never candidates for that
 recovery. Every `plan` runs recovery before
 checking capacity, so reclaimed slots immediately become available to the next candidate. It stops at a checkpoint
-boundary rather than spawning when the route is HITL or not allowlisted, a route repeats four times
+boundary rather than spawning when the route is HITL or not allowlisted, a route would take its fourth repeat
 for a target, or a target would take its ninth hop. `subagentStop` closes the completed ledger row;
 `agentStop` re-enters `/next` for the batch of completed, unrouted runs, allowing one fill to replace
 every slot that batch freed.
