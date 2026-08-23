@@ -257,9 +257,13 @@ the `git worktree add` that clears the constraint, followed immediately by a
 marker command, before the agent writes anything else:
 
 ```bash
-git worktree add <worktree> <start-point>
-mkdir -p <worktree>/.git-loopy
-printf '%s\t%s\n' "$PPID" "$(ps -o lstart= -p "$PPID" | xargs)" > <worktree>/.git-loopy/worktree-owner
+if ! git worktree add <worktree> <start-point> ||
+   ! mkdir -p <worktree>/.git-loopy ||
+   ! printf '%s\t%s\n' "$PPID" "$(ps -o lstart= -p "$PPID" | xargs)" > <worktree>/.git-loopy/worktree-owner
+then
+  git worktree remove --force <worktree> 2>/dev/null || true
+  exit 1
+fi
 ```
 
 `$PPID` is the long-lived agent process that owns the worktree; do not record
