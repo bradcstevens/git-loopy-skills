@@ -202,6 +202,18 @@ def route_requesters(row: dict) -> list:
     return [name for name in requesters if isinstance(name, str) and name]
 
 
+def requested_unattributed(row: dict) -> bool:
+    """Whether a request on this row named no session at all.
+
+    Its payload carried no `sessionId` to record, so nothing can tell which
+    forced turn belongs to it and any turn has to be allowed to confirm it. A
+    later identified request must not clear this: the unattributed session's
+    turn is still coming, and a row that has stopped accepting it re-blocks to
+    the cap and abandons a hop `/next` had in fact already run.
+    """
+    return bool(row.get("route_requested_anonymously"))
+
+
 def awaiting_confirmation(row: object) -> bool:
     return owed_a_route(row) and route_attempts(row) > 0
 
@@ -211,17 +223,22 @@ def confirmable_by(rows: list, session: object) -> dict | None:
 
     A turn forced in one session says nothing about a request another session
     made, so a request naming only other sessions is left standing for them to
-    confirm or ask again. A request naming nobody stays confirmable by anyone:
-    its payload carried no `sessionId` to narrow on, and a request nothing can
-    confirm is worse than a loose one — it re-blocks to the cap and abandons a
-    hop that had in fact landed.
+    confirm or ask again. A request that named nobody stays confirmable by
+    anyone, because a request nothing can confirm is worse than a loose one.
+
+    The unattributed fallback takes the first such row, which is also the most
+    recently blocked one: the block path always takes the first *owed* row, so
+    the row asked for last is the earliest pending row in the ledger.
     """
     pending = [row for row in rows if awaiting_confirmation(row)]
     if isinstance(session, str) and session:
         own = next((row for row in pending if session in route_requesters(row)), None)
         if own is not None:
             return own
-    return next((row for row in pending if not route_requesters(row)), None)
+    return next(
+        (row for row in pending if not route_requesters(row) or requested_unattributed(row)),
+        None,
+    )
 
 
 def confirm_route_request(payload: dict, ledger_path: str | None) -> None:
@@ -344,6 +361,8 @@ if isinstance(session, str) and session:
     requesters = route_requesters(unrouted)
     if session not in requesters:
         unrouted["route_requested_by"] = requesters + [session]
+else:
+    unrouted["route_requested_anonymously"] = True
 if not write_ledger(ledger_path, rows):
     decision("ledger-update-failed")
     raise SystemExit(0)

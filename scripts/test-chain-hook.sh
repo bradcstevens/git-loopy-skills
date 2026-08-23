@@ -347,6 +347,19 @@ assert_decision "the unattributed request" "$(ledger_field issue-26 route_reques
 assert_decision "a forced turn confirming an unattributed request" \
   "$(reenter true 2026-08-22T02:01:00Z session-d)" "$(confirmed_decision_for issue-26)"
 
+# A later identified request must not take that safety valve away. The
+# unattributed session's forced turn is still coming, and a row that has
+# stopped accepting it re-blocks to the cap and abandons the hop under
+# `route-abandoned` — naming a target `/next` had in fact already run for.
+write_fixture_ledger
+assert_decision "an unattributed request asked first" \
+  "$(reenter false 2026-08-22T03:00:00Z "")" "$block_decision"
+assert_decision "an identified request on the same row" \
+  "$(reenter false 2026-08-22T03:01:00Z session-e)" "$block_decision"
+assert_decision "the unattributed session's forced turn" \
+  "$(reenter true 2026-08-22T03:02:00Z session-f)" "$(confirmed_decision_for issue-26)"
+assert_ledger_intact "the unattributed confirmation"
+
 # ADR-0004: the runtime permits 8 consecutive blocks and then exits without
 # saying why, so the chain's own cap has to trip first and name what it dropped.
 write_fixture_ledger
