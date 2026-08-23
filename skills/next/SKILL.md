@@ -188,6 +188,14 @@ authoritative. A `decline` means do not spawn; report its reason and leave the a
 checkpoint boundary. A `spawn` proceeds to step 7. The script owns the ledger, collision, and
 concurrency decisions; do not reimplement them in this skill.
 
+The chain fills capacity one recommendation at a time. After each successful spawn, return to step
+1 and ask `/next` again; never ask it for a list. Give every pass a new proposed worktree. A
+`concurrency-limit` decline ends this fill. On a `worktree-in-flight` decline, re-evaluate the live
+state and ask again for a different candidate; if none remains, call `chain.sh plan --no-ready` and
+end the fill. The same `--no-ready` result ends a fill when `/next` has no ready action without
+creating a ledger row or retrying a candidate. This keeps `/next`'s one-action contract intact
+while the chain fills up to ten independent worktrees.
+
 The chain stops and asks a human before an unexplained runaway: it permits a route at most **three**
 times for one target and a target lineage at most **eight** hops deep. A fourth repeat or ninth hop
 is declined. `subagentStop` closes the finished run's ledger row; `agentStop`, not `subagentStop`,
@@ -276,11 +284,17 @@ user-launched fresh session.
 
 ## 7. Spawn a chain-approved route
 
-Set `Context: Subagent` only for the `spawn` decision from step 5. Reserve the target before
-launching the returned custom agent in background mode, bind the returned agent identity
-immediately after launch, and carry the recommendation's paste-safe prompt and runtime into that
-agent. Do not launch a declined action, an action that reaches the checkpoint boundary, or an action
-whose phase-boundary choice is anything other than `Subagent`.
+Set `Context: Subagent` only for the `spawn` decision from step 5. Reserve the target in the
+decision's new worktree before launching the returned custom agent in background mode. The routing
+agent performs the background custom-agent `task` invocation; `chain.sh` deliberately owns only
+the durable reserve, bind, complete, and guard operations. Bind the identity returned by that
+invocation immediately after launch, then carry the recommendation's paste-safe prompt and runtime
+into the agent. Do not launch a declined action, an action that reaches the checkpoint boundary, or
+an action whose phase-boundary choice is anything other than `Subagent`.
+
+When a run completes, `subagentStop` frees its reservation and `agentStop` re-enters `/next`. Begin
+the same one-recommendation fill procedure again, so the freed slot is refilled while ready work
+remains. Do not wait for every in-flight run to finish before refilling one slot.
 
 Every other route ends at step 6 and leaves a user-launched fresh session, continued session, or
 `/handoff` transition to its own documented behavior.

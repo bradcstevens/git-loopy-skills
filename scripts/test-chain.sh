@@ -258,6 +258,93 @@ PY
   fi
 }
 
+exhausted_ledger="$tmp_dir/.git-loopy/exhausted-subagents.jsonl"
+exhausted_output="$("$CHAIN" plan --ledger "$exhausted_ledger" --no-ready)"
+assert_plan "no ready action" "$exhausted_output" \
+  '{"decision":"exhausted","reason":"no-ready-action"}'
+if [ -e "$exhausted_ledger" ]; then
+  err "no ready action created a ledger or retried a route"
+fi
+
+collision_ledger="$tmp_dir/.git-loopy/collision-subagents.jsonl"
+"$CHAIN" reserve \
+  --ledger "$collision_ledger" \
+  --route implement \
+  --target issue-collision-holder \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$tmp_dir/worktree-collision-holder" \
+  --chain-depth 1
+all_collide="$(
+  "$CHAIN" plan \
+    --ledger "$collision_ledger" \
+    --route /code-review \
+    --target issue-collision-candidate \
+    --safety AFK-safe \
+    --agent code-review-agent \
+    --model gpt-5.6-sol \
+    --effort high \
+    --context-tier default \
+    --worktree "$tmp_dir/worktree-collision-holder"
+)"
+assert_plan "all remaining candidates collide" "$all_collide" \
+  '{"decision":"decline","reason":"worktree-in-flight","route":"/code-review","target":"issue-collision-candidate","worktree":"'"$tmp_dir"'/worktree-collision-holder"}'
+
+fan_out_ledger="$tmp_dir/.git-loopy/fan-out-subagents.jsonl"
+for slot in $(seq 1 10); do
+  fan_out_worktree="$tmp_dir/worktree-fan-out-$slot"
+  fan_out_decision="$(
+    "$CHAIN" plan \
+      --ledger "$fan_out_ledger" \
+      --route /implement \
+      --target "issue-fan-out-$slot" \
+      --safety AFK-safe \
+      --agent implement-agent \
+      --model gpt-5.6-terra \
+      --effort high \
+      --context-tier default \
+      --worktree "$fan_out_worktree"
+  )"
+  assert_plan "fan-out slot $slot" "$fan_out_decision" \
+    '{"decision":"spawn","route":"/implement","target":"issue-fan-out-'"$slot"'","agent":"implement-agent","model":"gpt-5.6-terra","effort":"high","context_tier":"default","worktree":"'"$fan_out_worktree"'"}'
+  "$CHAIN" reserve \
+    --ledger "$fan_out_ledger" \
+    --route implement \
+    --target "issue-fan-out-$slot" \
+    --spawn-time "2026-08-22T00:0${slot}:00Z" \
+    --worktree "$fan_out_worktree" \
+    --chain-depth 1
+done
+
+if ! python3 - "$fan_out_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger if line.strip()]
+
+assert len(rows) == 10, rows
+assert len({row["worktree"] for row in rows}) == 10, rows
+assert all(not row["finish_time"] for row in rows), rows
+PY
+then
+  err "fan-out did not reserve ten distinct in-flight worktrees"
+fi
+
+ceiling_decision="$(
+  "$CHAIN" plan \
+    --ledger "$fan_out_ledger" \
+    --route /implement \
+    --target issue-fan-out-eleven \
+    --safety AFK-safe \
+    --agent implement-agent \
+    --model gpt-5.6-terra \
+    --effort high \
+    --context-tier default \
+    --worktree "$tmp_dir/worktree-fan-out-eleven"
+)"
+assert_plan "fan-out ceiling" "$ceiling_decision" \
+  '{"decision":"decline","reason":"concurrency-limit","route":"/implement","target":"issue-fan-out-eleven"}'
+
 concurrency_ledger="$tmp_dir/.git-loopy/concurrency-subagents.jsonl"
 "$CHAIN" reserve \
   --ledger "$concurrency_ledger" \
@@ -401,6 +488,34 @@ completion_payload() {
   fi
   printf '%s' '{"sessionId":"'"$session_id"'","timestamp":'"$timestamp_json"',"cwd":"'"$cwd"'","transcriptPath":"'"$tmp_dir"'/transcript.jsonl","agentId":"'"$agent_id"'","agentType":"'"$agent_type"'","agentName":"'"$agent_name"'","agentDisplayName":"Implement agent","response":"Completed the route.","stopReason":"end_turn"}'
 }
+
+"$CHAIN" bind \
+  --ledger "$fan_out_ledger" \
+  --worktree "$tmp_dir/worktree-fan-out-1" \
+  --session-id session-fan-out-1 \
+  --agent-id agent-fan-out-1 \
+  --agent-type implement-agent \
+  --agent-name implement-agent
+refill_completion="$(
+  PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete --ledger "$fan_out_ledger" \
+    <<< "$(completion_payload agent-fan-out-1 2026-08-22T00:11:00Z implement-agent implement-agent session-fan-out-1 "$tmp_dir/worktree-fan-out-1")"
+)"
+assert_plan "fan-out completion" "$refill_completion" \
+  '{"continue":true,"outcome":"published","target":"issue-fan-out-1"}'
+refill_decision="$(
+  "$CHAIN" plan \
+    --ledger "$fan_out_ledger" \
+    --route /implement \
+    --target issue-fan-out-refill \
+    --safety AFK-safe \
+    --agent implement-agent \
+    --model gpt-5.6-terra \
+    --effort high \
+    --context-tier default \
+    --worktree "$tmp_dir/worktree-fan-out-refill"
+)"
+assert_plan "fan-out refill after completion" "$refill_decision" \
+  '{"decision":"spawn","route":"/implement","target":"issue-fan-out-refill","agent":"implement-agent","model":"gpt-5.6-terra","effort":"high","context_tier":"default","worktree":"'"$tmp_dir"'/worktree-fan-out-refill"}'
 
 unbound_ledger="$tmp_dir/.git-loopy/unbound-subagents.jsonl"
 unbound_worktree="$tmp_dir/worktree-unbound"

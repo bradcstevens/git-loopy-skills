@@ -7,6 +7,7 @@ usage:
   chain.sh plan --route ROUTE --target TARGET --safety SAFETY \
     --agent AGENT --model MODEL --effort EFFORT --context-tier TIER \
     --worktree PATH [--ledger PATH]
+  chain.sh plan --no-ready [--ledger PATH]
   chain.sh reserve --route ROUTE --target TARGET --spawn-time TIMESTAMP \
     --worktree PATH --chain-depth N [--ledger PATH]
   chain.sh bind --worktree PATH --session-id ID --agent-id ID \
@@ -436,7 +437,7 @@ PY
 }
 
 plan() {
-  local route="" target="" safety="" agent="" model="" effort="" context_tier="" worktree=""
+  local route="" target="" safety="" agent="" model="" effort="" context_tier="" worktree="" no_ready=0
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -448,10 +449,19 @@ plan() {
       --effort) effort="${2:?missing value for --effort}"; shift 2 ;;
       --context-tier) context_tier="${2:?missing value for --context-tier}"; shift 2 ;;
       --worktree) worktree="${2:?missing value for --worktree}"; shift 2 ;;
+      --no-ready) no_ready=1; shift ;;
       --ledger) ledger="${2:?missing value for --ledger}"; shift 2 ;;
       *) usage ;;
     esac
   done
+
+  if [ "$no_ready" -eq 1 ]; then
+    [ -z "$route" ] && [ -z "$target" ] && [ -z "$safety" ] && [ -z "$agent" ] &&
+      [ -z "$model" ] && [ -z "$effort" ] && [ -z "$context_tier" ] &&
+      [ -z "$worktree" ] || usage
+    printf '%s\n' '{"decision":"exhausted","reason":"no-ready-action"}'
+    return
+  fi
 
   [ -n "$route" ] && [ -n "$target" ] && [ -n "$safety" ] && [ -n "$agent" ] &&
     [ -n "$model" ] && [ -n "$effort" ] && [ -n "$context_tier" ] &&
