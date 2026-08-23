@@ -1,20 +1,5 @@
 #!/usr/bin/env python3
-"""agentStop decision helper: re-enter `/next` when a completed run is unrouted.
-
-Blocking is a route *request*, not a route. The block reason does not reach the
-parent as a guarantee — the CLI presents it as a dismissible queued prompt, so
-the operator can remove it, the session can exit before the forced turn runs, or
-the runtime can hit its ceiling of consecutive blocks. Writing `routed` at the
-moment of the block would record that intent as a fact, and every dismissal
-would drop a chain hop while reporting nothing wrong.
-
-So the request is promoted to `routed` only on evidence the block landed:
-`stop_hook_active` true on a following payload, which is the runtime's way of
-saying the parent took the turn the block forced. A single forced turn confirms
-the complete batch requested by the block, and a payload without `sessionId` is
-still usable because the runtime's evidence is the hook state itself. A request
-that is never confirmed blocks again rather than being silently consumed.
-"""
+"""Implement the route-request contract described by ADR-0008."""
 import atexit
 import glob
 import json
@@ -30,7 +15,6 @@ import time
 MAX_ROUTE_ATTEMPTS = 3
 
 LEDGER_RELATIVE_PATH = os.path.join(".git-loopy", "subagents.jsonl")
-BLOCK_REASON = "A completed run is unrouted. Run /next now."
 
 
 def decision(reason: str, **details: object) -> None:
@@ -334,10 +318,6 @@ for row in abandoned:
     row["route_abandoned"] = True
     row["route_abandoned_at"] = payload.get("timestamp")
 
-if abandoned and not write_ledger(ledger_path, rows):
-    decision("ledger-update-failed")
-    raise SystemExit(0)
-
 pending = [
     row
     for row in unrouted
@@ -346,6 +326,9 @@ pending = [
     and row["target"]
 ]
 if not pending:
+    if not write_ledger(ledger_path, rows):
+        decision("ledger-update-failed")
+        raise SystemExit(0)
     abandoned_targets = [row["target"] for row in abandoned]
     if len(abandoned_targets) == 1:
         decision("route-abandoned", target=abandoned_targets[0])
