@@ -3,6 +3,7 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 CHAIN="$REPO/skills/next/chain.sh"
+RECORD="$REPO/scripts/review-clean-record.py"
 tmp_dir="$(python3 -c 'import os; import sys; print(os.path.realpath(sys.argv[1]))' "$(mktemp -d)")"
 fail=0
 
@@ -526,9 +527,114 @@ assert_plan "other candidate after collision" "$other_candidate" \
 
 fake_bin="$tmp_dir/bin"
 mkdir -p "$fake_bin"
+gate_head="0123456789abcdef0123456789abcdef01234567"
+stale_gate_head="fedcba9876543210fedcba9876543210fedcba98"
 cat > "$fake_bin/gh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
+
+if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
+  case "${CHAIN_GATE_CASE:-allow}" in
+    allow|no-review|malformed-review|stale-review|malformed-ticket-json|non-object-ticket|malformed-ticket-schema|ticket-unavailable)
+      printf '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"%s","statusCheckRollup":[{"name":"tests","state":"COMPLETED","conclusion":"SUCCESS"}]}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    draft)
+      printf '{"mergeable":"MERGEABLE","isDraft":true,"headRefOid":"%s","statusCheckRollup":[{"name":"tests","state":"COMPLETED","conclusion":"SUCCESS"}]}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    missing-draft)
+      printf '{"mergeable":"MERGEABLE","headRefOid":"%s","statusCheckRollup":[{"name":"tests","state":"COMPLETED","conclusion":"SUCCESS"}]}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    null-draft)
+      printf '{"mergeable":"MERGEABLE","isDraft":null,"headRefOid":"%s","statusCheckRollup":[{"name":"tests","state":"COMPLETED","conclusion":"SUCCESS"}]}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    not-mergeable)
+      printf '{"mergeable":"CONFLICTING","isDraft":false,"headRefOid":"%s","statusCheckRollup":[{"name":"tests","state":"COMPLETED","conclusion":"SUCCESS"}]}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    red-check)
+      printf '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"%s","statusCheckRollup":[{"name":"tests","state":"COMPLETED","conclusion":"FAILURE"}]}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    red-state)
+      printf '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"%s","statusCheckRollup":[{"name":"tests","state":"FAILURE"}]}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    pending-check)
+      printf '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"%s","statusCheckRollup":[{"name":"tests","state":"IN_PROGRESS","conclusion":""}]}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    requested-check)
+      printf '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"%s","statusCheckRollup":[{"name":"tests","status":"REQUESTED","conclusion":""}]}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    waiting-check)
+      printf '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"%s","statusCheckRollup":[{"name":"tests","status":"WAITING","conclusion":""}]}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    missing-checks)
+      printf '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"%s"}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    null-checks)
+      printf '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"%s","statusCheckRollup":null}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    empty-checks)
+      printf '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"%s","statusCheckRollup":[]}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    malformed-checks)
+      printf '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"%s","statusCheckRollup":{"name":"tests","state":"COMPLETED","conclusion":"SUCCESS"}}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    malformed-pr-json)
+      printf '%s\n' '{'
+      ;;
+    non-object-pr)
+      printf '%s\n' '[]'
+      ;;
+    missing-head)
+      printf '%s\n' '{"mergeable":"MERGEABLE","isDraft":false,"statusCheckRollup":[{"name":"tests","state":"COMPLETED","conclusion":"SUCCESS"}]}'
+      ;;
+    invalid-head)
+      printf '%s\n' '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"not-a-sha","statusCheckRollup":[{"name":"tests","state":"COMPLETED","conclusion":"SUCCESS"}]}'
+      ;;
+    *)
+      echo "unknown gate case" >&2
+      exit 1
+      ;;
+  esac
+  exit 0
+fi
+
+if [ "$1" = "issue" ] && [ "$2" = "view" ] && [ "${CHAIN_GATE_CASE:-}" != "" ]; then
+  case "${CHAIN_GATE_CASE}" in
+    ticket-unavailable)
+      exit 1
+      ;;
+    malformed-ticket-json)
+      printf '%s\n' '{'
+      ;;
+    non-object-ticket)
+      printf '%s\n' '[]'
+      ;;
+    malformed-ticket-schema)
+      printf '%s\n' '{"comments":{}}'
+      ;;
+    no-review)
+      printf '%s\n' '{"comments":[]}'
+      ;;
+    malformed-review)
+      printf '%s\n' '{"comments":[{"body":"Review evidence is malformed.\nSuccessor: /merge"}]}'
+      ;;
+    *)
+      evidence_head="$CHAIN_GATE_HEAD"
+      [ "${CHAIN_GATE_CASE}" != "stale-review" ] || evidence_head="$CHAIN_STALE_GATE_HEAD"
+      record="$(python3 "$CHAIN_REVIEW_RECORD" emit "$evidence_head")"
+      python3 - "$record" <<'PY'
+import json
+import sys
+
+print(json.dumps({
+    "comments": [{
+        "body": "Review passed for this candidate.\nSuccessor: /merge\n" + sys.argv[1],
+    }],
+}, separators=(",", ":")))
+PY
+      ;;
+  esac
+  exit 0
+fi
 
 if [ "$1" != "issue" ] || [ "$2" != "view" ] || [ "$4" != "--json" ] || [ "$5" != "comments" ]; then
   echo "unexpected gh invocation: $*" >&2
@@ -542,6 +648,77 @@ else
 fi
 SH
 chmod +x "$fake_bin/gh"
+
+assert_gate() {
+  local case_name="$1" gate_case="$2" expected_status="$3" expected_json="$4"
+  local output status
+  set +e
+  output="$(
+    PATH="$fake_bin:$PATH" \
+      CHAIN_GATE_CASE="$gate_case" \
+      CHAIN_GATE_HEAD="$gate_head" \
+      CHAIN_STALE_GATE_HEAD="$stale_gate_head" \
+      CHAIN_REVIEW_RECORD="$RECORD" \
+      "$CHAIN" gate --pull-request 50 --ticket 50 2>/dev/null
+  )"
+  status=$?
+  set -e
+  if [ "$status" -ne "$expected_status" ]; then
+    err "$case_name returned status $status instead of $expected_status"
+  fi
+  assert_plan "$case_name" "$output" "$expected_json"
+}
+
+assert_gate "merge gate allows complete evidence" allow 0 \
+  '{"decision":"allow","pull_request":"50","headRefOid":"'"$gate_head"'","reason":"merge-evidence-complete"}'
+assert_gate "merge gate refuses draft pull request" draft 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["pull-request-not-draft"],"reason":"pull-request-not-draft"}'
+assert_gate "merge gate refuses missing draft evidence" missing-draft 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["pull-request-not-draft"],"reason":"pull-request-not-draft"}'
+assert_gate "merge gate refuses null draft evidence" null-draft 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["pull-request-not-draft"],"reason":"pull-request-not-draft"}'
+assert_gate "merge gate refuses non-mergeable pull request" not-mergeable 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["pull-request-mergeable"],"reason":"pull-request-mergeable"}'
+assert_gate "merge gate refuses missing review evidence" no-review 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["review-clean-evidence-comment"],"reason":"review-clean-evidence-comment"}'
+assert_gate "merge gate refuses malformed review evidence" malformed-review 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["review-clean-evidence-comment"],"reason":"review-clean-evidence-comment"}'
+assert_gate "merge gate refuses review evidence for an earlier head" stale-review 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["review-clean-evidence-comment"],"reason":"review-clean-evidence-comment"}'
+assert_gate "merge gate refuses red check" red-check 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["checks-green"],"reason":"checks-green"}'
+assert_gate "merge gate refuses state-based red check" red-state 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["checks-green"],"reason":"checks-green"}'
+assert_gate "merge gate refuses pending check" pending-check 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["checks-complete"],"reason":"checks-complete"}'
+assert_gate "merge gate refuses requested check as pending" requested-check 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["checks-complete"],"reason":"checks-complete"}'
+assert_gate "merge gate refuses waiting check as pending" waiting-check 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["checks-complete"],"reason":"checks-complete"}'
+assert_gate "merge gate refuses an absent check rollup" missing-checks 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["checks-present"],"reason":"checks-present"}'
+assert_gate "merge gate refuses a null check rollup" null-checks 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["checks-present"],"reason":"checks-present"}'
+assert_gate "merge gate refuses an empty check rollup" empty-checks 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["checks-present"],"reason":"checks-present"}'
+assert_gate "merge gate refuses a malformed check rollup" malformed-checks 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["checks-valid"],"reason":"checks-valid"}'
+assert_gate "merge gate identifies malformed pull request JSON" malformed-pr-json 2 \
+  '{"decision":"refuse","pull_request":"50","reason":"pull-request-evidence-invalid"}'
+assert_gate "merge gate identifies non-object pull request JSON" non-object-pr 2 \
+  '{"decision":"refuse","pull_request":"50","reason":"pull-request-evidence-invalid"}'
+assert_gate "merge gate refuses a missing pull request head" missing-head 2 \
+  '{"decision":"refuse","pull_request":"50","reason":"pull-request-evidence-invalid"}'
+assert_gate "merge gate refuses an invalid pull request head" invalid-head 2 \
+  '{"decision":"refuse","pull_request":"50","reason":"pull-request-evidence-invalid"}'
+assert_gate "merge gate identifies malformed ticket JSON" malformed-ticket-json 2 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","reason":"ticket-evidence-invalid"}'
+assert_gate "merge gate identifies non-object ticket JSON" non-object-ticket 2 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","reason":"ticket-evidence-invalid"}'
+assert_gate "merge gate identifies malformed ticket schema" malformed-ticket-schema 2 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","reason":"ticket-evidence-invalid"}'
+assert_gate "merge gate identifies unavailable ticket evidence" ticket-unavailable 2 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","reason":"ticket-evidence-unavailable"}'
 
 complete_ledger="$tmp_dir/.git-loopy/complete-subagents.jsonl"
 reserve_and_bind \

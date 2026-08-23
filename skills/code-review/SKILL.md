@@ -102,8 +102,12 @@ head**:
 2. Post the findings as one durable comment on the ticket when the review found anything
    (`gh issue comment <ticket-issue> --body-file <report>`). The HTML report is a session
    artifact; the findings a later session remediates from must be on the tracker.
-3. Post one short evidence comment recording that this head was reviewed and with what
-   outcome.
+3. When the review finds no blocking defects, post one short evidence comment recording that
+   this exact head was reviewed and passed. Include the output of
+   `python3 scripts/review-clean-record.py emit "$(git rev-parse HEAD)"` as its own line.
+   That script is the single source of truth for the matchable record shape; the merge gate
+   matches it through the same script. A review that finds blocking defects posts the findings
+   comment but does not emit a `review-clean` record.
 
 A reviewed head never carries over: once remediation moves the branch, the review no longer
 applies, and the implementation owner should trigger a fresh review at the new head.

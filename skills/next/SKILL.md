@@ -10,6 +10,19 @@ current state and return one recommendation. Leave source files and the issue
 tracker unchanged. A chain spawn may write its ledger and create its reserved
 branch and worktree; the spawned subagent owns work inside that worktree.
 
+The merge gate's `review-clean` evidence uses the canonical producer/matcher in
+[`scripts/review-clean-record.py`](../../scripts/review-clean-record.py). Do not
+reimplement its record shape in the gate; match the comment against the exact
+head being gated through that script.
+
+A successful gate decision returns the exact evaluated `headRefOid`. Treat that
+value as a merge precondition, not as diagnostic output: an unattended merge
+consumer must pass the same value to
+`gh pr merge --match-head-commit "$headRefOid"`. If the pull request advances
+after the gate decision, the merge must refuse rather than substitute the new
+head. Until `/merge` is implemented by issue #52, `chain.sh gate` owns this
+decision contract but does not execute a merge.
+
 ## 1. Refresh the durable state
 
 Locate `docs/agents/issue-tracker.md` and `.github/hooks/git-loopy-chain.json`. If either is
