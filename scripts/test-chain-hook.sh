@@ -23,6 +23,17 @@ setup_agent_stop_helper="$REPO/skills/setup-git-loopy-skills/git-loopy-agent-sto
 if ! grep -Fq 'setup-git-loopy-skills' "$agent_stop_helper"; then
   err "this repository hook does not use the setup helper as its canonical implementation"
 fi
+# The helper ships twice — bundled with the skill and installed in the repo — so
+# the copies can only stay in step if the installed one holds no implementation
+# of its own. A pasted-in decision would drift the moment the bundle changes.
+for owned_by_the_bundle in no-unrouted-completion route-abandoned stop_hook_active; do
+  if grep -Fq "$owned_by_the_bundle" "$agent_stop_helper"; then
+    err "this repository hook carries its own copy of the agentStop decision logic"
+  fi
+done
+if [ ! -f "$setup_agent_stop_helper" ]; then
+  err "the bundled agentStop helper the repository hook defers to is missing"
+fi
 # The reenter branch must invoke the bundled helper, but must not exec away:
 # exec-ing skips the invocation log, which is the silence that log removes.
 if ! grep -Fq 'git-loopy-agent-stop.py' \
@@ -107,19 +118,75 @@ PY
 }
 
 agent_stop_payload() {
-  local stop_hook_active="$1"
-  printf '%s' '{"cwd":"'"$fixture_worktree"'","timestamp":"2026-08-22T00:01:00Z","stop_hook_active":'"$stop_hook_active"'}'
+  local stop_hook_active="$1" timestamp="${2-2026-08-22T00:01:00Z}"
+  local session_id="${3-session-parent}"
+  local fields='"cwd":"'"$fixture_worktree"'","stop_hook_active":'"$stop_hook_active"
+
+  # An empty timestamp or session id stands for a payload carrying no such
+  # field at all. ADR-0005 keeps a field optional until something reads it, so
+  # the helper has to cope with either being absent.
+  [ -z "$timestamp" ] || fields="$fields"',"timestamp":"'"$timestamp"'"'
+  [ -z "$session_id" ] || fields="$fields"',"sessionId":"'"$session_id"'"'
+  printf '{%s}' "$fields"
 }
 
-write_fixture_ledger
-block_output="$(
+reenter() {
   COPILOT_HOME="$tmp_dir/missing-copilot-home" \
     "$REPO/.github/hooks/git-loopy-chain.sh" reenter \
-    <<< "$(agent_stop_payload false)"
-)"
-if [ "$block_output" != '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","targets":["issue-26"]}' ]; then
-  err "agentStop did not block for an unrouted completion"
-fi
+    <<< "$(agent_stop_payload "$@")"
+}
+
+block_decision='{"decision":"block","reason":"A completed run is unrouted. Run /next now.","target":"issue-26"}'
+
+block_decision_for() {
+  printf '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","target":"%s"}' "$1"
+}
+
+confirmed_decision_for() {
+  printf '{"decision":"allow","reason":"stop-hook-active","confirmed":"%s"}' "$1"
+}
+
+assert_decision() {
+  local label="$1" actual="$2" expected="$3"
+
+  [ "$actual" = "$expected" ] || err "$label: expected $expected, got $actual"
+}
+
+# Reads one field off the row carrying a given target, so a multi-row ledger can
+# be asserted without hand-rolling a reader per assertion.
+ledger_field() {
+  python3 - "$fixture_ledger" "$1" "$2" <<'PY'
+import json
+import sys
+
+ledger_path, target, field = sys.argv[1:]
+with open(ledger_path, encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger if line.strip()]
+
+row = next((row for row in rows if row.get("target") == target), None)
+print(json.dumps(row.get(field) if row is not None else None, separators=(",", ":")))
+PY
+}
+
+assert_ledger_intact() {
+  local label="$1"
+
+  if [ -e "$fixture_ledger.lock" ]; then
+    err "$label left the ledger lock behind"
+  fi
+  # A surviving replacement file is a half-finished write, and a half-written
+  # ledger reads as a ledger with no completed run — the silence this hook
+  # exists to prevent.
+  if compgen -G "$(dirname "$fixture_ledger")/.subagents.*" > /dev/null; then
+    err "$label left a partial ledger write behind"
+  fi
+}
+
+# Blocking is a route *request*, not a route. The reason reaches the parent as a
+# dismissible queued prompt, so emitting it is no evidence that /next ran.
+write_fixture_ledger
+assert_decision "an unrouted completion" "$(reenter false 2026-08-22T00:01:00Z)" "$block_decision"
+assert_ledger_intact "the first block"
 
 if ! python3 - "$fixture_ledger" <<'PY'
 import json
@@ -127,123 +194,165 @@ import sys
 
 with open(sys.argv[1], encoding="utf-8") as ledger:
     row = json.loads(ledger.readline())
-assert row["routed"] is True
-assert row["routed_at"] == "2026-08-22T00:01:00Z"
+
+assert not row.get("routed"), row
+assert "routed_at" not in row, row
+assert row["route_requested_at"] == "2026-08-22T00:01:00Z", row
+assert row["route_attempts"] == 1, row
 PY
 then
-  err "agentStop did not mark the blocked completion routed"
+  err "agentStop recorded a completed route instead of a route request"
 fi
 
-routed_output="$(
-  COPILOT_HOME="$tmp_dir/missing-copilot-home" \
-    "$REPO/.github/hooks/git-loopy-chain.sh" reenter \
-    <<< "$(agent_stop_payload false)"
-)"
-if [ "$routed_output" != '{"decision":"allow","reason":"no-unrouted-completion"}' ]; then
-  err "agentStop did not stand aside after routing the completion"
-fi
-
-# Fan-out finishes in batches, so several runs can complete between two parent
-# turns. One `/next` fill refills every slot the batch freed, so the batch is
-# worth one block: the runtime allows eight consecutive blocks and stands the
-# hook aside on the turn a block forces, so a second unrouted row would strand
-# the rest of the batch and force a spurious re-entry later.
-write_batch_fixture_ledger() {
-  python3 - "$fixture_ledger" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], "w", encoding="utf-8") as ledger:
-    for target in ("issue-26", "issue-27", "issue-30"):
-        ledger.write(json.dumps({
-            "target": target,
-            "finish_time": "2026-08-22T00:00:00Z",
-            "outcome": "published",
-        }) + "\n")
-    ledger.write(json.dumps({
-        "target": "issue-31",
-        "finish_time": "",
-        "outcome": "",
-    }) + "\n")
-PY
-}
-
-write_batch_fixture_ledger
-batch_output="$(
-  COPILOT_HOME="$tmp_dir/missing-copilot-home" \
-    "$REPO/.github/hooks/git-loopy-chain.sh" reenter \
-    <<< "$(agent_stop_payload false)"
-)"
-if [ "$batch_output" != '{"decision":"block","reason":"3 completed runs are unrouted. Run /next now and refill every freed slot.","targets":["issue-26","issue-27","issue-30"]}' ]; then
-  err "agentStop did not route a batch of completions in one block"
-fi
+# The queued prompt was dismissed, so no forced turn ever ran: the request is
+# still owed and the next agentStop has to ask again.
+assert_decision "an unconfirmed request" "$(reenter false 2026-08-22T00:02:00Z)" "$block_decision"
 
 if ! python3 - "$fixture_ledger" <<'PY'
 import json
 import sys
 
 with open(sys.argv[1], encoding="utf-8") as ledger:
-    rows = [json.loads(line) for line in ledger if line.strip()]
+    row = json.loads(ledger.readline())
 
-completed = [row for row in rows if row["finish_time"]]
-assert all(row["routed"] is True for row in completed), rows
-assert all(row["routed_at"] == "2026-08-22T00:01:00Z" for row in completed), rows
-assert "routed" not in rows[-1], rows
+assert not row.get("routed"), row
+assert row["route_requested_at"] == "2026-08-22T00:01:00Z", row
+assert row["route_attempts"] == 2, row
 PY
 then
-  err "agentStop left part of the batch unrouted or routed a run still in flight"
+  err "agentStop did not count the unconfirmed request against the same row"
 fi
 
-batch_routed_output="$(
-  COPILOT_HOME="$tmp_dir/missing-copilot-home" \
-    "$REPO/.github/hooks/git-loopy-chain.sh" reenter \
-    <<< "$(agent_stop_payload false)"
-)"
-if [ "$batch_routed_output" != '{"decision":"allow","reason":"no-unrouted-completion"}' ]; then
-  err "agentStop blocked a second time for a batch it had already routed"
+# stop_hook_active is the runtime's evidence that the parent took the turn the
+# block forced, which is the only thing that promotes a request to a route.
+assert_decision "a confirmed request" "$(reenter true 2026-08-22T00:03:00Z)" \
+  '{"decision":"allow","reason":"stop-hook-active","confirmed":"issue-26"}'
+assert_ledger_intact "the confirmation"
+
+if ! python3 - "$fixture_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    row = json.loads(ledger.readline())
+
+assert row["routed"] is True, row
+assert row["routed_at"] == "2026-08-22T00:03:00Z", row
+PY
+then
+  err "agentStop did not mark the confirmed request routed"
 fi
 
-# A row the chain script could not have written is ledger corruption, and it must
-# not hold the rest of the batch hostage: it is never marked routed, so refusing
-# the whole batch over it would stall every later natural stop too.
+assert_decision "a routed completion" "$(reenter false 2026-08-22T00:04:00Z)" \
+  '{"decision":"allow","reason":"no-unrouted-completion"}'
+
+# The attempt count is the request; the request time is only provenance. A
+# payload carrying no `timestamp` — which nothing required before confirmation
+# existed, per ADR-0005 — must still leave a request the forced turn can
+# confirm, or a hop that actually landed is re-blocked and then abandoned under
+# a target that was in fact routed.
+write_fixture_ledger
+assert_decision "an untimestamped request" "$(reenter false "")" "$block_decision"
+
+if ! python3 - "$fixture_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    row = json.loads(ledger.readline())
+
+assert row["route_attempts"] == 1, row
+assert "route_requested_at" not in row, row
+PY
+then
+  err "agentStop recorded a route request time it can never confirm"
+fi
+
+assert_decision "an untimestamped confirmation" "$(reenter true "")" \
+  '{"decision":"allow","reason":"stop-hook-active","confirmed":"issue-26"}'
+assert_decision "a completion routed without a timestamp" "$(reenter false)" \
+  '{"decision":"allow","reason":"no-unrouted-completion"}'
+
+# A fan-out can finish several rows between parent turns. One block should
+# request the whole batch, and the following forced turn should confirm it all.
 python3 - "$fixture_ledger" <<'PY'
 import json
 import sys
 
 with open(sys.argv[1], "w", encoding="utf-8") as ledger:
-    ledger.write(json.dumps({
-        "target": "issue-32",
-        "finish_time": "2026-08-22T00:00:00Z",
-        "outcome": "published",
-    }) + "\n")
-    ledger.write(json.dumps({
-        "target": "",
-        "finish_time": "2026-08-22T00:00:00Z",
-        "outcome": "published",
-    }) + "\n")
-    ledger.write(json.dumps({
-        "target": "issue-33",
-        "finish_time": "2026-08-22T00:00:00Z",
-        "outcome": "published",
-    }) + "\n")
+    for target in ("issue-26", "issue-27"):
+        ledger.write(json.dumps({
+            "target": target,
+            "finish_time": "2026-08-22T01:00:00Z",
+            "outcome": "published",
+        }) + "\n")
 PY
-corrupt_batch_output="$(
-  COPILOT_HOME="$tmp_dir/missing-copilot-home" \
-    "$REPO/.github/hooks/git-loopy-chain.sh" reenter \
-    <<< "$(agent_stop_payload false)"
-)"
-if [ "$corrupt_batch_output" != '{"decision":"block","reason":"2 completed runs are unrouted. Run /next now and refill every freed slot.","targets":["issue-32","issue-33"]}' ]; then
-  err "agentStop let one unusable row withhold the rest of the batch"
+
+assert_decision "a batch request" "$(reenter false 2026-08-22T01:01:00Z "")" \
+  '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","targets":["issue-26","issue-27"]}'
+assert_decision "the batch confirmation" "$(reenter true 2026-08-22T01:02:00Z "")" \
+  '{"decision":"allow","reason":"stop-hook-active","confirmed":["issue-26","issue-27"]}'
+assert_decision "the first confirmed row" "$(ledger_field issue-26 routed)" "true"
+assert_decision "the second confirmed row" "$(ledger_field issue-27 routed)" "true"
+
+# ADR-0004: the runtime permits 8 consecutive blocks and then exits without
+# saying why, so the chain's own cap has to trip first and name what it dropped.
+write_fixture_ledger
+blocks=0
+for attempt in 1 2 3 4 5 6 7 8; do
+  attempt_decision="$(reenter false "2026-08-22T00:0$attempt:00Z")"
+  if [ "$attempt_decision" = "$block_decision" ]; then
+    blocks=$((blocks + 1))
+    continue
+  fi
+  assert_decision "a request past the cap" "$attempt_decision" \
+    '{"decision":"allow","reason":"route-abandoned","target":"issue-26"}'
+  break
+done
+if [ "$blocks" -eq 0 ]; then
+  err "agentStop never blocked for an unconfirmed route request"
+fi
+if [ "$blocks" -ge 8 ]; then
+  err "agentStop re-blocked to the runtime ceiling instead of tripping its own cap"
+fi
+assert_ledger_intact "the abandoned route"
+
+if ! python3 - "$fixture_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    row = json.loads(ledger.readline())
+
+assert row["route_abandoned"] is True, row
+assert not row.get("routed"), row
+PY
+then
+  err "agentStop did not record the abandoned target on its ledger row"
 fi
 
-corrupt_only_output="$(
-  COPILOT_HOME="$tmp_dir/missing-copilot-home" \
-    "$REPO/.github/hooks/git-loopy-chain.sh" reenter \
-    <<< "$(agent_stop_payload false)"
-)"
-if [ "$corrupt_only_output" != '{"decision":"allow","reason":"invalid-completed-row"}' ]; then
-  err "agentStop did not name the unusable row once it was all that was left"
-fi
+assert_decision "an abandoned route" "$(reenter false 2026-08-22T00:09:00Z)" \
+  '{"decision":"allow","reason":"no-unrouted-completion"}'
+
+# A capped row must be reported before another pending row can request a route;
+# otherwise the normal block decision would hide the abandoned target.
+python3 - "$fixture_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "w", encoding="utf-8") as ledger:
+    for target, attempts in (("issue-capped", 3), ("issue-pending", 0)):
+        ledger.write(json.dumps({
+            "target": target,
+            "finish_time": "2026-08-22T00:00:00Z",
+            "outcome": "published",
+            "route_attempts": attempts,
+        }) + "\n")
+PY
+assert_decision "a mixed cap trip" "$(reenter false 2026-08-22T00:10:00Z)" \
+  '{"decision":"allow","reason":"route-abandoned","target":"issue-capped"}'
+assert_decision "the pending row after a cap trip" "$(reenter false 2026-08-22T00:11:00Z)" \
+  '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","target":"issue-pending"}'
 
 python3 - "$fixture_ledger" <<'PY'
 import json
@@ -256,39 +365,32 @@ with open(sys.argv[1], "w", encoding="utf-8") as ledger:
         "outcome": "",
     }) + "\n")
 PY
-ordinary_output="$(
-  COPILOT_HOME="$tmp_dir/missing-copilot-home" \
-    "$REPO/.github/hooks/git-loopy-chain.sh" reenter \
-    <<< "$(agent_stop_payload false)"
-)"
-if [ "$ordinary_output" != '{"decision":"allow","reason":"no-unrouted-completion"}' ]; then
-  err "agentStop did not stand aside without a completed run"
-fi
+assert_decision "a ledger with no completed run" "$(reenter false)" \
+  '{"decision":"allow","reason":"no-unrouted-completion"}'
 
 write_fixture_ledger
 mkdir "$fixture_ledger.lock"
 printf '999999\tstale process\n' > "$fixture_ledger.lock/pid"
-stale_lock_output="$(
-  COPILOT_HOME="$tmp_dir/missing-copilot-home" \
-    "$REPO/.github/hooks/git-loopy-chain.sh" reenter \
-    <<< "$(agent_stop_payload false)"
-)"
-if [ "$stale_lock_output" != '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","targets":["issue-26"]}' ]; then
-  err "agentStop did not reclaim a stale ledger lock"
+assert_decision "a stale ledger lock" "$(reenter false)" "$block_decision"
+assert_ledger_intact "the reclaimed lock"
+
+# A lock held by a live process is not stale, and a hook that cannot take the
+# lock must leave the ledger exactly as it found it.
+write_fixture_ledger
+cp "$fixture_ledger" "$fixture_ledger.before-busy"
+mkdir "$fixture_ledger.lock"
+printf '%s\t%s\n' "$$" "$(ps -o lstart= -p $$ | xargs)" > "$fixture_ledger.lock/pid"
+assert_decision "a held ledger lock" "$(reenter false)" \
+  '{"decision":"allow","reason":"ledger-busy"}'
+if ! cmp -s "$fixture_ledger.before-busy" "$fixture_ledger"; then
+  err "agentStop wrote to a ledger it never locked"
 fi
-if [ -e "$fixture_ledger.lock" ]; then
-  err "agentStop left the reclaimed ledger lock behind"
-fi
+rm -rf "$fixture_ledger.lock"
 
 write_fixture_ledger
-active_output="$(
-  COPILOT_HOME="$tmp_dir/missing-copilot-home" \
-    "$REPO/.github/hooks/git-loopy-chain.sh" reenter \
-    <<< "$(agent_stop_payload true)"
-)"
-if [ "$active_output" != '{"decision":"allow","reason":"stop-hook-active"}' ]; then
-  err "agentStop did not stand aside when stop_hook_active was true"
-fi
+assert_decision "a turn a block already forced" "$(reenter true)" \
+  '{"decision":"allow","reason":"stop-hook-active"}'
+assert_ledger_intact "the stop_hook_active turn"
 
 if ! python3 - "$fixture_ledger" <<'PY'
 import json
@@ -296,10 +398,12 @@ import sys
 
 with open(sys.argv[1], encoding="utf-8") as ledger:
     row = json.loads(ledger.readline())
-assert "routed" not in row
+
+assert "routed" not in row, row
+assert "route_requested_at" not in row, row
 PY
 then
-  err "agentStop routed a completion while stop_hook_active was true"
+  err "agentStop started a route while stop_hook_active was true"
 fi
 
 exit "$fail"

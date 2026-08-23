@@ -72,6 +72,12 @@ _Avoid_: Stale row, dangling row
 Describes a target currently held by a running agent. An in-flight target is spoken for: routing a
 second agent at it would duplicate or corrupt the work.
 
+**Route request**:
+An `agentStop` block asking the parent to run `/next` for a finished run. It is a request and not a
+route, because the block reaches the parent as a dismissible prompt: it becomes a route only once a
+`stop_hook_active` turn in the session that asked shows the parent took the turn the block forced.
+_Avoid_: Re-entry (the mechanism), routed (the confirmed fact)
+
 ### Connection kinds
 
 The kinds of edge one skill can have to another. The first four are the vocabulary of
