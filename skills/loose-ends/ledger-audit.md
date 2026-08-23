@@ -28,11 +28,11 @@ unavailable or fail. Ledger availability is then incomplete rather than absent.
 
 HTML-escape every Continuation-record field before interpolation.
 
-- A native no-records result has no ledger report surface.
 - An incomplete audit renders one compact amber `Ledger audit incomplete` status card below
   the header. State that tracker-only findings are complete, drift findings are omitted, and
-  include the escaped native error. The card is not a finding, has no recommendation, and is
-  excluded from the finding count and follow-up groups.
+  include the escaped native error or, when none exists, escaped capability evidence that
+  identifies the unavailable schema or operation. The card is not a finding, has no
+  recommendation, and is excluded from the finding count and follow-up groups.
 - A `Ledger drift` finding joins the **Reconcile Continuation ledger** follow-up group. Its
   evidence preserves the record carrier and claim beside the contradictory live tracker state.
 

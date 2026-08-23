@@ -90,10 +90,10 @@ Reject any other argument with the invocation syntax before starting the audit.
    link every merged pull request in the group, include each merge timestamp, and link the
    live-open issue. Its follow-up action is **Close resolved issue**. A merge is evidence,
    never a substitute for querying the issue's live state.
-10. For the optional Continuation-ledger branch, read
-    [`ledger-audit.md`](ledger-audit.md) after the tracker passes. It owns every native
-    consumer operation, availability outcome, ledger-drift finding, and ledger-specific
-    report surface.
+10. After completing tracker-only steps 1-9, always read
+    [`ledger-audit.md`](ledger-audit.md). It selects the optional ledger outcome and owns
+    every native consumer operation, availability outcome, ledger-drift finding, and
+    ledger-specific report surface.
 
 ## Report
 
@@ -163,10 +163,11 @@ two recommendations; each rendered card repeats them so it remains self-containe
   - **Target:** the linked spec issue.
   - **State:** `Open; all <child-count> native sub-issues closed`.
 
-When there are no eligible findings, render the same header and a clean empty-state card
-titled `No loose ends found`. Its body says: `No reportable tracker defects found. No open
-spec has exceeded the effective grace period without native sub-issues.` This is a normal
-successful report, including on an empty tracker.
+When there are no tracker findings and the ledger branch produces neither a finding nor an
+incomplete-audit card, render the same header and a clean empty-state card titled
+`No loose ends found`. Its body says: `No reportable tracker defects found. No open spec has
+exceeded the effective grace period without native sub-issues.` This is a normal successful
+report, including on an empty tracker.
 
 After writing the report, open it with the platform opener (`open` on macOS, `xdg-open` on
 Linux, or `start` on Windows), then print the absolute file path in the terminal. End the
