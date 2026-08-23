@@ -15,6 +15,7 @@ usage:
     --agent-type TYPE --agent-name NAME [--ledger PATH]
   chain.sh complete [--ledger PATH] < subagent-stop-payload.json
   chain.sh recover --stale-after-seconds N [--now TIMESTAMP] [--ledger PATH]
+  chain.sh owner --worktree PATH
 
 A PID-less ledger lock is recoverable after CHAIN_LOCK_STALE_SECONDS (default: 300).
 --parent-pid names the running process whose death orphans the reservation, which
@@ -1173,6 +1174,43 @@ print(json.dumps({
   printf '%s\n' "$result"
 }
 
+owner() {
+  local worktree="" marker
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --worktree) worktree="${2:?missing value for --worktree}"; shift 2 ;;
+      *) usage ;;
+    esac
+  done
+  [ -n "$worktree" ] || usage
+  marker="$worktree/.git-loopy/worktree-owner"
+  python3 - "$marker" <<'PY'
+import os
+import subprocess
+import sys
+
+marker = sys.argv[1]
+try:
+    pid_text, owner_start = open(marker, encoding="utf-8").read().rstrip("\n").split("\t", 1)
+    pid = int(pid_text)
+except (FileNotFoundError, ValueError):
+    print('{"alive":false,"reason":"invalid-marker"}')
+    raise SystemExit
+try:
+    if pid <= 0:
+        raise ProcessLookupError
+    os.kill(pid, 0)
+except (ProcessLookupError, PermissionError):
+    print('{"alive":false}')
+    raise SystemExit
+current_start = " ".join(subprocess.run(
+    ["ps", "-o", "lstart=", "-p", str(pid)],
+    capture_output=True, text=True,
+).stdout.split())
+print('{"alive":' + ("true" if current_start == owner_start else "false") + '}')
+PY
+}
+
 [ "$#" -gt 0 ] || usage
 command="$1"
 shift
@@ -1182,5 +1220,6 @@ case "$command" in
   bind) bind "$@" ;;
   complete) complete "$@" ;;
   recover) recover "$@" ;;
+  owner) owner "$@" ;;
   *) usage ;;
 esac
