@@ -44,10 +44,10 @@ Markdown headings: `## Problem Statement`, `## Solution`, `## User Stories`, and
 example, `/loose-ends --grace-days 0` exposes every eligible structural finding immediately.
 Reject any other argument with the invocation syntax before starting the audit.
 
-The native `git-loopy continuation reconcile --help` request contract and
-`git-loopy continuation capabilities` output own all Continuation terms, request fields, and
-supported operations. Read both only when performing the optional ledger pass; do not copy
-their contract or parse ledger comments in this skill.
+The native `git-loopy continuation capabilities` output owns supported operations, ledger
+availability, and schema discovery. Its reconciliation request schema owns all Continuation
+terms and request fields. Read them only when performing the optional ledger pass; do not
+copy their contract or parse ledger comments in this skill.
 
 ## Audit
 
@@ -98,9 +98,11 @@ their contract or parse ledger comments in this skill.
    live-open issue. Its follow-up action is **Close resolved issue**. A merge is evidence,
    never a substitute for querying the issue's live state.
 10. Run this final pass only when the native `git-loopy continuation` capability advertises
-    `reconcile` and a Continuation ledger has records for this repository. Request its
-    machine-readable reconciliation projection using the configured trusted-producer policy;
-    do not parse ledger comments independently or reimplement native reconciliation.
+    `reconcile`, its request schema is machine-discoverable, and it reports that a
+    Continuation ledger has records for this repository. Construct the request from that
+    schema and request its machine-readable reconciliation projection using the configured
+    trusted-producer policy; do not parse ledger comments independently or reimplement
+    native reconciliation.
 
     For every explicit tracker-state claim in that projection, fetch the claim's target from
     the live tracker and compare its actual state with the state the record claims. A future
@@ -110,12 +112,12 @@ their contract or parse ledger comments in this skill.
     preserve the record carrier and claim, alongside the live tracker state that contradicts
     it. Its follow-up action is **Reconcile Continuation ledger**.
 
-    A missing `git-loopy` command, unavailable `reconcile` capability, or repository with no
-    Continuation records means the ledger is absent: skip this pass without a finding,
-    warning, or failure. Continue every tracker-only pass normally. Do not disguise a
-    present ledger's malformed record or failed read as absence. Preserve the native error so
-    the report renders the incomplete-ledger state below rather than asserting a complete
-    drift audit.
+    Skip this pass without a finding, warning, or failure only when the native capability
+    output establishes that this repository has no Continuation records. Continue every
+    tracker-only pass normally. A missing `git-loopy` command, unavailable `reconcile`
+    capability, unavailable request schema, malformed record, or failed native read leaves
+    ledger availability unknown or incomplete. Preserve the native error so the report
+    renders the incomplete-ledger state below rather than asserting a complete drift audit.
 11. For every reported finding, fetch every page of its target issue's timeline when it was
     not already fetched and calculate created age and idle time using the activity definition
     above. Show those durations as evidence on every card, but never use them to delay an
@@ -144,11 +146,12 @@ installation has every instruction it needs:
 - Group findings by **follow-up action**, not finding class. This tracer renders
   **`/to-tickets` — decompose published specs**, **Close resolved issue**, **Close completed
   spec**, and **Reconcile Continuation ledger** when their associated findings exist.
-- A missing ledger has no report surface. A present ledger whose native read failed instead
-  renders one compact amber `Ledger audit incomplete` status card below the header. It states
-  that tracker-only findings are complete, drift findings are omitted, and includes the
-  escaped native error. It is not a finding, has no recommendation, and is excluded from the
-  finding count and follow-up groups.
+- A native capability result establishing no ledger records has no report surface. An
+  unavailable capability result, unavailable reconciliation request schema, or failed native
+  read instead renders one compact amber `Ledger audit incomplete` status card below the
+  header. It states that tracker-only findings are complete, drift findings are omitted, and
+  includes the escaped native error. It is not a finding, has no recommendation, and is
+  excluded from the finding count and follow-up groups.
 
 Every finding is a complete card containing:
 
@@ -172,29 +175,27 @@ Every finding is a complete card containing:
 The prompt must not contain formatting, line breaks, shell quoting, or explanatory text.
 
 For the immediate defect groups, replace the `Never decomposed` recommendation with the
-matching complete recommendation. Each rendered card remains self-contained.
+matching complete recommendation. The shared close-issue fields below apply only to the next
+two recommendations; each rendered card repeats them so it remains self-contained:
+
+- **Interaction:** `HITL` — review the evidence before a human closes the issue.
+- **Context:** Current session.
+- **Runtime:** none.
+- **Prompt:** a separate code block containing exactly one physical ASCII line:
+  `gh issue close <issue-number> --repo <owner>/<repo>`
 
 - **Merged work, open issue**
   - **Follow-up:** Close resolved issue.
   - **Evidence review:** the merged pull request and live-open issue.
   - **Target:** the linked open issue.
   - **State:** `Open; resolved by merged pull request(s) #<pull-request-number>`.
-  - **Interaction:** `HITL` — review the evidence before a human closes the issue.
-  - **Context:** Current session.
-  - **Runtime:** none.
-  - **Prompt:** a separate code block containing exactly one physical ASCII line:
-    `gh issue close <issue-number> --repo <owner>/<repo>`
 - **Completed spec still open**
   - **Follow-up:** Close completed spec.
   - **Evidence review:** the closed native sub-issues.
   - **Target:** the linked spec issue.
   - **State:** `Open; all <child-count> native sub-issues closed`.
-  - **Interaction:** `HITL` — review the evidence before a human closes the issue.
-  - **Context:** Current session.
-  - **Runtime:** none.
-  - **Prompt:** a separate code block containing exactly one physical ASCII line:
-    `gh issue close <issue-number> --repo <owner>/<repo>`
 
+The Ledger drift recommendation is separate from the close-issue recommendations:
 - **Ledger drift**
   - **Follow-up:** Reconcile Continuation ledger.
   - **Interaction:** `HITL` — inspect the native reconciliation evidence and choose the
