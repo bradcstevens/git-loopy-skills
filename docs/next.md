@@ -54,6 +54,12 @@ boundary rather than spawning when the route is HITL or not allowlisted, a route
 for a target, or a target would take its ninth hop. `subagentStop` closes the completed ledger row;
 `agentStop` re-enters `/next` for the batch of completed, unrouted runs, allowing one fill to replace
 every slot that batch freed.
+AFK-safe and allowlisted are the two eligibility conditions for consulting `chain.sh plan`, not a
+guarantee of a spawn. The planner is authoritative and may decline an otherwise eligible action when
+its target or worktree is already in flight, the target is halted or failed, or the concurrency limit
+is reached. A completed run without tracker evidence halts its target with `no-evidence`; the
+repetition and depth guards likewise halt it after four runs for one route and target or nine lineage
+hops. Every decline remains at the checkpoint boundary for a human rather than launching a subagent.
 
 ## It's working if
 

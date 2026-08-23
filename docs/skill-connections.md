@@ -115,7 +115,7 @@ flowchart LR
     next --> questionnaire
 ```
 
-Solid arrows route, nest, or spawn; dotted arrows publish or read config.
+Ordinary arrows route or nest, thick arrows spawn, and dotted arrows publish or read config.
 
 ---
 
@@ -191,12 +191,17 @@ sequenceDiagram
         NX-->>U: one action, HITL or AFK-safe, plus model, effort, context
         U->>BG: run the copyable copilot command block
     else AFK-safe allowlisted route
-        NX->>NX: reserve a ledger row
-        NX->>SA: spawn with the route and runtime
-        NX->>NX: bind the returned agent identity
-        NX-->>U: one AFK-safe action; its chain is running
-        SA-->>NX: completion closes the ledger row
-        NX->>NX: agentStop re-enters /next for the successor
+        NX->>NX: chain.sh plan checks the ledger and concurrency
+        alt plan returns spawn
+            NX->>NX: reserve a ledger row
+            NX->>SA: spawn with the route and runtime
+            NX->>NX: bind the returned agent identity
+            NX-->>U: one AFK-safe action; its chain is running
+            SA-->>NX: subagentStop closes the ledger row
+            NX->>NX: agentStop re-enters /next for the successor
+        else plan returns decline
+            NX-->>U: report the reason at the checkpoint boundary
+        end
     else Fresh session, agent drives
         NX-->>U: one action, HITL or AFK-safe, plus model, effort, context
         U->>HO: /handoff
@@ -539,6 +544,8 @@ These have no workflow edges. Reach for them directly; they neither route onward
 | --- | --- | --- | --- |
 | `next` | 22 routes | routes to | The earliest unresolved gate decides which |
 | `next` | `implement`, `code-review`, `research`, `push`, `resolving-merge-conflicts` | spawns | Only when the route is both AFK-safe and allowlisted |
+| `subagentStop` | `chain.sh complete` | runs inside | Closes the completed subagent's ledger row |
+| `agentStop` | `chain.sh reenter` | runs inside | Re-enters `/next` when completion needs a successor |
 | `next` | `handoff` | routes to | A detached session must outlive the current one |
 | `next` | `setup-git-loopy-skills` | reads config from | `docs/agents/issue-tracker.md` is missing |
 | `handoff` | `next` | routes to | Runs `/next` first if it is not the last output |
