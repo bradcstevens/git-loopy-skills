@@ -185,10 +185,10 @@ sequenceDiagram
     NX->>NX: read tracker, branch, diff, worktrees in flight
 
     alt Continue here
-        NX-->>U: one action, HITL, plus model, effort, context
+        NX-->>U: one action, HITL or AFK-safe, plus model, effort, context
         U->>SK: paste the prompt into this conversation
     else Fresh session, you drive
-        NX-->>U: one action, HITL, plus model, effort, context
+        NX-->>U: one action, HITL or AFK-safe, plus model, effort, context
         U->>BG: run the copyable copilot command block
     else AFK-safe allowlisted route
         NX->>NX: reserve a ledger row
@@ -198,7 +198,7 @@ sequenceDiagram
         SA-->>NX: completion closes the ledger row
         NX->>NX: agentStop re-enters /next for the successor
     else Fresh session, agent drives
-        NX-->>U: one action, HITL, plus model, effort, context
+        NX-->>U: one action, HITL or AFK-safe, plus model, effort, context
         U->>HO: /handoff
         HO->>NX: run /next first if it is not the last output
         HO->>BG: nohup copilot --yolo --no-ask-user with the same flags

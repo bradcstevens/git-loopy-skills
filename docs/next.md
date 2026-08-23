@@ -12,7 +12,7 @@ npx skills update next
 
 ## What it does
 
-`next` is the router over the skills in this repo. It reads the live state of your work and returns a single recommendation: the one action to take now, the skill that performs it, the exact invocation to paste, and the runtime to run it on — model, reasoning effort, and context tier. For a narrowly defined set of unattended delivery routes, it can also spawn that recommendation as an in-session subagent.
+`next` is the router over the skills in this repo. It reads the live state of your work and returns a single recommendation: the one action to take now, the skill that performs it, the exact invocation to paste, and the runtime to run it on — model, reasoning effort, and context tier. For a narrowly defined set of **AFK-safe** delivery routes, it can also spawn that recommendation as an in-session subagent.
 
 It does not itself grill, write a spec, or fix anything. It either orients at a checkpoint boundary or, when the chain gate approves, records and launches work owned by the spawned route. What separates it from a checklist is where it looks: not at what you told it in conversation, but at `docs/agents/issue-tracker.md`, the tracker itself, and your branch and diff. Concurrent sessions move that state underneath you, so the recommendation is drawn from live records rather than from a session summary.
 
@@ -36,7 +36,7 @@ When the route calls for a fresh session, the recommendation also comes with the
 
 ## The chain it can spawn
 
-An ordinary `/next` invocation still returns exactly one recommendation. The chain is the separate
+For an **AFK-safe** action, `next` may spawn exactly five routes. An ordinary `/next` invocation still returns exactly one recommendation. The chain is the separate
 AFK-safe path: after the phase-boundary procedure selects a subagent, the spawn gate requires both an
 AFK-safe target and one of its five allowlisted routes — `/implement`, `/code-review`, `/research`,
 `/push`, or `/resolving-merge-conflicts`. It reserves a worktree and a concurrency slot in the spawn
@@ -61,9 +61,12 @@ every slot that batch freed.
 - Fan-out never turns that into a menu either: the chain reaches its ten concurrent worktrees by asking for one recommendation at a time, and names which of the three limits stopped it — the ceiling of ten, no ready action left, or every remaining candidate waiting on a worktree another agent holds.
 - Once the ten are running, the chain keeps itself full: each finished run frees its slot, and the batch of runs that finished since the last turn comes back as one re-entry that refills every one of them while ready work remains.
 - A recommendation that opens a fresh session arrives as a runnable `copilot` command, not as flags you assemble yourself.
-- A chain-approved recommendation starts one in-session agent in its reserved worktree; an ordinary
-  `/next` recommendation remains one action and does not start work automatically.
-- The recommendation names whether to continue in this context or start a fresh session, matching the flow's own rules: grill → spec → tickets stays in one context, each `/implement` ticket starts in a new one.
+- An AFK-safe recommendation for one of the five allowlisted routes arrives with its in-session
+  subagent already running only when `chain.sh plan` returns `spawn`; on `decline`, it remains at
+  the checkpoint boundary as a prompt or a copyable fresh-session command.
+- The recommendation names whether to continue in this context, start a fresh session, or run as a
+  subagent, matching the flow's own rules: grill → spec → tickets stays in one context, while the
+  chain starts only approved delivery work.
 - In a repo missing either its tracker configuration or
   `.github/hooks/git-loopy-chain.json`, it routes to
   [setup-git-loopy-skills](./setup-git-loopy-skills.md) and nothing else.
