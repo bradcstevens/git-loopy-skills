@@ -73,9 +73,10 @@ Describes a target currently held by a running agent. An in-flight target is spo
 second agent at it would duplicate or corrupt the work.
 
 **Route request**:
-An `agentStop` block asking the parent to run `/next` for a finished run. It is a request and not a
+An `agentStop` block asking the parent to run `/next` for finished runs. It is a request and not a
 route, because the block reaches the parent as a dismissible prompt: it becomes a route only once a
-`stop_hook_active` turn in the session that asked shows the parent took the turn the block forced.
+following `stop_hook_active` turn shows the parent took the turn the block forced. One request covers
+the complete routable batch, and `sessionId` is optional because it is not used for confirmation.
 _Avoid_: Re-entry (the mechanism), routed (the confirmed fact)
 
 ### Connection kinds

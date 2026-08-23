@@ -136,10 +136,10 @@ reenter() {
     <<< "$(agent_stop_payload "$@")"
 }
 
-block_decision='{"decision":"block","reason":"A completed run is unrouted. Run /next now.","target":"issue-26"}'
+block_decision='{"decision":"block","reason":"A completed run is unrouted. Run /next now.","targets":["issue-26"]}'
 
 block_decision_for() {
-  printf '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","target":"%s"}' "$1"
+  printf '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","targets":["%s"]}' "$1"
 }
 
 confirmed_decision_for() {
@@ -289,7 +289,7 @@ with open(sys.argv[1], "w", encoding="utf-8") as ledger:
 PY
 
 assert_decision "a batch request" "$(reenter false 2026-08-22T01:01:00Z "")" \
-  '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","targets":["issue-26","issue-27"]}'
+  '{"decision":"block","reason":"2 completed runs are unrouted. Run /next now and refill every freed slot.","targets":["issue-26","issue-27"]}'
 assert_decision "the batch confirmation" "$(reenter true 2026-08-22T01:02:00Z "")" \
   '{"decision":"allow","reason":"stop-hook-active","confirmed":["issue-26","issue-27"]}'
 assert_decision "the first confirmed row" "$(ledger_field issue-26 routed)" "true"
@@ -352,7 +352,7 @@ PY
 assert_decision "a mixed cap trip" "$(reenter false 2026-08-22T00:10:00Z)" \
   '{"decision":"allow","reason":"route-abandoned","target":"issue-capped"}'
 assert_decision "the pending row after a cap trip" "$(reenter false 2026-08-22T00:11:00Z)" \
-  '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","target":"issue-pending"}'
+  '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","targets":["issue-pending"]}'
 
 # Invalid targets must not be treated as routable batch members.
 python3 - "$fixture_ledger" <<'PY'
@@ -368,7 +368,7 @@ with open(sys.argv[1], "w", encoding="utf-8") as ledger:
         }) + "\n")
 PY
 assert_decision "a batch with invalid targets" "$(reenter false 2026-08-22T00:12:00Z)" \
-  '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","target":"issue-valid"}'
+  '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","targets":["issue-valid"]}'
 python3 - "$fixture_ledger" <<'PY'
 import json
 import sys
@@ -382,6 +382,20 @@ with open(sys.argv[1], "w", encoding="utf-8") as ledger:
 PY
 assert_decision "an invalid target alone" "$(reenter false 2026-08-22T00:13:00Z)" \
   '{"decision":"allow","reason":"invalid-completed-row"}'
+
+python3 - "$fixture_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "w", encoding="utf-8") as ledger:
+    ledger.write(json.dumps({
+        "target": "issue-reclaimed",
+        "finish_time": "2026-08-22T00:00:00Z",
+        "outcome": "reclaimed",
+    }) + "\n")
+PY
+assert_decision "a reclaimed reservation" "$(reenter false 2026-08-22T00:14:00Z)" \
+  '{"decision":"allow","reason":"no-unrouted-completion"}'
 
 python3 - "$fixture_ledger" <<'PY'
 import json

@@ -1078,7 +1078,7 @@ reentry_decision="$(
   python3 "$REPO/skills/setup-git-loopy-skills/git-loopy-agent-stop.py" \
     <<< '{"sessionId":"session-reentry","cwd":"'"$reentry_repo"'","timestamp":"2026-08-22T00:12:00Z","stop_hook_active":false}'
 )"
-if [ "$reentry_decision" != '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","target":"issue-reentry"}' ]; then
+if [ "$reentry_decision" != '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","targets":["issue-reentry"]}' ]; then
   err "agentStop did not see a real completion as an unrouted run"
 fi
 

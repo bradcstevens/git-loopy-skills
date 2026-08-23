@@ -171,6 +171,7 @@ def owed_a_route(row: object) -> bool:
     return (
         isinstance(row, dict)
         and bool(row.get("finish_time"))
+        and row.get("outcome") != "reclaimed"
         and not row.get("routed")
         and not row.get("route_abandoned")
     )
@@ -342,16 +343,19 @@ if not write_ledger(ledger_path, rows):
     raise SystemExit(0)
 
 requested_targets = [row["target"] for row in pending]
+if len(requested_targets) == 1:
+    reason = "A completed run is unrouted. Run /next now."
+else:
+    reason = (
+        f"{len(requested_targets)} completed runs are unrouted. "
+        "Run /next now and refill every freed slot."
+    )
 print(
     json.dumps(
         {
             "decision": "block",
-            "reason": BLOCK_REASON,
-            **(
-                {"target": requested_targets[0]}
-                if len(requested_targets) == 1
-                else {"targets": requested_targets}
-            ),
+            "reason": reason,
+            "targets": requested_targets,
         },
         separators=(",", ":"),
     )

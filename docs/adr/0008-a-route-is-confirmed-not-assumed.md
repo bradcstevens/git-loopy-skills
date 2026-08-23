@@ -21,18 +21,12 @@ It is the only signal the runtime gives that a block landed. ADR-0004 establishe
 loop-breaker — `false` on a natural stop, `true` on a turn a block forced — and a forced turn is
 exactly the thing a route request is waiting on.
 
-It is also indirect, so the request records the session it was asked in and is confirmed only by a
-turn from that session. Confirming whichever request came first instead would let two sessions
-routing one repository credit each other's hops — one target marked routed on a turn forced for
-another, and the miscredited hop never asked for again.
-
-That makes `sessionId` a field this path reads, so a block requires one. **This extends
-[ADR-0005](./0005-hook-payload-fields-are-required-only-where-they-are-read.md)**, which lists
-`agentStop` as reading `cwd`, `timestamp` and `stop_hook_active` and tolerating the rest — the same
-rule, applied to a field that has since become read. A payload without one stands aside under
-`missing-session-id` naming the target, because recording a request nothing could confirm is the
-worse failure: it would force a turn no confirmation could credit, re-block to the cap, and abandon
-a hop that had in fact landed.
+It is indirect, so the helper confirms the complete batch of pending requests rather than marking
+one row based on ledger order. The block itself names every routable completed target, and the next
+`stop_hook_active` turn is evidence that the parent took the forced turn for that batch.
+`sessionId` remains optional under **[ADR-0005](./0005-hook-payload-fields-are-required-only-where-they-are-read.md)**:
+this path does not use it for request creation or confirmation, so a payload without one still
+records and confirms a route.
 
 What that leaves is a session's own hooks. `stop_hook_active` says a turn was forced, not that
 `/next` ran inside it, so a turn some other stop hook forced in the same session can still
@@ -55,11 +49,10 @@ whereas the pre-emptive write it replaces named nothing at all.
   explained rather than the runtime halting it first with no visible reason; three matches the
   repetition guard `/next` already applies per target. Tripping it stands aside under
   `route-abandoned` naming the target, so the hook invocation log (#27) shows which hop was dropped.
-- **A request names every session owed a forced turn for it.** `route_requested_by` collects them
-  rather than keeping only the latest, because each one is holding a turn that will arrive: the
-  first to arrive confirms the hop, instead of finding the request taken over and having to ask
-  again. It is written through the same atomic replace as the rest of the row, so an interrupted
-  helper leaves the previous ledger whole.
+- **A request covers the complete routable batch.** Fan-out can finish several rows between parent
+  turns, and one forced `/next` fill replaces every slot freed by that batch. The helper records
+  attempts for every routable row and confirms them together, so no completed row is stranded
+  behind a single block.
 - **`stop_hook_active` still never starts a route.** It may only promote a request that already
   exists, so a ledger that is missing, unreadable, or locked simply means there is nothing to
   confirm, and the hook stands aside under `stop-hook-active` as before.
