@@ -102,8 +102,9 @@ expected.
    obtain the full descendant graph for the published-spec check. Avoid revisiting an issue
    already seen in that walk. For every open ticket, fetch its live issue representation and use
    `issue_dependencies_summary.blocked_by` as the blocker count. That count is already limited
-   to open native blockers: do not count closed blockers or parse a `Blocked by` body line.
-   An open, unblocked, unassigned ticket is the map's frontier.
+   to open native blockers: never substitute the sibling `total_blocked_by`, which also counts
+   closed blockers, and never parse a `Blocked by` body line. An open, unblocked, unassigned
+   ticket is the map's frontier.
 
    - Report **Completed wayfinder map, no spec** when the map's `## Destination` names a
      specification, its `## Not yet specified` section has no fog, it has at least one labelled
@@ -126,13 +127,15 @@ expected.
      reported stale claim. A map with open dependencies and stale claims is a stale-claim finding
      when the claims, rather than the dependencies, close its frontier.
 
-   Do not report either map finding when the map carries `intentional`; the label suppresses
-   every finding whose target is that map.
+   Do not report any of the three map findings when the map carries `intentional`; the label
+   suppresses every finding whose target is that map.
 10. For each remaining open `idea` anchor, fetch its complete native descendant graph. Report
     **Anchor with no descendant** when no descendant is spec-shaped and none carries
     `wayfinder:map`; hold it until the anchor's idle time reaches the effective grace period.
     Evidence must state that the graph walk found neither artifact, link every descendant when
     present, and identify the `idea` label. Do not report an anchor carrying `intentional`.
+    Until the separate recording fix starts creating `idea` anchors, this step has no input and
+    correctly reports nothing.
 11. Independently enumerate every merged pull request in the repository through GitHub's
     read-only GraphQL API, following pagination for both pull requests and each pull
     request's `closingIssuesReferences`. Use that native closing-reference relationship; a
@@ -199,9 +202,10 @@ Every structural finding shows the target's created age and idle time side by si
 `No qualifying activity since creation` when that is the idle baseline. A stale-claim card
 also shows those values for every claim holding the frontier closed.
 
-For the immediate defect groups, replace the `Never decomposed` recommendation with the
-matching complete recommendation. The shared close-issue fields below apply only to the next
-two recommendations; each rendered card repeats them so it remains self-contained:
+Every other finding class replaces the `Never decomposed` recommendation with its matching
+complete recommendation below. The shared close-issue fields immediately below belong only to
+the two immediate defect recommendations that follow them; each rendered card repeats them so
+it remains self-contained:
 
 - **Interaction:** `HITL` — review the evidence before a human closes the issue.
 - **Context:** Current session.
@@ -260,8 +264,8 @@ two recommendations; each rendered card repeats them so it remains self-containe
 
 When there are no tracker findings and the ledger branch produces neither a finding nor an
 incomplete-audit card, render the same header and a clean empty-state card titled
-`No loose ends found`. Its body says: `No reportable tracker defects found. No open spec or structural workflow artifact has
-exceeded the effective grace period.` This is a normal
+`No loose ends found`. Its body says: `No reportable tracker defects found. No open spec or
+structural workflow artifact has exceeded the effective grace period.` This is a normal
 successful report, including on an empty tracker.
 
 After writing the report, open it with the platform opener (`open` on macOS, `xdg-open` on

@@ -1,7 +1,7 @@
 # Ledger Audit
 
 Read this reference only for the optional Continuation-ledger branch in `/loose-ends` audit
-step 10. It adds a read-only reconciliation check to the tracker-only report.
+step 12. It adds a read-only reconciliation check to the tracker-only report.
 
 ## Native consumer
 

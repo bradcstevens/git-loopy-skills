@@ -22,6 +22,8 @@ You invoke this by typing `/to-spec` — the agent won't reach for it on its own
 
 Reach for it once a change has been talked through and the domain language is settled, and you want that shared understanding written down before any code is written. If you *haven't* aligned yet, grill first — for that, use [grill-with-docs](./grill-with-docs.md). To split the finished spec into tickets, use [to-tickets](./to-tickets.md).
 
+You can also name a source issue — `/to-spec 42` — when the settled thinking already sits on the tracker as a completed wayfinder map or a concluded `idea` anchor rather than in the current conversation. The spec is published as that issue's sub-issue, so the planning it came from keeps a durable successor. `/loose-ends` recommends exactly that invocation when it finds planning that was never collected.
+
 ## Prerequisites
 
 `to-spec` publishes into your issue tracker, so [setup-git-loopy-skills](./setup-git-loopy-skills.md) must have configured the tracker and triage labels for this repo first. It applies the `ready-for-agent` label itself — no separate triage pass needed.
