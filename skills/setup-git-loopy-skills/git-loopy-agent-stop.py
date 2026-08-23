@@ -193,6 +193,13 @@ def awaiting_confirmation(row: object) -> bool:
     return owed_a_route(row) and route_attempts(row) > 0
 
 
+def requested_by(row: dict) -> list:
+    sessions = row.get("route_requested_by")
+    if not isinstance(sessions, list):
+        return []
+    return [session for session in sessions if isinstance(session, str) and session]
+
+
 def confirm_route_request(payload: dict, ledger_path: str | None) -> None:
     """Promote a pending route request to a routed fact, then stand aside.
 
@@ -215,12 +222,18 @@ def confirm_route_request(payload: dict, ledger_path: str | None) -> None:
         decision("stop-hook-active")
         return
 
+    session = payload.get("sessionId")
     requested = [
         row
         for row in rows
         if awaiting_confirmation(row)
         and isinstance(row.get("target"), str)
         and row["target"]
+        and (
+            not isinstance(session, str)
+            or not session
+            or session in requested_by(row)
+        )
     ]
     if not requested:
         decision("stop-hook-active")
@@ -308,15 +321,8 @@ for row in abandoned:
     row["route_abandoned"] = True
     row["route_abandoned_at"] = payload.get("timestamp")
 
-if abandoned:
-    if not write_ledger(ledger_path, rows):
-        decision("ledger-update-failed")
-        raise SystemExit(0)
-    abandoned_targets = [row["target"] for row in abandoned]
-    if len(abandoned_targets) == 1:
-        decision("route-abandoned", target=abandoned_targets[0])
-    else:
-        decision("route-abandoned", targets=abandoned_targets)
+if abandoned and not write_ledger(ledger_path, rows):
+    decision("ledger-update-failed")
     raise SystemExit(0)
 
 pending = [
@@ -327,9 +333,12 @@ pending = [
     and row["target"]
 ]
 if not pending:
-    if not write_ledger(ledger_path, rows):
-        decision("ledger-update-failed")
-        raise SystemExit(0)
+    abandoned_targets = [row["target"] for row in abandoned]
+    if len(abandoned_targets) == 1:
+        decision("route-abandoned", target=abandoned_targets[0])
+    else:
+        decision("route-abandoned", targets=abandoned_targets)
+    raise SystemExit(0)
 
 for row in pending:
     row["route_attempts"] = route_attempts(row) + 1
@@ -338,15 +347,24 @@ for row in pending:
     requested_at = payload.get("timestamp")
     if requested_at and not row.get("route_requested_at"):
         row["route_requested_at"] = requested_at
+    session = payload.get("sessionId")
+    if isinstance(session, str) and session and session not in requested_by(row):
+        row["route_requested_by"] = requested_by(row) + [session]
 if not write_ledger(ledger_path, rows):
     decision("ledger-update-failed")
     raise SystemExit(0)
 
 requested_targets = [row["target"] for row in pending]
-if len(requested_targets) == 1:
-    reason = "A completed run is unrouted. Run /next now."
+abandoned_targets = [row["target"] for row in abandoned]
+if abandoned_targets:
+    abandoned_text = ", ".join(abandoned_targets)
+    reason = f"Route abandoned for {abandoned_text}. "
 else:
-    reason = (
+    reason = ""
+if len(requested_targets) == 1:
+    reason += "A completed run is unrouted. Run /next now."
+else:
+    reason += (
         f"{len(requested_targets)} completed runs are unrouted. "
         "Run /next now and refill every freed slot."
     )

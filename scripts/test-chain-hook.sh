@@ -350,7 +350,7 @@ with open(sys.argv[1], "w", encoding="utf-8") as ledger:
         }) + "\n")
 PY
 assert_decision "a mixed cap trip" "$(reenter false 2026-08-22T00:10:00Z)" \
-  '{"decision":"allow","reason":"route-abandoned","target":"issue-capped"}'
+  '{"decision":"block","reason":"Route abandoned for issue-capped. A completed run is unrouted. Run /next now.","targets":["issue-pending"]}'
 assert_decision "the pending row after a cap trip" "$(reenter false 2026-08-22T00:11:00Z)" \
   '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","targets":["issue-pending"]}'
 
