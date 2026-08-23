@@ -27,10 +27,10 @@ Resolve the tracker repository from the current checkout's `origin` remote.
 
 ## Terms and invocation
 
-An issue is **workflow-bearing** when its open body is a durable artifact produced by a
-workflow transition or is an anchor from which one should follow. Artifact body shape and
-the native sub-issue graph are the source of truth; labels support workflow state but do
-not identify an artifact class.
+An issue is **workflow-bearing** when it is a durable artifact produced by a workflow
+transition or is an anchor from which one should follow. A spec's body shape, the native
+sub-issue graph, and the label namespaces that define wayfinder artifacts are the source of
+truth. Labels outside those namespaces support workflow state; they do not identify a spec.
 
 `Never decomposed` and `Completed spec still open` apply only to spec-shaped
 workflow-bearing issues. A spec contains all four exact Markdown headings: `## Problem
@@ -62,9 +62,10 @@ expected.
 2. Identify spec-shaped issues strictly from every heading in the authoritative fingerprint
    above. Do not inspect their `ready-for-agent` label to make this decision.
 3. Suppress an issue before any further inspection when its labels include the exact,
-   human-applied `intentional` label. Keep the exclusion set for every class, including
-   specs, maps, anchors, and claimed wayfinder tickets. The audit never adds, removes, or
-   infers this label.
+   human-applied `intentional` label. This suppresses its spec, map, or anchor finding; an
+   intentional claimed wayfinder ticket is excluded from stale-claim cards, but still
+   participates in the map-level frontier and staleness calculation. The audit never adds,
+   removes, or infers this label.
 4. For each remaining spec-shaped issue, fetch all native GitHub sub-issues with the
    read-only `GET /repos/{owner}/{repo}/issues/{issue_number}/sub_issues` endpoint,
    following pagination. A non-empty result suppresses only the `Never decomposed` finding:
@@ -97,30 +98,33 @@ expected.
    the native sub-issue query returned zero children. Keep the finding's raw evidence in
    the report so the user can judge the classification.
 9. For each remaining open `wayfinder:map`, fetch every page of its native sub-issues, retain
-   only its labelled wayfinder tickets, and fetch the full native descendant graph for the
-   published-spec check. For every open ticket, fetch its live issue representation and use
+   only its labelled wayfinder tickets, and recursively walk paginated native sub-issues to
+   obtain the full descendant graph for the published-spec check. Avoid revisiting an issue
+   already seen in that walk. For every open ticket, fetch its live issue representation and use
    `issue_dependencies_summary.blocked_by` as the blocker count. That count is already limited
    to open native blockers: do not count closed blockers or parse a `Blocked by` body line.
    An open, unblocked, unassigned ticket is the map's frontier.
 
-   - Report **Completed wayfinder map, no spec** when the map has at least one labelled
+   - Report **Completed wayfinder map, no spec** when the map's `## Destination` names a
+     specification, its `## Not yet specified` section has no fog, it has at least one labelled
      wayfinder ticket, every such ticket is closed, and its native descendant graph contains no
      spec-shaped issue. Hold it until the map's idle time reaches the effective grace period.
-     Its evidence must enumerate each closed ticket, state that the native descendant walk
-     found no spec, and retain the raw labels and states.
+     Its evidence must enumerate each closed ticket, identify the completed planning state,
+     state that the native descendant walk found no spec, and retain the raw labels and states.
    - Report **Wayfinder dependency deadlock** when the map has at least one open labelled
      wayfinder ticket and every open ticket has one or more open native blockers. Hold it until
      the map's idle time reaches the effective grace period. Its evidence must enumerate every
      ticket and its open-blocker count; a child that is merely assigned is not a dependency
      deadlock.
-   - Report **Stale wayfinder claim** when the frontier is empty, one or more open unblocked
-     wayfinder tickets are assigned, and every assigned unblocked ticket has been idle for at
-     least the effective grace period. Hold this finding until each such claim reaches that
-     idle threshold. Determine a claim's staleness from the ticket's latest qualifying activity
-     under step 6, never from the assignment timestamp. Its evidence must enumerate all open
-     tickets, distinguish native blockers from assigned unblocked tickets, and show the created
-     age and idle time of each stale claim. A map with open dependencies and stale claims is a
-     stale-claim finding when the claims, rather than the dependencies, close its frontier.
+   - Report **Stale wayfinder claim** when the frontier is empty, one or more open unblocked,
+     non-intentional wayfinder tickets are assigned, and every assigned unblocked ticket,
+     including an intentional one, has been idle for at least the effective grace period. Hold
+     this finding until each reported claim reaches that idle threshold. Determine a claim's
+     staleness from the ticket's latest qualifying activity under step 6, never from the
+     assignment timestamp. Its evidence must enumerate all open tickets, distinguish native
+     blockers from assigned unblocked tickets, and show the created age and idle time of each
+     reported stale claim. A map with open dependencies and stale claims is a stale-claim finding
+     when the claims, rather than the dependencies, close its frontier.
 
    Do not report either map finding when the map carries `intentional`; the label suppresses
    every finding whose target is that map.
@@ -219,8 +223,8 @@ two recommendations; each rendered card repeats them so it remains self-containe
   - **Follow-up:** `/to-spec` — collect completed planning.
   - **Interaction:** `HITL` — confirm the completed map still describes the specification.
   - **Target:** the linked map issue.
-  - **State:** `Open; all <ticket-count> labelled wayfinder tickets closed; no native
-    descendant spec`.
+  - **State:** `Open; specification destination; no fog; all <ticket-count> labelled wayfinder
+    tickets closed; no native descendant spec`.
   - **Context:** Fresh session.
   - **Runtime:** the `task-type:planning` model and effort, always with `--context long_context`.
   - **Prompt:** a separate code block containing exactly one physical ASCII line:
@@ -234,7 +238,7 @@ two recommendations; each rendered card repeats them so it remains self-containe
   - **Context:** Fresh session.
   - **Runtime:** none.
   - **Prompt:** a separate code block containing exactly one physical ASCII line:
-    `/wayfinder <map-number>`
+    `gh api repos/<owner>/<repo>/issues/<open-ticket-number> --jq .issue_dependencies_summary`
 - **Stale wayfinder claim**
   - **Follow-up:** Release stale wayfinder claims.
   - **Interaction:** `HITL` — verify the claim is abandoned before changing its assignee.
@@ -256,8 +260,8 @@ two recommendations; each rendered card repeats them so it remains self-containe
 
 When there are no tracker findings and the ledger branch produces neither a finding nor an
 incomplete-audit card, render the same header and a clean empty-state card titled
-`No loose ends found`. Its body says: `No reportable tracker defects found. No open spec has
-or structural workflow artifacts have exceeded the effective grace period.` This is a normal
+`No loose ends found`. Its body says: `No reportable tracker defects found. No open spec or structural workflow artifact has
+exceeded the effective grace period.` This is a normal
 successful report, including on an empty tracker.
 
 After writing the report, open it with the platform opener (`open` on macOS, `xdg-open` on
