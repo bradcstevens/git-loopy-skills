@@ -26,9 +26,8 @@ _Avoid_: Manual, interactive
 
 **Allowlisted route**:
 One of the five routes the chain is permitted to spawn without asking: `/implement`,
-`/code-review`, `/research`, `/push`, `/resolving-merge-conflicts`. Being allowlisted is necessary
-but not sufficient — the route must also be AFK-safe. `/merge` becomes the sixth when #58 lands the
-skill and the script change together; these five are what `chain.sh` permits today.
+`/code-review`, `/research`, `/push`, `/resolving-merge-conflicts`, with `/merge` joining them when
+#58 lands. Being allowlisted is necessary but not sufficient — the route must also be AFK-safe.
 
 ### The chain
 
@@ -127,9 +126,9 @@ _Avoid_: Ship, land
 
 **Merge evidence**:
 What makes an unattended merge legitimate: GitHub's own mergeable state, a matchable `review-clean`
-record from `/code-review`, and every check green. It is this workflow's own record rather than the
-remote's branch protection, because a repository may require nothing and still be merged into.
-Nothing emits `review-clean` yet; the gate and its producer are built together.
+record from `/code-review` that nothing emits yet, and every check green. It is this workflow's own
+record rather than the remote's branch protection, because a repository may require nothing and
+still be merged into.
 _Avoid_: Approval, sign-off (an approval is one possible input, not the whole set)
 
 ### Connection kinds

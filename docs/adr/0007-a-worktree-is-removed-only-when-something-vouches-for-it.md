@@ -29,9 +29,18 @@ the directory at all**. Probed live, three worktrees belonging to three running 
 sat at the same commit as `main`, carried no identifying file, and were held by nothing — byte for
 byte indistinguishable from three abandoned ones.
 
-Corroboration across sweeps is what replaces the observation that cannot be made. A thinking agent
+Corroboration across sweeps is what replaces the observation that cannot be made. A working agent
 survives because the next sweep observes its worktree changed or held — evidence about that
 directory — rather than because a timer happened to be generous.
+
+It is stronger than a timer, not a proof. An agent that neither writes nor runs a command across two
+whole sweeps is still clean and still unheld, and the sweeper will vouch for it wrongly. What that
+costs is bounded by where corroboration is the only evidence available: the chain's own reservations
+carry a marker from `chain.sh reserve`, and `/next`'s prompt convention marks what it creates, so
+corroboration is the sole basis for removal only in worktrees the `git-loopy --parallel` runner
+made. Requiring positive owner-termination evidence everywhere would close that hole and make those
+worktrees permanently unsweepable, which is the trade weighed below. #66 records the residual risk
+as its own question rather than leaving it implied here.
 
 ## Considered Options
 
@@ -43,6 +52,11 @@ directory — rather than because a timer happened to be generous.
   choosing how long a model may think before its directory is destroyed underneath it. Corroboration
   is strictly stronger at the same cost, because it reasons about the directory rather than the
   clock.
+- **Require positive owner-termination evidence for every worktree.** The strictest rule, and the
+  only one with no false removals. Rejected because nothing marks what the `git-loopy --parallel`
+  runner creates, so the rule would make its worktrees permanently unsweepable — and that runner is
+  the producer that makes the most of them, so the skill would be left sweeping almost nothing. The
+  cost of rejecting it is the residual risk above, which #66 carries.
 - **Record observations in `subagents.jsonl`.** Rejected: `chain.sh`'s lock is built for short
   critical sections, and a sweep walks directories and calls `gh`. Holding that lock across a
   network round trip would stall every `reserve`, `bind`, and `complete` behind it. The two files
