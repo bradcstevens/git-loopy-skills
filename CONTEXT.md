@@ -74,9 +74,8 @@ second agent at it would duplicate or corrupt the work.
 
 **Route request**:
 An `agentStop` block asking the parent to run `/next` for a finished run. It is a request and not a
-route, because the block reaches the parent as a dismissable prompt: it becomes a route only once a
-later `stop_hook_active` turn shows the parent took the turn the block forced. An unconfirmed
-request is asked again, at most three times, and then abandoned under a reason naming its target.
+route, because the block reaches the parent as a dismissible prompt: it becomes a route only once a
+`stop_hook_active` turn in the session that asked shows the parent took the turn the block forced.
 _Avoid_: Re-entry (the mechanism), routed (the confirmed fact)
 
 ### Connection kinds

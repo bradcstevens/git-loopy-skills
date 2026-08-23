@@ -7,7 +7,7 @@ needs.
 
 The helper previously wrote `routed` at the moment it blocked. That records an intent as a
 completed fact, and the intent is not reliable. The CLI presents a block reason to the parent as a
-**dismissable queued prompt** — the queue manager offers `x` to remove the item — so the forced
+**dismissible queued prompt** — the queue manager offers `x` to remove the item — so the forced
 turn is skipped whenever the operator removes the prompt or presses `esc`, the session exits
 first, or the runtime reaches its ceiling of consecutive blocks. In each case the row read `routed:
 true` forever, the next `agentStop` reported `no-unrouted-completion`, and the hop was gone. Nobody
@@ -24,14 +24,20 @@ loop-breaker — `false` on a natural stop, `true` on a turn a block forced — 
 exactly the thing a route request is waiting on. Reading it as confirmation asks nothing new of the
 runtime.
 
-It is deliberately indirect. `stop_hook_active` says a turn was forced, not that `/next` ran inside
-it, and any stop hook could have forced it, so a turn some other hook forced can over-confirm a
-request the operator had in fact dismissed. The chain accepts that, because the confirmation names
+It is deliberately indirect, so the request records the session it was asked in and is confirmed
+only by a turn from that session. `sessionId` is on every `agentStop` payload and ADR-0004 already
+lists it, so this asks nothing new of the runtime either. Confirming whichever request came first
+instead would let two sessions routing one repository credit each other's hops — one target marked
+routed on a turn forced for another, and the miscredited hop never asked for again. A request that
+named nobody stays confirmable by anyone, because its payload carried no `sessionId` to narrow on,
+and a request nothing can confirm is worse than a loose one.
+
+What that leaves is a session's own hooks. `stop_hook_active` says a turn was forced, not that
+`/next` ran inside it, so a turn some other stop hook forced in the same session can still
+over-confirm a request the operator had dismissed. The chain accepts that: closing it would mean
+reading the transcript, a much larger dependency for a much smaller gain, and the confirmation names
 its target in the decision it emits, so the hook invocation log (#27) shows the hop and the turn
-credited with it — whereas the pre-emptive write it replaces named nothing at all. Correlating
-harder would mean reading the transcript, which is a much larger dependency for a much smaller
-gain: it narrows a case that needs a second blocking hook in the same session, and the old defect
-fired on every dismissal.
+credited with it — whereas the pre-emptive write it replaces named nothing at all.
 
 ## Consequences
 
@@ -52,9 +58,14 @@ fired on every dismissal.
 - **Giving up is a decision the log can see.** Tripping the cap stands aside under
   `route-abandoned` naming the target, so the hook invocation log (#27) shows which hop was dropped
   and why. Standing aside quietly would reintroduce the silence this replaces.
-- **The ledger carries the request.** `route_requested_at`, `route_attempts`, `route_abandoned` and
-  `route_abandoned_at` join `routed` and `routed_at` on the row. They are written through the same
-  atomic replace, so an interrupted helper leaves the previous ledger whole.
+- **The ledger carries the request.** `route_requested_at`, `route_requested_by`, `route_attempts`,
+  `route_abandoned` and `route_abandoned_at` join `routed` and `routed_at` on the row. They are
+  written through the same atomic replace, so an interrupted helper leaves the previous ledger
+  whole.
+- **A request names every session owed a forced turn for it.** `route_requested_by` collects them
+  rather than keeping only the latest, because each one is holding a turn that will arrive: the
+  first to arrive confirms the hop, instead of finding the request taken over and having to ask
+  again.
 - **`stop_hook_active` still never starts a route.** It may only promote a request that already
   exists. A ledger that is missing, unreadable, or locked simply means there is nothing to confirm,
   and the hook stands aside under `stop-hook-active` as before.
@@ -65,8 +76,8 @@ fired on every dismissal.
 Rejected because it needs a second clock to decide what "nothing followed up" means, and it can
 only run in a session that may never come.
 
-**Treat the block as authoritative and ask the runtime for a non-dismissable prompt.** Rejected
-because the dismissable queue is the runtime's behaviour, not a setting this repository controls,
+**Treat the block as authoritative and ask the runtime for a non-dismissible prompt.** Rejected
+because the dismissible queue is the runtime's behaviour, not a setting this repository controls,
 and a chain that depends on an operator never pressing `x` is not a chain.
 
 **Re-block until the runtime's ceiling of 8 stops it.** Rejected because the runtime exits cleanly

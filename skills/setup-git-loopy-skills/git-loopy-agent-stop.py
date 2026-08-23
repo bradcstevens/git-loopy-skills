@@ -2,7 +2,7 @@
 """agentStop decision helper: re-enter `/next` when a completed run is unrouted.
 
 Blocking is a route *request*, not a route. The block reason does not reach the
-parent as a guarantee — the CLI presents it as a dismissable queued prompt, so
+parent as a guarantee — the CLI presents it as a dismissible queued prompt, so
 the operator can remove it, the session can exit before the forced turn runs, or
 the runtime can hit its ceiling of consecutive blocks. Writing `routed` at the
 moment of the block would record that intent as a fact, and every dismissal
@@ -10,8 +10,10 @@ would drop a chain hop while reporting nothing wrong.
 
 So the request is promoted to `routed` only on evidence the block landed:
 `stop_hook_active` true on a following payload, which is the runtime's way of
-saying the parent took the turn the block forced. A request that is never
-confirmed blocks again rather than being silently consumed.
+saying the parent took the turn the block forced. The request records the
+session it was asked in, so that evidence confirms the hop it was actually
+forced for. A request that is never confirmed blocks again rather than being
+silently consumed.
 """
 import atexit
 import json
@@ -186,8 +188,40 @@ def route_attempts(row: dict) -> int:
     return attempts if isinstance(attempts, int) and attempts > 0 else 0
 
 
+def route_requesters(row: dict) -> list:
+    """The sessions still owed a forced turn for this row.
+
+    A block holds open the session it was emitted in, so that is the session
+    whose next turn is evidence the block landed. Recording who asked is what
+    lets a confirmation find the request it belongs to rather than whichever
+    request happens to come first.
+    """
+    requesters = row.get("route_requested_by")
+    if not isinstance(requesters, list):
+        return []
+    return [name for name in requesters if isinstance(name, str) and name]
+
+
 def awaiting_confirmation(row: object) -> bool:
     return owed_a_route(row) and route_attempts(row) > 0
+
+
+def confirmable_by(rows: list, session: object) -> dict | None:
+    """The pending request this forced turn is evidence for.
+
+    A turn forced in one session says nothing about a request another session
+    made, so a request naming only other sessions is left standing for them to
+    confirm or ask again. A request naming nobody stays confirmable by anyone:
+    its payload carried no `sessionId` to narrow on, and a request nothing can
+    confirm is worse than a loose one — it re-blocks to the cap and abandons a
+    hop that had in fact landed.
+    """
+    pending = [row for row in rows if awaiting_confirmation(row)]
+    if isinstance(session, str) and session:
+        own = next((row for row in pending if session in route_requesters(row)), None)
+        if own is not None:
+            return own
+    return next((row for row in pending if not route_requesters(row)), None)
 
 
 def confirm_route_request(payload: dict, ledger_path: str | None) -> None:
@@ -212,7 +246,7 @@ def confirm_route_request(payload: dict, ledger_path: str | None) -> None:
         decision("stop-hook-active")
         return
 
-    requested = next((row for row in rows if awaiting_confirmation(row)), None)
+    requested = confirmable_by(rows, payload.get("sessionId"))
     if requested is None:
         decision("stop-hook-active")
         return
@@ -302,6 +336,14 @@ unrouted["route_attempts"] = attempts + 1
 requested_at = payload.get("timestamp")
 if requested_at and not unrouted.get("route_requested_at"):
     unrouted["route_requested_at"] = requested_at
+# Every session that asked is kept, not just the latest: each one is holding a
+# forced turn that will arrive, and the first to arrive should confirm the hop
+# rather than find its request taken over and ask again.
+session = payload.get("sessionId")
+if isinstance(session, str) and session:
+    requesters = route_requesters(unrouted)
+    if session not in requesters:
+        unrouted["route_requested_by"] = requesters + [session]
 if not write_ledger(ledger_path, rows):
     decision("ledger-update-failed")
     raise SystemExit(0)

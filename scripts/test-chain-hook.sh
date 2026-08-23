@@ -119,11 +119,14 @@ PY
 
 agent_stop_payload() {
   local stop_hook_active="$1" timestamp="${2-2026-08-22T00:01:00Z}"
+  local session_id="${3-session-parent}"
   local fields='"cwd":"'"$fixture_worktree"'","stop_hook_active":'"$stop_hook_active"
 
-  # An empty timestamp stands for a payload carrying no `timestamp` field at
-  # all. ADR-0005 keeps such a field optional, so the helper has to cope.
+  # An empty timestamp or session id stands for a payload carrying no such
+  # field at all. ADR-0005 keeps a field optional until something reads it, so
+  # the helper has to cope with either being absent.
   [ -z "$timestamp" ] || fields="$fields"',"timestamp":"'"$timestamp"'"'
+  [ -z "$session_id" ] || fields="$fields"',"sessionId":"'"$session_id"'"'
   printf '{%s}' "$fields"
 }
 
@@ -135,10 +138,34 @@ reenter() {
 
 block_decision='{"decision":"block","reason":"A completed run is unrouted. Run /next now.","target":"issue-26"}'
 
+block_decision_for() {
+  printf '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","target":"%s"}' "$1"
+}
+
+confirmed_decision_for() {
+  printf '{"decision":"allow","reason":"stop-hook-active","confirmed":"%s"}' "$1"
+}
+
 assert_decision() {
   local label="$1" actual="$2" expected="$3"
 
   [ "$actual" = "$expected" ] || err "$label: expected $expected, got $actual"
+}
+
+# Reads one field off the row carrying a given target, so a multi-row ledger can
+# be asserted without hand-rolling a reader per assertion.
+ledger_field() {
+  python3 - "$fixture_ledger" "$1" "$2" <<'PY'
+import json
+import sys
+
+ledger_path, target, field = sys.argv[1:]
+with open(ledger_path, encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger if line.strip()]
+
+row = next((row for row in rows if row.get("target") == target), None)
+print(json.dumps(row.get(field) if row is not None else None, separators=(",", ":")))
+PY
 }
 
 assert_ledger_intact() {
@@ -156,7 +183,7 @@ assert_ledger_intact() {
 }
 
 # Blocking is a route *request*, not a route. The reason reaches the parent as a
-# dismissable queued prompt, so emitting it is no evidence that /next ran.
+# dismissible queued prompt, so emitting it is no evidence that /next ran.
 write_fixture_ledger
 assert_decision "an unrouted completion" "$(reenter false 2026-08-22T00:01:00Z)" "$block_decision"
 assert_ledger_intact "the first block"
@@ -193,7 +220,7 @@ assert row["route_requested_at"] == "2026-08-22T00:01:00Z", row
 assert row["route_attempts"] == 2, row
 PY
 then
-  err "agentStop did not count the unconfirmed re-entry against the same row"
+  err "agentStop did not count the unconfirmed request against the same row"
 fi
 
 # stop_hook_active is the runtime's evidence that the parent took the turn the
@@ -245,6 +272,80 @@ assert_decision "an untimestamped confirmation" "$(reenter true "")" \
   '{"decision":"allow","reason":"stop-hook-active","confirmed":"issue-26"}'
 assert_decision "a completion routed without a timestamp" "$(reenter false)" \
   '{"decision":"allow","reason":"no-unrouted-completion"}'
+
+# A turn forced in one session is no evidence for a request another session
+# made, so a request has to name who asked for it.
+#
+# Two rows can hold requests at the same time. The block path always takes the
+# first owed row, and rows are appended at reservation time but finished in
+# place, so a run reserved earlier and completed later becomes the first owed
+# row *after* a later row was already blocked for. Crediting whichever pending
+# row comes first then marks one target routed on a turn forced for another,
+# and the miscredited hop is never asked for again — the silent dropped hop
+# this helper exists to remove.
+python3 - "$fixture_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "w", encoding="utf-8") as ledger:
+    for row in (
+        {"target": "issue-27", "finish_time": "", "outcome": ""},
+        {"target": "issue-26", "finish_time": "2026-08-22T00:00:00Z", "outcome": "published"},
+    ):
+        ledger.write(json.dumps(row) + "\n")
+PY
+
+assert_decision "a request from one session" \
+  "$(reenter false 2026-08-22T01:00:00Z session-a)" "$(block_decision_for issue-26)"
+
+# The earlier reservation finishes, so it becomes the first owed row and the
+# next block takes it while issue-26's request is still unconfirmed.
+python3 - "$fixture_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger if line.strip()]
+rows[0]["finish_time"] = "2026-08-22T01:01:00Z"
+rows[0]["outcome"] = "published"
+with open(sys.argv[1], "w", encoding="utf-8") as ledger:
+    for row in rows:
+        ledger.write(json.dumps(row) + "\n")
+PY
+
+assert_decision "a request from a second session" \
+  "$(reenter false 2026-08-22T01:02:00Z session-b)" "$(block_decision_for issue-27)"
+assert_decision "the first session's forced turn" \
+  "$(reenter true 2026-08-22T01:03:00Z session-a)" "$(confirmed_decision_for issue-26)"
+assert_ledger_intact "the correlated confirmation"
+
+assert_decision "the confirmed row" "$(ledger_field issue-26 routed)" "true"
+if [ "$(ledger_field issue-27 routed)" != "null" ]; then
+  err "agentStop credited a forced turn to a request another session made"
+fi
+
+# A session holding no request of its own confirms nothing, rather than
+# consuming somebody else's and dropping their hop.
+assert_decision "an unrelated session's forced turn" \
+  "$(reenter true 2026-08-22T01:04:00Z session-c)" \
+  '{"decision":"allow","reason":"stop-hook-active"}'
+assert_decision "the request left standing" "$(ledger_field issue-27 routed)" "null"
+
+assert_decision "the second session asking again" \
+  "$(reenter false 2026-08-22T01:05:00Z session-b)" "$(block_decision_for issue-27)"
+assert_decision "the second session's forced turn" \
+  "$(reenter true 2026-08-22T01:06:00Z session-b)" "$(confirmed_decision_for issue-27)"
+
+# A request that named nobody — because its payload carried no `sessionId` —
+# stays confirmable by whoever takes the forced turn. Narrowing it to a session
+# that never identified itself would leave a request nothing can confirm, which
+# re-blocks to the cap and abandons a hop that had in fact landed.
+write_fixture_ledger
+assert_decision "a request from an unidentified session" \
+  "$(reenter false 2026-08-22T02:00:00Z "")" "$block_decision"
+assert_decision "the unattributed request" "$(ledger_field issue-26 route_requested_by)" "null"
+assert_decision "a forced turn confirming an unattributed request" \
+  "$(reenter true 2026-08-22T02:01:00Z session-d)" "$(confirmed_decision_for issue-26)"
 
 # ADR-0004: the runtime permits 8 consecutive blocks and then exits without
 # saying why, so the chain's own cap has to trip first and name what it dropped.
