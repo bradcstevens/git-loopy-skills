@@ -25,8 +25,8 @@ It is indirect, so the helper confirms the complete batch of pending requests ra
 one row based on ledger order. The block itself names every routable completed target, and the next
 `stop_hook_active` turn is evidence that the parent took the forced turn for that batch.
 `sessionId` remains optional under **[ADR-0005](./0005-hook-payload-fields-are-required-only-where-they-are-read.md)**:
-this path does not use it for request creation or confirmation, so a payload without one still
-records and confirms a route.
+when present, it correlates a request to the session that asked for it; when absent, the request
+remains confirmable by any following `stop_hook_active` turn.
 
 What that leaves is a session's own hooks. `stop_hook_active` says a turn was forced, not that
 `/next` ran inside it, so a turn some other stop hook forced in the same session can still

@@ -232,6 +232,7 @@ def confirm_route_request(payload: dict, ledger_path: str | None) -> None:
         and (
             not isinstance(session, str)
             or not session
+            or not requested_by(row)
             or session in requested_by(row)
         )
     ]

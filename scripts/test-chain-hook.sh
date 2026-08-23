@@ -295,6 +295,14 @@ assert_decision "the batch confirmation" "$(reenter true 2026-08-22T01:02:00Z ""
 assert_decision "the first confirmed row" "$(ledger_field issue-26 routed)" "true"
 assert_decision "the second confirmed row" "$(ledger_field issue-27 routed)" "true"
 
+# An anonymous request remains confirmable when the runtime later supplies a
+# session id; the optional correlation field must not strand a landed route.
+write_fixture_ledger
+assert_decision "an anonymous request" "$(reenter false 2026-08-22T01:02:00Z "")" "$block_decision"
+assert_decision "an identified confirmation of an anonymous request" \
+  "$(reenter true 2026-08-22T01:03:00Z session-parent)" \
+  '{"decision":"allow","reason":"stop-hook-active","confirmed":"issue-26"}'
+
 # ADR-0004: the runtime permits 8 consecutive blocks and then exits without
 # saying why, so the chain's own cap has to trip first and name what it dropped.
 write_fixture_ledger

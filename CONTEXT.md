@@ -76,7 +76,8 @@ second agent at it would duplicate or corrupt the work.
 An `agentStop` block asking the parent to run `/next` for finished runs. It is a request and not a
 route, because the block reaches the parent as a dismissible prompt: it becomes a route only once a
 following `stop_hook_active` turn shows the parent took the turn the block forced. One request covers
-the complete routable batch, and `sessionId` is optional because it is not used for confirmation.
+the complete routable batch. `sessionId` is optional: when present it correlates confirmation to
+the requesting session, while an anonymous request remains confirmable by any forced turn.
 _Avoid_: Re-entry (the mechanism), routed (the confirmed fact)
 
 ### Connection kinds
