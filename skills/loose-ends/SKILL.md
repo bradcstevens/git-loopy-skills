@@ -1,6 +1,6 @@
 ---
 name: loose-ends
-description: Audit the issue tracker for workflow artifacts that were started but never followed up, then open a read-only HTML report of the findings.
+description: Audit the issue tracker for structural, resolved-work, and ledger defects, then open a read-only HTML report.
 disable-model-invocation: true
 ---
 
@@ -8,9 +8,9 @@ disable-model-invocation: true
 
 `/loose-ends [--grace-days <non-negative-integer>]`
 
-`/loose-ends` reports what was never recorded. It is a user-invoked survey: it reads the
-issue tracker, writes one static HTML report outside the repository, opens it, prints its
-absolute path, and stops.
+`/loose-ends` audits tracker conditions that need follow-up. It is a user-invoked survey: it
+reads the issue tracker, writes one static HTML report outside the repository, opens it,
+prints its absolute path, and stops.
 
 ## Non-negotiable posture
 
@@ -32,10 +32,11 @@ workflow transition or is an anchor from which one should follow. Artifact body 
 the native sub-issue graph are the source of truth; labels support workflow state but do
 not identify an artifact class.
 
-This tracer handles spec-shaped workflow-bearing issues. A spec contains all four exact
-Markdown headings: `## Problem Statement`, `## Solution`, `## User Stories`, and
-`## Implementation Decisions`. Tickets use a distinct body shape. Never use
-`ready-for-agent` to distinguish the two: both specs and tickets carry that label.
+`Never decomposed` and `Completed spec still open` apply only to spec-shaped
+workflow-bearing issues. A spec contains all four exact Markdown headings: `## Problem
+Statement`, `## Solution`, `## User Stories`, and `## Implementation Decisions`. Tickets use
+a distinct body shape. Never use `ready-for-agent` to distinguish the two: both specs and
+tickets carry that label.
 
 `--grace-days` defaults to `7`. It accepts a non-negative integer and overrides only the
 `Never decomposed` structural finding's grace period; it never delays defect findings. For
