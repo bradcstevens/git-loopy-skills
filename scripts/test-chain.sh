@@ -134,6 +134,7 @@ assert " ".join(
         capture_output=True,
         text=True,
         check=True,
+        env={**os.environ, "TZ": "UTC"},
     ).stdout.split()
 ) == start_time
 PY
