@@ -65,7 +65,8 @@ completion payload find its row.
 **Orphaned reservation**:
 A reservation that never got bound, because the spawn failed or its parent died in between. It
 holds a slot no agent will ever release, so it is reclaimed by checking whether the parent is still
-alive, with a timeout as backstop.
+alive, with a timeout as backstop — the intent of `chain.sh recover`, which is the timeout alone
+until #64 adds the liveness check.
 _Avoid_: Stale row, dangling row
 
 **Completed chain reservation**:
@@ -85,8 +86,10 @@ is a directory, it may come from a producer no ledger tracks, and it holds nothi
 _Avoid_: Dead worktree, leftover
 
 **Worktree marker**:
-The record inside a worktree naming the process that owns it. A worktree carrying none cannot be
-vouched for, so nothing removes it on a single look.
+The record inside a worktree naming the process that owns it and when that process started, together
+with the route and target it bound. The first pair decides removal; the second attributes the
+directory to a workstream. A worktree carrying none cannot be vouched for, so nothing removes it on
+a single look.
 _Avoid_: Lock file, sentinel
 
 **Held**:

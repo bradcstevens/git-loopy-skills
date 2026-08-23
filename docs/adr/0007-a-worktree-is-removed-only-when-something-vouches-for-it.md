@@ -10,8 +10,10 @@ is gone. A worktree with no marker is reported, never removed on sight — but i
 forever: a directory observed unchanged and unheld across two or more **sweeps** earns a marker from
 the sweeper's own observations and becomes removable on the same terms as a marked one.
 
-Uncommitted changes refuse removal in every case, marked or corroborated, live or dead. A marker and
-a departed owner say the directory is finished with; neither says the work inside it exists anywhere
+Uncommitted changes refuse removal in every case, marked or corroborated, live or dead. Untracked
+files count as uncommitted: the sweeper cannot tell a scratch file from an unsaved source file, and
+the removal it would otherwise perform is `git worktree remove --force`. A marker and a departed
+owner say the directory is finished with; neither says the work inside it exists anywhere
 else. This is the same rule
 [ADR-0006](./0006-the-chain-may-merge-on-this-workflows-own-evidence.md) applies at the merge
 boundary, and it is the sweeper's most protective invariant precisely because it is the one no
@@ -42,7 +44,7 @@ made. Requiring positive owner-termination evidence everywhere would close that 
 worktrees permanently unsweepable, which is the trade weighed below. #66 records the residual risk
 as its own question rather than leaving it implied here.
 
-## Considered Options
+## Considered options
 
 - **Remove what nothing is using.** Rejected: as above, "nothing is using it" is the normal state
   of a live agent's worktree, so the rule deletes working directories mid-thought.
@@ -97,14 +99,22 @@ if it does not resolve. A row bound to a target that never existed therefore hol
 worktree it can never release, and it fits none of the four: it is bound, so it is not an orphaned
 reservation, and it is ledger-tracked, so it is not the sweeper's. The answer is to stop creating it
 — `reserve` and `plan` validate the target when the row is written, at the same boundary `complete`
-already validates it — rather than to admit it as a fifth kind with an owner to match. Every open row
-being closable is a property the four assume, and #63's validation is what makes it true.
+already validates it — rather than to admit it as a fifth kind with an owner to match.
+
+Validating at the write boundary is necessary and not sufficient. `complete` resolves the target
+over the network, so a target that was perfectly valid when reserved still strands its row on any
+transient `gh` failure, and a network blip is the common case rather than the exotic one. `complete`
+must therefore fail safe: a tracker it cannot reach is a tracker whose answer is unknown, and an
+unknown answer is not grounds for holding a concurrency slot and a worktree forever. Every open row
+being closable is a property the four kinds assume, and #63 owes both halves of it.
 
 ## Consequences
 
-- **Producers must mark what they create.** `chain.sh reserve` already knows the owning process and
-  writes a ledger row in the same lock, so the marker costs it nothing. `/next`'s worktree-creating
-  prompt convention gains a second command alongside its `git worktree add`.
+- **Producers must mark what they create, and the marker carries enough to attribute.** It records
+  the owning process and its start time, which is what removal turns on, and the route and target
+  that process bound, which is what attribution turns on. `chain.sh reserve` already holds all four
+  and writes a ledger row in the same lock, so the marker costs it nothing. `/next`'s
+  worktree-creating prompt convention gains a second command alongside its `git worktree add`.
 - **One producer is out of reach, and the observation ledger is the answer.** The `git-loopy` runner
   lives in another repository; nothing decided here reaches it. Without corroborated observation its
   worktrees would be permanently unsweepable, which would hollow out the skill, since it is the
@@ -124,16 +134,23 @@ being closable is a property the four assume, and #63's validation is what makes
   branch it freed, in that order, because git refuses to delete a branch checked out in a worktree.
   It cannot shortcut the decision by asking git whether the branch merged, for the ancestry reason
   ADR-0006 records.
-- **Branches on the chain's own path are left unowned.** The rule above reaches only a branch a
-  sweep can still see holding a worktree. The chain's reservations have their worktree removed by
-  `chain.sh complete` long before any sweep runs, and nothing deletes the branch, so on the mainline
-  `/implement` → `/code-review` → `/push` → `/merge` path the local branch outlives every mechanism
-  here. This repository already shows the symptom. Nothing in this decision reclaims it; #65 decides
-  what does.
-- **The marker does not close #47 on its own.** `/next` step 1 attributes an in-flight worktree
-  through `.git-loopy/logs/`, a path that does not exist. The marker supplies the missing record for
-  the directories it covers, but it names the owning **process**, and step 1 needs the **target**
-  that process bound in order to call a workstream in flight. It also reaches nothing the `git-loopy
-  --parallel` runner creates, where observation yields removability after two sweeps and never
-  attribution. Whether the marker carries the target too is left to whoever gives step 1 a record it
-  can read; this decision only makes the marker available to carry it.
+- **A branch is a sweepable object in its own right.** The worktree-then-branch rule above reaches
+  only a branch a sweep can still see holding a worktree, and on the chain's mainline `/implement` →
+  `/code-review` → `/push` → `/merge` path no such sweep ever happens. Every reservation is given a
+  branch of its own — `chain.sh` names it `git-loopy/reservation-<pid>-<random>` as it creates the
+  worktree — `complete` then removes that worktree, and no `git branch -d` appears anywhere in
+  `chain.sh`. The branch therefore outlives the only thing that would have made it visible to a
+  sweep, by construction rather than by accident. So a sweep classifies a branch with no worktree
+  too, and what vouches for one is the answer ADR-0006 already forces: ancestry proves nothing under
+  squash, so the sweeper asks GitHub whether that branch's pull request merged. A merged branch is
+  removable; an unmerged or never-pushed one is reported and never removed, because it may be the
+  only copy. #65 implements it.
+- **The marker narrows #47 rather than closing it.** `/next` step 1 attributes an in-flight worktree
+  through `.git-loopy/logs/`, a path that does not exist. Three producers need three different
+  answers. Worktrees the chain created are already attributable and always were — `chain.sh reserve`
+  writes route, target and worktree into the ledger row, so the record step 1 wants is the spawn
+  ledger and its premise was pointed at the wrong file. Worktrees an agent created for itself have
+  no ledger row, and they are what the marker's route and target serve. Worktrees the `git-loopy
+  --parallel` runner created stay unattributable whatever is decided here, because that runner lives
+  in another repository and observation yields removability after two sweeps and never attribution.
+  #47 therefore shrinks to that last producer instead of closing.

@@ -45,7 +45,7 @@ repository that configures real protection gets both; a repository that configur
 gate. The `review-clean` record is load-bearing here: it turns `/code-review`'s existing `publishes
 to` edge into a precondition something reads, rather than a record nothing consumes.
 
-## Considered Options
+## Considered options
 
 Each of these will look reasonable again to someone who has forgotten why it lost.
 
@@ -77,9 +77,11 @@ Each of these will look reasonable again to someone who has forgotten why it los
   same call that merges and no liveness question exists on the remote. It touches no local directory
   and no local branch. Removing a worktree would require the marker rules, the observation ledger,
   and the liveness reasoning of ADR-0007 — a second copy of the sweeper living inside `/merge`.
-- **The chain's guards do not bound this.** They count route repetitions per target, not blast
-  radius, so a merge loop halts only after three attempts. Here the second and third are caught by
-  the remote refusing to merge an already-merged pull request, which is an accident of what `/merge`
-  does rather than a property of the guard; a route whose repeats each landed would get all three.
-  The evidence gate is the only bound that scales with consequence, which is why it is stated in
-  terms of records that must exist rather than conditions that must not.
+- **The chain's guards do not bound this.** The repetition guard counts a route's occurrences among
+  a single target's bound rows and trips at three, so it is scoped to `(route, target)` and never
+  counts across targets at all: a chain that merges twenty different tickets trips nothing. Repeats
+  against one target are no better a bound — the second and third attempts are caught by the remote
+  refusing to merge an already-merged pull request, which is an accident of what `/merge` does
+  rather than a property of the guard. The evidence gate is the only bound that scales with
+  consequence, which is why it is stated in terms of records that must exist rather than conditions
+  that must not.
