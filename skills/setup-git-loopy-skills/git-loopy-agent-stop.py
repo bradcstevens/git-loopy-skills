@@ -1,4 +1,18 @@
 #!/usr/bin/env python3
+"""agentStop decision helper: re-enter `/next` when a completed run is unrouted.
+
+Blocking is a route *request*, not a route. The block reason does not reach the
+parent as a guarantee — the CLI presents it as a dismissable queued prompt, so
+the operator can remove it, the session can exit before the forced turn runs, or
+the runtime can hit its ceiling of consecutive blocks. Writing `routed` at the
+moment of the block would record that intent as a fact, and every dismissal
+would drop a chain hop while reporting nothing wrong.
+
+So the request is promoted to `routed` only on evidence the block landed:
+`stop_hook_active` true on a following payload, which is the runtime's way of
+saying the parent took the turn the block forced. A request that is never
+confirmed blocks again rather than being silently consumed.
+"""
 import atexit
 import json
 import os
@@ -6,6 +20,14 @@ import subprocess
 import sys
 import tempfile
 import time
+
+# Re-blocking an unconfirmed request has to stop somewhere. The runtime permits
+# 8 consecutive blocks and then exits without saying why, so the chain's own cap
+# trips first and names what it abandoned — see ADR-0004.
+MAX_ROUTE_ATTEMPTS = 3
+
+LEDGER_RELATIVE_PATH = os.path.join(".git-loopy", "subagents.jsonl")
+BLOCK_REASON = "A completed run is unrouted. Run /next now."
 
 
 def decision(reason: str, **details: object) -> None:
@@ -99,6 +121,103 @@ def release_lock(lock_dir: str) -> None:
         pass
 
 
+def read_ledger(ledger_path: str) -> list | None:
+    try:
+        with open(ledger_path, encoding="utf-8") as ledger:
+            return [json.loads(line) for line in ledger if line.strip()]
+    except (OSError, json.JSONDecodeError):
+        return None
+
+
+def write_ledger(ledger_path: str, rows: list) -> bool:
+    """Replace the ledger in one atomic step.
+
+    A half-written ledger is worse than no write at all: the next hook reads it
+    to decide, so a truncated file looks like a ledger with no completed run.
+    The replacement is built beside the ledger and renamed over it, so an
+    interrupted helper leaves the previous ledger whole.
+    """
+    replacement = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=os.path.dirname(ledger_path),
+            prefix=".subagents.",
+            delete=False,
+        ) as temporary:
+            replacement = temporary.name
+            for row in rows:
+                temporary.write(json.dumps(row, separators=(",", ":")) + "\n")
+        os.replace(replacement, ledger_path)
+        return True
+    except OSError:
+        if replacement is not None:
+            try:
+                os.unlink(replacement)
+            except OSError:
+                pass
+        return False
+
+
+def owed_a_route(row: object) -> bool:
+    """A finished run the chain still owes a route.
+
+    Neither a routed row nor an abandoned one is owed anything: the first was
+    confirmed, and the second gave up under a reason that named it.
+    """
+    return (
+        isinstance(row, dict)
+        and bool(row.get("finish_time"))
+        and not row.get("routed")
+        and not row.get("route_abandoned")
+    )
+
+
+def awaiting_confirmation(row: object) -> bool:
+    return owed_a_route(row) and bool(row.get("route_requested_at"))
+
+
+def confirm_route_request(payload: dict, ledger_path: str | None) -> None:
+    """Promote a pending route request to a routed fact, then stand aside.
+
+    Nothing on this path can block. `stop_hook_active` never starts a fresh
+    route, so an unreadable or locked ledger only means there is nothing to
+    confirm — never a reason to hold the parent open again.
+    """
+    if ledger_path is None:
+        decision("stop-hook-active")
+        return
+
+    lock_dir = ledger_path + ".lock"
+    if not acquire_lock(lock_dir):
+        decision("stop-hook-active")
+        return
+    atexit.register(release_lock, lock_dir)
+
+    rows = read_ledger(ledger_path)
+    if rows is None:
+        decision("stop-hook-active")
+        return
+
+    requested = next((row for row in rows if awaiting_confirmation(row)), None)
+    if requested is None:
+        decision("stop-hook-active")
+        return
+
+    requested["routed"] = True
+    requested["routed_at"] = payload.get("timestamp")
+    if not write_ledger(ledger_path, rows):
+        decision("stop-hook-active")
+        return
+
+    target = requested.get("target")
+    if isinstance(target, str) and target:
+        decision("stop-hook-active", confirmed=target)
+    else:
+        decision("stop-hook-active")
+
+
 try:
     payload = json.load(sys.stdin)
 except json.JSONDecodeError:
@@ -109,17 +228,22 @@ if not isinstance(payload, dict):
     decision("invalid-agent-stop-payload")
     raise SystemExit(0)
 
+root = repository_root(payload.get("cwd"))
+ledger_path = None
+if root is not None:
+    candidate = os.path.join(root, LEDGER_RELATIVE_PATH)
+    if os.path.exists(candidate):
+        ledger_path = candidate
+
 if payload.get("stop_hook_active") is True:
-    decision("stop-hook-active")
+    confirm_route_request(payload, ledger_path)
     raise SystemExit(0)
 
-root = repository_root(payload.get("cwd"))
 if root is None:
     decision("repository-not-found")
     raise SystemExit(0)
 
-ledger_path = os.path.join(root, ".git-loopy", "subagents.jsonl")
-if not os.path.exists(ledger_path):
+if ledger_path is None:
     decision("no-ledger")
     raise SystemExit(0)
 
@@ -129,78 +253,47 @@ if not acquire_lock(lock_dir):
     raise SystemExit(0)
 atexit.register(release_lock, lock_dir)
 
-try:
-    with open(ledger_path, encoding="utf-8") as ledger:
-        rows = [json.loads(line) for line in ledger if line.strip()]
-except (OSError, json.JSONDecodeError):
+rows = read_ledger(ledger_path)
+if rows is None:
     decision("invalid-ledger")
     raise SystemExit(0)
 
-unrouted = [
-    row
-    for row in rows
-    if isinstance(row, dict) and row.get("finish_time") and not row.get("routed")
-]
-if not unrouted:
+unrouted = next((row for row in rows if owed_a_route(row)), None)
+if unrouted is None:
     decision("no-unrouted-completion")
     raise SystemExit(0)
 
-routable = [
-    row for row in unrouted if isinstance(row.get("target"), str) and row["target"]
-]
-if not routable:
+target = unrouted.get("target")
+if not isinstance(target, str) or not target:
     decision("invalid-completed-row")
     raise SystemExit(0)
-targets = [row["target"] for row in routable]
 
-# Fan-out finishes in batches, and one `/next` fill refills every slot the batch
-# freed, so the whole batch is routed by a single block. Blocking once per
-# completion would spend the runtime's eight consecutive blocks on turns with
-# nothing left to fill, and stop_hook_active stands this hook aside on the turn
-# a block forces, so the rest of the batch would be stranded unrouted. A row the
-# chain script could not have written is left out rather than withholding the
-# batch: it is never marked routed, so refusing the readable rows over it would
-# stall every later natural stop as well.
-for row in routable:
-    row["routed"] = True
-    row["routed_at"] = payload.get("timestamp")
-ledger_dir = os.path.dirname(ledger_path)
-try:
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        encoding="utf-8",
-        dir=ledger_dir,
-        prefix=".subagents.",
-        delete=False,
-    ) as temporary:
-        for row in rows:
-            temporary.write(json.dumps(row, separators=(",", ":")) + "\n")
-        temporary_path = temporary.name
-    os.replace(temporary_path, ledger_path)
-except OSError:
-    if "temporary_path" in locals():
-        try:
-            os.unlink(temporary_path)
-        except OSError:
-            pass
+attempts = unrouted.get("route_attempts")
+attempts = attempts if isinstance(attempts, int) and attempts > 0 else 0
+
+if attempts >= MAX_ROUTE_ATTEMPTS:
+    # Every request so far went unconfirmed, so asking again will not land
+    # either. Give up under a reason that names what was dropped, rather than
+    # re-blocking until the runtime halts the session without explaining why.
+    unrouted["route_abandoned"] = True
+    unrouted["route_abandoned_at"] = payload.get("timestamp")
+    if not write_ledger(ledger_path, rows):
+        decision("ledger-update-failed")
+        raise SystemExit(0)
+    decision("route-abandoned", target=target)
+    raise SystemExit(0)
+
+unrouted["route_attempts"] = attempts + 1
+# The first request time is the one worth keeping: with the attempt count it
+# says how long this hop has been owed, not merely when it was last asked for.
+unrouted.setdefault("route_requested_at", payload.get("timestamp"))
+if not write_ledger(ledger_path, rows):
     decision("ledger-update-failed")
     raise SystemExit(0)
 
-if len(targets) == 1:
-    reason = "A completed run is unrouted. Run /next now."
-else:
-    reason = (
-        f"{len(targets)} completed runs are unrouted. "
-        "Run /next now and refill every freed slot."
-    )
-
 print(
     json.dumps(
-        {
-            "decision": "block",
-            "reason": reason,
-            "targets": targets,
-        },
+        {"decision": "block", "reason": BLOCK_REASON, "target": target},
         separators=(",", ":"),
     )
 )
