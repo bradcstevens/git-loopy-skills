@@ -91,11 +91,12 @@ their contract or parse ledger comments in this skill.
    read-only GraphQL API, following pagination for both pull requests and each pull
    request's `closingIssuesReferences`. Use that native closing-reference relationship; a
    generic mention or cross-reference is not evidence that the pull request resolved an
-   issue. For each referenced issue, read its current live state and labels. When it is
-   currently open and does not carry `intentional`, report `Merged work, open issue`
-   immediately. Evidence must link the merged pull request, include its merge timestamp,
-   and link the live-open issue. Its follow-up action is **Close resolved issue**. A merge
-   is evidence, never a substitute for querying the issue's live state.
+   issue. Group every referenced issue by issue number before reporting. For each group,
+   read its current live state and labels. When it is currently open and does not carry
+   `intentional`, report one `Merged work, open issue` finding immediately. Evidence must
+   link every merged pull request in the group, include each merge timestamp, and link the
+   live-open issue. Its follow-up action is **Close resolved issue**. A merge is evidence,
+   never a substitute for querying the issue's live state.
 10. Run this final pass only when the native `git-loopy continuation` capability advertises
     `reconcile` and a Continuation ledger has records for this repository. Request its
     machine-readable reconciliation projection using the configured trusted-producer policy;
@@ -103,12 +104,11 @@ their contract or parse ledger comments in this skill.
 
     For every explicit tracker-state claim in that projection, fetch the claim's target from
     the live tracker and compare its actual state with the state the record claims. A future
-    `completion_condition` is an objective, not a claim about current state, and must not
-    create drift merely because it is unfinished. When a record's current-state claim and
-    the live target differ, and the target does not carry `intentional`, report `Ledger
-    drift` immediately. Evidence must preserve the record carrier and claim, alongside the
-    live tracker state that contradicts it. Its follow-up action is **Reconcile Continuation
-    ledger**.
+    objective is not a claim about current state and must not create drift merely because it
+    is unfinished. When a record's current-state claim and the live target differ, and the
+    target does not carry `intentional`, report `Ledger drift` immediately. Evidence must
+    preserve the record carrier and claim, alongside the live tracker state that contradicts
+    it. Its follow-up action is **Reconcile Continuation ledger**.
 
     A missing `git-loopy` command, unavailable `reconcile` capability, or repository with no
     Continuation records means the ledger is absent: skip this pass without a finding,
@@ -172,25 +172,29 @@ Every finding is a complete card containing:
 The prompt must not contain formatting, line breaks, shell quoting, or explanatory text.
 
 For the immediate defect groups, replace the `Never decomposed` recommendation with the
-matching complete recommendation. Each rendered card repeats the shared close-issue fields
-below so it remains self-contained:
-
-- **Interaction:** `HITL` — review the evidence before a human closes the issue.
-- **Context:** Current session.
-- **Runtime:** none.
-- **Prompt:** a separate code block containing exactly one physical ASCII line:
-  `gh issue close <issue-number> --repo <owner>/<repo>`
+matching complete recommendation. Each rendered card remains self-contained.
 
 - **Merged work, open issue**
   - **Follow-up:** Close resolved issue.
   - **Evidence review:** the merged pull request and live-open issue.
   - **Target:** the linked open issue.
-  - **State:** `Open; resolved by merged pull request #<pull-request-number>`.
+  - **State:** `Open; resolved by merged pull request(s) #<pull-request-number>`.
+  - **Interaction:** `HITL` — review the evidence before a human closes the issue.
+  - **Context:** Current session.
+  - **Runtime:** none.
+  - **Prompt:** a separate code block containing exactly one physical ASCII line:
+    `gh issue close <issue-number> --repo <owner>/<repo>`
 - **Completed spec still open**
   - **Follow-up:** Close completed spec.
   - **Evidence review:** the closed native sub-issues.
   - **Target:** the linked spec issue.
   - **State:** `Open; all <child-count> native sub-issues closed`.
+  - **Interaction:** `HITL` — review the evidence before a human closes the issue.
+  - **Context:** Current session.
+  - **Runtime:** none.
+  - **Prompt:** a separate code block containing exactly one physical ASCII line:
+    `gh issue close <issue-number> --repo <owner>/<repo>`
+
 - **Ledger drift**
   - **Follow-up:** Reconcile Continuation ledger.
   - **Interaction:** `HITL` — inspect the native reconciliation evidence and choose the
@@ -202,10 +206,10 @@ below so it remains self-contained:
   - **Prompt:** a separate code block containing exactly one physical ASCII line:
     `git-loopy continuation reconcile --input <reconciliation-request.json> --terminal`
 
-When there are no eligible findings, render the same header and a clean empty-state card:
-`No loose ends found` and `No reportable tracker defect or open spec has exceeded the
-effective grace period without native sub-issues.` This is a normal successful report,
-including on an empty tracker or when the Continuation ledger is absent.
+When there are no eligible findings, render the same header and a clean empty-state card
+titled `No loose ends found`. Its body says: `No reportable tracker defects found. No open
+spec has exceeded the effective grace period without native sub-issues.` This is a normal
+successful report, including on an empty tracker or when the Continuation ledger is absent.
 
 After writing the report, open it with the platform opener (`open` on macOS, `xdg-open` on
 Linux, or `start` on Windows), then print the absolute file path in the terminal. End the
