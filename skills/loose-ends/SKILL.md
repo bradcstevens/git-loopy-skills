@@ -38,10 +38,22 @@ Statement`, `## Solution`, `## User Stories`, and `## Implementation Decisions`.
 a distinct body shape. Never use `ready-for-agent` to distinguish the two: both specs and
 tickets carry that label.
 
-`--grace-days` defaults to `7`. It accepts a non-negative integer and overrides only the
-`Never decomposed` structural finding's grace period; it never delays defect findings. For
-example, `/loose-ends --grace-days 0` exposes every eligible structural finding immediately.
-Reject any other argument with the invocation syntax before starting the audit.
+Wayfinder artifacts use their own label namespace, never a body fingerprint: a map carries the
+exact `wayfinder:map` label and a map ticket carries one of `wayfinder:research`,
+`wayfinder:prototype`, `wayfinder:grilling`, or `wayfinder:task`. An anchor carries the exact
+`idea` label. Discover descendants only through native sub-issues, not a Markdown task list or
+cross-reference. A descendant spec still uses the spec fingerprint above; a descendant map uses
+`wayfinder:map`.
+
+`--grace-days` defaults to `7`. It accepts a non-negative integer and overrides every
+structural finding's grace period; it never delays defect findings. For example,
+`/loose-ends --grace-days 0` exposes every eligible structural finding immediately. Reject any
+other argument with the invocation syntax before starting the audit.
+
+Anchors with no descendant deliberately have no current producer: the separate recording fix
+will create `idea`-labelled anchors when a grilling session reaches its checkpoint. This rule is
+implemented now so those anchors are detected when that input lands; finding none before then is
+expected.
 
 ## Audit
 
@@ -50,7 +62,9 @@ Reject any other argument with the invocation syntax before starting the audit.
 2. Identify spec-shaped issues strictly from every heading in the authoritative fingerprint
    above. Do not inspect their `ready-for-agent` label to make this decision.
 3. Suppress an issue before any further inspection when its labels include the exact,
-   human-applied `intentional` label. The audit never adds, removes, or infers this label.
+   human-applied `intentional` label. Keep the exclusion set for every class, including
+   specs, maps, anchors, and claimed wayfinder tickets. The audit never adds, removes, or
+   infers this label.
 4. For each remaining spec-shaped issue, fetch all native GitHub sub-issues with the
    read-only `GET /repos/{owner}/{repo}/issues/{issue_number}/sub_issues` endpoint,
    following pagination. A non-empty result suppresses only the `Never decomposed` finding:
@@ -60,7 +74,8 @@ Reject any other argument with the invocation syntax before starting the audit.
    Evidence must link the parent, enumerate every child with its live closed state, and give
    the child count. Do not apply a grace period or substitute timestamps for these states.
    Its follow-up action is **Close completed spec**.
-6. For each remaining spec with zero native sub-issues, fetch every page of the issue timeline
+6. For each remaining spec with zero native sub-issues and every issue that could support a
+   grace-held map, anchor, or stale-claim finding, fetch every page of the issue timeline
    read-only. Determine activity from the newest of:
    - a comment event;
    - a label-added or label-removed event;
@@ -81,17 +96,50 @@ Reject any other argument with the invocation syntax before starting the audit.
    enumerate the four matching headings from the authoritative fingerprint and state that
    the native sub-issue query returned zero children. Keep the finding's raw evidence in
    the report so the user can judge the classification.
-9. Independently enumerate every merged pull request in the repository through GitHub's
-   read-only GraphQL API, following pagination for both pull requests and each pull
-   request's `closingIssuesReferences`. Use that native closing-reference relationship; a
-   generic mention or cross-reference is not evidence that the pull request resolved an
-   issue. Group every referenced issue by issue number before reporting. For each group,
-   read its current live state and labels. When it is currently open and does not carry
-   `intentional`, report one `Merged work, open issue` finding immediately. Evidence must
-   link every merged pull request in the group, include each merge timestamp, and link the
-   live-open issue. Its follow-up action is **Close resolved issue**. A merge is evidence,
-   never a substitute for querying the issue's live state.
-10. After completing tracker-only steps 1-9, always read
+9. For each remaining open `wayfinder:map`, fetch every page of its native sub-issues, retain
+   only its labelled wayfinder tickets, and fetch the full native descendant graph for the
+   published-spec check. For every open ticket, fetch its live issue representation and use
+   `issue_dependencies_summary.blocked_by` as the blocker count. That count is already limited
+   to open native blockers: do not count closed blockers or parse a `Blocked by` body line.
+   An open, unblocked, unassigned ticket is the map's frontier.
+
+   - Report **Completed wayfinder map, no spec** when the map has at least one labelled
+     wayfinder ticket, every such ticket is closed, and its native descendant graph contains no
+     spec-shaped issue. Hold it until the map's idle time reaches the effective grace period.
+     Its evidence must enumerate each closed ticket, state that the native descendant walk
+     found no spec, and retain the raw labels and states.
+   - Report **Wayfinder dependency deadlock** when the map has at least one open labelled
+     wayfinder ticket and every open ticket has one or more open native blockers. Hold it until
+     the map's idle time reaches the effective grace period. Its evidence must enumerate every
+     ticket and its open-blocker count; a child that is merely assigned is not a dependency
+     deadlock.
+   - Report **Stale wayfinder claim** when the frontier is empty, one or more open unblocked
+     wayfinder tickets are assigned, and every assigned unblocked ticket has been idle for at
+     least the effective grace period. Hold this finding until each such claim reaches that
+     idle threshold. Determine a claim's staleness from the ticket's latest qualifying activity
+     under step 6, never from the assignment timestamp. Its evidence must enumerate all open
+     tickets, distinguish native blockers from assigned unblocked tickets, and show the created
+     age and idle time of each stale claim. A map with open dependencies and stale claims is a
+     stale-claim finding when the claims, rather than the dependencies, close its frontier.
+
+   Do not report either map finding when the map carries `intentional`; the label suppresses
+   every finding whose target is that map.
+10. For each remaining open `idea` anchor, fetch its complete native descendant graph. Report
+    **Anchor with no descendant** when no descendant is spec-shaped and none carries
+    `wayfinder:map`; hold it until the anchor's idle time reaches the effective grace period.
+    Evidence must state that the graph walk found neither artifact, link every descendant when
+    present, and identify the `idea` label. Do not report an anchor carrying `intentional`.
+11. Independently enumerate every merged pull request in the repository through GitHub's
+    read-only GraphQL API, following pagination for both pull requests and each pull
+    request's `closingIssuesReferences`. Use that native closing-reference relationship; a
+    generic mention or cross-reference is not evidence that the pull request resolved an
+    issue. Group every referenced issue by issue number before reporting. For each group,
+    read its current live state and labels. When it is currently open and does not carry
+    `intentional`, report one `Merged work, open issue` finding immediately. Evidence must
+    link every merged pull request in the group, include each merge timestamp, and link the
+    live-open issue. Its follow-up action is **Close resolved issue**. A merge is evidence,
+    never a substitute for querying the issue's live state.
+12. After completing tracker-only steps 1-11, always read
     [`ledger-audit.md`](ledger-audit.md). It selects the optional ledger outcome and owns
     every native consumer operation, availability outcome, ledger-drift finding, and
     ledger-specific report surface.
@@ -118,8 +166,11 @@ installation has every instruction it needs:
   introduction paragraph.
 - Group findings by **follow-up action**, not finding class. This tracer renders
   **`/to-tickets` — decompose published specs**, **Close resolved issue**, and **Close
-  completed spec** when their associated findings exist. The optional ledger branch adds
-  its own group or status card under [`ledger-audit.md`](ledger-audit.md).
+  completed spec** when their associated findings exist. It also renders **`/to-spec` —
+  collect completed planning**, **Review wayfinder dependencies**, **Release stale
+  wayfinder claims**, and **`/to-spec` — collect concluded anchors** when their associated
+  findings exist. The optional ledger branch adds its own group or status card under
+  [`ledger-audit.md`](ledger-audit.md).
 
 Every finding is a complete card containing:
 
@@ -140,8 +191,9 @@ Every finding is a complete card containing:
 
 The prompt must not contain formatting, line breaks, shell quoting, or explanatory text.
 
-For `Never decomposed`, also show created age and idle time side by side; say
-`No qualifying activity since creation` when the issue has no qualifying activity.
+Every structural finding shows the target's created age and idle time side by side; say
+`No qualifying activity since creation` when that is the idle baseline. A stale-claim card
+also shows those values for every claim holding the frontier closed.
 
 For the immediate defect groups, replace the `Never decomposed` recommendation with the
 matching complete recommendation. The shared close-issue fields below apply only to the next
@@ -163,12 +215,50 @@ two recommendations; each rendered card repeats them so it remains self-containe
   - **Evidence review:** the closed native sub-issues.
   - **Target:** the linked spec issue.
   - **State:** `Open; all <child-count> native sub-issues closed`.
+- **Completed wayfinder map, no spec**
+  - **Follow-up:** `/to-spec` — collect completed planning.
+  - **Interaction:** `HITL` — confirm the completed map still describes the specification.
+  - **Target:** the linked map issue.
+  - **State:** `Open; all <ticket-count> labelled wayfinder tickets closed; no native
+    descendant spec`.
+  - **Context:** Fresh session.
+  - **Runtime:** the `task-type:planning` model and effort, always with `--context long_context`.
+  - **Prompt:** a separate code block containing exactly one physical ASCII line:
+    `/to-spec <map-number>`
+- **Wayfinder dependency deadlock**
+  - **Follow-up:** Review wayfinder dependencies.
+  - **Interaction:** `HITL` — a human must decide whether to resolve, remove, or rewire a
+    native dependency.
+  - **Target:** the linked map issue.
+  - **State:** `Open; every open wayfinder ticket has an open native blocker`.
+  - **Context:** Fresh session.
+  - **Runtime:** none.
+  - **Prompt:** a separate code block containing exactly one physical ASCII line:
+    `/wayfinder <map-number>`
+- **Stale wayfinder claim**
+  - **Follow-up:** Release stale wayfinder claims.
+  - **Interaction:** `HITL` — verify the claim is abandoned before changing its assignee.
+  - **Target:** the linked map issue and each linked stale claim.
+  - **State:** `Open; frontier empty because every unblocked ticket is stale and assigned`.
+  - **Context:** Current session.
+  - **Runtime:** none.
+  - **Prompt:** a separate code block containing exactly one physical ASCII line:
+    `gh issue edit <ticket-number> --remove-assignee <assignee> --repo <owner>/<repo>`
+- **Anchor with no descendant**
+  - **Follow-up:** `/to-spec` — collect concluded anchors.
+  - **Interaction:** `HITL` — confirm the anchor still describes work worth specifying.
+  - **Target:** the linked `idea` anchor.
+  - **State:** `Open; no native descendant spec or wayfinder map`.
+  - **Context:** Fresh session.
+  - **Runtime:** the `task-type:planning` model and effort, always with `--context long_context`.
+  - **Prompt:** a separate code block containing exactly one physical ASCII line:
+    `/to-spec <anchor-number>`
 
 When there are no tracker findings and the ledger branch produces neither a finding nor an
 incomplete-audit card, render the same header and a clean empty-state card titled
 `No loose ends found`. Its body says: `No reportable tracker defects found. No open spec has
-exceeded the effective grace period without native sub-issues.` This is a normal successful
-report, including on an empty tracker.
+or structural workflow artifacts have exceeded the effective grace period.` This is a normal
+successful report, including on an empty tracker.
 
 After writing the report, open it with the platform opener (`open` on macOS, `xdg-open` on
 Linux, or `start` on Windows), then print the absolute file path in the terminal. End the
