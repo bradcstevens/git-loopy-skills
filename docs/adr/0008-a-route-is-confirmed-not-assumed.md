@@ -11,9 +11,7 @@ completed fact, and the intent is not reliable. The CLI presents a block reason 
 turn is skipped whenever the operator removes the prompt or presses `esc`, the session exits
 first, or the runtime reaches its ceiling of consecutive blocks. In each case the row read `routed:
 true` forever, the next `agentStop` reported `no-unrouted-completion`, and the hop was gone. Nobody
-was told. That is the silent-stall class of #41, which
-[ADR-0005](./0005-hook-payload-fields-are-required-only-where-they-are-read.md) describes as "the
-chain did nothing while reporting nothing wrong", and it defeats the reason
+was told — the silent-stall class of #41, and a defeat of the reason
 [ADR-0004](./0004-two-hook-events-carry-the-chain.md) chose a hook over an instruction: that the
 next `/next` runs whether or not the model remembers.
 
@@ -25,17 +23,17 @@ exactly the thing a route request is waiting on. Reading it as confirmation asks
 runtime.
 
 It is deliberately indirect, so the request records the session it was asked in and is confirmed
-only by a turn from that session. `sessionId` is on every `agentStop` payload and ADR-0004 already
-lists it, so this asks nothing new of the runtime either. Confirming whichever request came first
-instead would let two sessions routing one repository credit each other's hops — one target marked
-routed on a turn forced for another, and the miscredited hop never asked for again.
+only by a turn from that session. Confirming whichever request came first instead would let two
+sessions routing one repository credit each other's hops — one target marked routed on a turn
+forced for another, and the miscredited hop never asked for again.
 
-A request that named nobody stays confirmable by anyone, because its payload carried no `sessionId`
-to narrow on and a request nothing can confirm is worse than a loose one. A later identified request
-on the same row does not clear that: the unattributed session's turn is still coming, and a row that
-had stopped accepting it would re-block to the cap and abandon a hop `/next` had already run. Taking
-the first such row is not a guess either — the block path always takes the first *owed* row, so the
-row asked for last is the earliest one still pending.
+That makes `sessionId` a field this path reads, so a block requires one. **This extends
+[ADR-0005](./0005-hook-payload-fields-are-required-only-where-they-are-read.md)**, which lists
+`agentStop` as reading `cwd`, `timestamp` and `stop_hook_active` and tolerating the rest — the same
+rule, applied to a field that has since become read. A payload without one stands aside under
+`missing-session-id` naming the target, because recording a request nothing could confirm is the
+worse failure: it would force a turn no confirmation could credit, re-block to the cap, and abandon
+a hop that had in fact landed.
 
 What that leaves is a session's own hooks. `stop_hook_active` says a turn was forced, not that
 `/next` ran inside it, so a turn some other stop hook forced in the same session can still
@@ -51,27 +49,20 @@ credited with it — whereas the pre-emptive write it replaces named nothing at 
   `agentStop` blocks again for the same target.
 - **The attempt count is the request, not the request time.** `route_attempts` is written by the
   helper itself, so it is on the row whatever the payload carried. `route_requested_at` comes from
-  `timestamp`, which [ADR-0005](./0005-hook-payload-fields-are-required-only-where-they-are-read.md)
-  leaves optional because nothing read it; gating confirmation on it would make an absent
-  `timestamp` produce a request that can never be confirmed, and so re-block to the cap and abandon
-  a hop that had actually landed. The time stays as provenance and is omitted rather than stored
-  null, so an absent one cannot claim the first-request slot.
-- **Re-blocking is capped at three attempts per row.** ADR-0004 requires the chain's own guard to
-  trip inside the runtime's ceiling of 8, so the halt is explained rather than the runtime halting
-  it first with no visible reason. Three matches the repetition guard `/next` already applies per
-  target.
-- **Giving up is a decision the log can see.** Tripping the cap stands aside under
-  `route-abandoned` naming the target, so the hook invocation log (#27) shows which hop was dropped
-  and why. Standing aside quietly would reintroduce the silence this replaces.
-- **The ledger carries the request.** `route_requested_at`, `route_requested_by`,
-  `route_requested_anonymously`, `route_attempts`, `route_abandoned` and `route_abandoned_at` join
-  `routed` and `routed_at` on the row. They are written through the same atomic replace, so an
-  interrupted helper leaves the previous ledger whole.
+  `timestamp`, which ADR-0005 leaves optional; gating confirmation on it would make an absent
+  `timestamp` produce a request nothing could confirm. The time stays as provenance, omitted rather
+  than stored null.
+- **Re-blocking is capped at three attempts per row**, and giving up is a decision the log can see.
+  ADR-0004 requires the chain's own guard to trip inside the runtime's ceiling of 8, so the halt is
+  explained rather than the runtime halting it first with no visible reason; three matches the
+  repetition guard `/next` already applies per target. Tripping it stands aside under
+  `route-abandoned` naming the target, so the hook invocation log (#27) shows which hop was dropped.
 - **A request names every session owed a forced turn for it.** `route_requested_by` collects them
   rather than keeping only the latest, because each one is holding a turn that will arrive: the
   first to arrive confirms the hop, instead of finding the request taken over and having to ask
-  again. A request that could name no session sets `route_requested_anonymously` instead, which no
-  later request clears.
+  again. It joins `route_requested_at`, `route_attempts`, `route_abandoned` and `route_abandoned_at`
+  on the row, all written through the same atomic replace, so an interrupted helper leaves the
+  previous ledger whole.
 - **`stop_hook_active` still never starts a route.** It may only promote a request that already
   exists. A ledger that is missing, unreadable, or locked simply means there is nothing to confirm,
   and the hook stands aside under `stop-hook-active` as before.

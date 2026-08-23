@@ -12,8 +12,9 @@ So the request is promoted to `routed` only on evidence the block landed:
 `stop_hook_active` true on a following payload, which is the runtime's way of
 saying the parent took the turn the block forced. The request records the
 session it was asked in, so that evidence confirms the hop it was actually
-forced for. A request that is never confirmed blocks again rather than being
-silently consumed.
+forced for, and a payload with no `sessionId` cannot make a request at all. A
+request that is never confirmed blocks again rather than being silently
+consumed.
 """
 import atexit
 import json
@@ -202,18 +203,6 @@ def route_requesters(row: dict) -> list:
     return [name for name in requesters if isinstance(name, str) and name]
 
 
-def requested_unattributed(row: dict) -> bool:
-    """Whether a request on this row named no session at all.
-
-    Its payload carried no `sessionId` to record, so nothing can tell which
-    forced turn belongs to it and any turn has to be allowed to confirm it. A
-    later identified request must not clear this: the unattributed session's
-    turn is still coming, and a row that has stopped accepting it re-blocks to
-    the cap and abandons a hop `/next` had in fact already run.
-    """
-    return bool(row.get("route_requested_anonymously"))
-
-
 def awaiting_confirmation(row: object) -> bool:
     return owed_a_route(row) and route_attempts(row) > 0
 
@@ -222,21 +211,17 @@ def confirmable_by(rows: list, session: object) -> dict | None:
     """The pending request this forced turn is evidence for.
 
     A turn forced in one session says nothing about a request another session
-    made, so a request naming only other sessions is left standing for them to
-    confirm or ask again. A request that named nobody stays confirmable by
-    anyone, because a request nothing can confirm is worse than a loose one.
-
-    The unattributed fallback takes the first such row, which is also the most
-    recently blocked one: the block path always takes the first *owed* row, so
-    the row asked for last is the earliest pending row in the ledger.
+    made, so only a request this session asked for is confirmed here. The rest
+    are left standing for their own sessions to confirm or ask again.
     """
-    pending = [row for row in rows if awaiting_confirmation(row)]
-    if isinstance(session, str) and session:
-        own = next((row for row in pending if session in route_requesters(row)), None)
-        if own is not None:
-            return own
+    if not isinstance(session, str) or not session:
+        return None
     return next(
-        (row for row in pending if not route_requesters(row) or requested_unattributed(row)),
+        (
+            row
+            for row in rows
+            if awaiting_confirmation(row) and session in route_requesters(row)
+        ),
         None,
     )
 
@@ -345,6 +330,16 @@ if attempts >= MAX_ROUTE_ATTEMPTS:
     decision("route-abandoned", target=target)
     raise SystemExit(0)
 
+# A request is confirmed by a turn from the session that asked for it, so a
+# payload carrying no `sessionId` cannot produce one. Blocking on it anyway
+# would force a turn nothing could ever credit, and re-block until the cap
+# abandoned a hop that had in fact landed. ADR-0005 requires a field the chain
+# reads, and this path reads this one, so name what is missing and stand aside.
+session = payload.get("sessionId")
+if not isinstance(session, str) or not session:
+    decision("missing-session-id", target=target)
+    raise SystemExit(0)
+
 unrouted["route_attempts"] = attempts + 1
 # The first request time is the one worth keeping: with the attempt count it
 # says how long this hop has been owed, not merely when it was last asked for.
@@ -356,13 +351,9 @@ if requested_at and not unrouted.get("route_requested_at"):
 # Every session that asked is kept, not just the latest: each one is holding a
 # forced turn that will arrive, and the first to arrive should confirm the hop
 # rather than find its request taken over and ask again.
-session = payload.get("sessionId")
-if isinstance(session, str) and session:
-    requesters = route_requesters(unrouted)
-    if session not in requesters:
-        unrouted["route_requested_by"] = requesters + [session]
-else:
-    unrouted["route_requested_anonymously"] = True
+requesters = route_requesters(unrouted)
+if session not in requesters:
+    unrouted["route_requested_by"] = requesters + [session]
 if not write_ledger(ledger_path, rows):
     decision("ledger-update-failed")
     raise SystemExit(0)

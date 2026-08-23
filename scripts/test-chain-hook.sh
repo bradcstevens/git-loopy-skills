@@ -340,25 +340,30 @@ assert_decision "the second session's forced turn" \
 # stays confirmable by whoever takes the forced turn. Narrowing it to a session
 # that never identified itself would leave a request nothing can confirm, which
 # re-blocks to the cap and abandons a hop that had in fact landed.
+# A request is confirmed by a turn from the session that asked, so a payload
+# carrying no `sessionId` cannot make one. ADR-0005 requires a field the chain
+# reads and this path reads this one, so the hook names what is missing and
+# stands aside rather than forcing a turn nothing could ever credit — which
+# would re-block to the cap and abandon a hop that had in fact landed.
 write_fixture_ledger
+cp "$fixture_ledger" "$fixture_ledger.before-unidentified"
 assert_decision "a request from an unidentified session" \
-  "$(reenter false 2026-08-22T02:00:00Z "")" "$block_decision"
-assert_decision "the unattributed request" "$(ledger_field issue-26 route_requested_by)" "null"
-assert_decision "a forced turn confirming an unattributed request" \
-  "$(reenter true 2026-08-22T02:01:00Z session-d)" "$(confirmed_decision_for issue-26)"
+  "$(reenter false 2026-08-22T02:00:00Z "")" \
+  '{"decision":"allow","reason":"missing-session-id","target":"issue-26"}'
+if ! cmp -s "$fixture_ledger.before-unidentified" "$fixture_ledger"; then
+  err "agentStop recorded a request no forced turn could confirm"
+fi
+assert_ledger_intact "the unidentified request"
 
-# A later identified request must not take that safety valve away. The
-# unattributed session's forced turn is still coming, and a row that has
-# stopped accepting it re-blocks to the cap and abandons the hop under
-# `route-abandoned` — naming a target `/next` had in fact already run for.
-write_fixture_ledger
-assert_decision "an unattributed request asked first" \
-  "$(reenter false 2026-08-22T03:00:00Z "")" "$block_decision"
-assert_decision "an identified request on the same row" \
-  "$(reenter false 2026-08-22T03:01:00Z session-e)" "$block_decision"
-assert_decision "the unattributed session's forced turn" \
-  "$(reenter true 2026-08-22T03:02:00Z session-f)" "$(confirmed_decision_for issue-26)"
-assert_ledger_intact "the unattributed confirmation"
+# And the same absence on the confirming side confirms nothing, rather than
+# taking over a request some identified session is still owed a turn for.
+assert_decision "a request from one session again" \
+  "$(reenter false 2026-08-22T02:01:00Z session-d)" "$block_decision"
+assert_decision "an unidentified forced turn" "$(reenter true 2026-08-22T02:02:00Z "")" \
+  '{"decision":"allow","reason":"stop-hook-active"}'
+assert_decision "the request left standing" "$(ledger_field issue-26 routed)" "null"
+assert_decision "the identified forced turn" \
+  "$(reenter true 2026-08-22T02:03:00Z session-d)" "$(confirmed_decision_for issue-26)"
 
 # ADR-0004: the runtime permits 8 consecutive blocks and then exits without
 # saying why, so the chain's own cap has to trip first and name what it dropped.
