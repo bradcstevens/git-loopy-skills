@@ -8,17 +8,16 @@ disable-model-invocation: true
 
 `/loose-ends [--grace-days <non-negative-integer>]`
 
-`/continuation` reports what was recorded; `/loose-ends` reports what was never
-recorded. It is a user-invoked survey: it reads the issue tracker, writes one static HTML
-report outside the repository, opens it, prints its absolute path, and stops.
+`/loose-ends` reports what was never recorded. It is a user-invoked survey: it reads the
+issue tracker, writes one static HTML report outside the repository, opens it, prints its
+absolute path, and stops.
 
 ## Non-negotiable posture
 
 - **Read-only:** use only read operations against the tracker. Never create, edit, label,
   comment on, assign, close, reopen, or otherwise mutate an issue or pull request.
-- **No repository writes:** do not create files in the repository and do not publish a
-  Continuation record. The generated report is the sole local write and belongs in the OS
-  temp directory.
+- **No repository writes:** do not create files in the repository. The generated report is
+  the sole local write and belongs in the OS temp directory.
 - **User-invoked only:** `disable-model-invocation` is deliberate. Do not launch this
   whole-tracker sweep implicitly during another workflow.
 - **Degrade cleanly:** no matching issues is a successful audit. Render the empty report
