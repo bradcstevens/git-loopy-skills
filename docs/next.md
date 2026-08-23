@@ -30,7 +30,7 @@ Every recommendation is labelled **HITL** or **AFK-safe** — whether the next a
 
 ## The runtime it sizes
 
-A recommendation also names the **runtime** to run it on: `--model`, `--effort`, and `--context`, sized to the demand of the route it picked. Open judgement — grilling, wayfinding, spec writing, hard diagnosis — draws the strongest reasoning model at `xhigh`; ordinary build and review work draws a strong general model at `high`; mechanical, fully specified work draws a fast model at `medium`. An **AFK-safe** action gets one level more effort, because no human is mid-flight to catch a thin pass, and `long_context` is reserved for runs that must hold more at once than one default window holds. The flags come out verbatim, so [handoff](./handoff.md) can splice them straight into the background agent it launches.
+A recommendation also names the **runtime** to run it on: `--model`, `--effort`, and `--context`, sized to the demand of the route it picked. Open judgement — grilling, wayfinding, spec writing, hard diagnosis — draws the strongest reasoning model at `xhigh`; ordinary build and review work draws a strong general model at `high`; mechanical, fully specified work draws a fast model at `medium`. An **AFK-safe** action gets one level more effort only when its runtime pair came from the fallback table, because no human is mid-flight to catch a thin pass; configured pairs are already calibrated for unattended runs. `long_context` is reserved for runs that must hold more at once than one default window holds. The flags come out verbatim, so [handoff](./handoff.md) can splice them straight into the background agent it launches.
 
 When the route calls for a fresh session, the recommendation also comes with the whole thing already assembled: a `Command` block holding the prompt in a quoted heredoc and the sized flags spliced into a `copilot --yolo -n "..." --model ... --effort ... --context ... -p "$PROMPT"` invocation. Select it, paste it, and the next session starts — named, so `copilot --yolo --resume="<name>"` finds it again. It carries the same prompt and runtime that [handoff](./handoff.md) launches detached in the background, while this copyable command remains in your terminal.
 
@@ -57,7 +57,7 @@ every slot that batch freed.
 AFK-safe and allowlisted are the two eligibility conditions for consulting `chain.sh plan`, not a
 guarantee of a spawn. The planner is authoritative and may decline an otherwise eligible action when
 its target or worktree is already in flight, the target is halted or failed, or the concurrency limit
-is reached. A completed run without tracker evidence halts its target with `no-evidence`; the
+is reached. A completed run without an evidence comment halts its target with `no-evidence`; the
 repetition and depth guards likewise decline a fourth repeat for one route and target or a ninth
 lineage hop. Every decline remains at the checkpoint boundary for a human rather than launching a
 subagent.

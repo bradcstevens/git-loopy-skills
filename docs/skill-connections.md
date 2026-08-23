@@ -15,15 +15,15 @@ Every edge in this document is one of five kinds. Read the arrows with these in 
 | --- | --- | --- |
 | **Routes to** | One session ends, another begins — usually a fresh context | `/to-tickets` → `/implement` |
 | **Runs inside** | Nested in the caller's session; owns no transition and records nothing of its own | `/implement` → `/tdd` |
-| **Publishes to** | Leaves a durable evidence comment that a later session reads back | `/code-review` → the ticket |
+| **Publishes to** | Leaves an evidence comment that a later session reads back | `/code-review` → the ticket |
 | **Reads config from** | Depends on files another skill wrote | `/next` → `/setup-git-loopy-skills` |
-| **Spawns** | Launches an in-session subagent that owns a transition, publishes its own tracker evidence, and has completion correlated by the spawn ledger | `/next` → `/code-review` |
+| **Spawns** | Launches an in-session subagent that owns a transition, publishes its own evidence comment, and has completion correlated by the spawn ledger | `/next` → `/code-review` |
 
 **Spawns is not a synonym for any existing kind.** It is nested in the caller's session like
 **runs inside**, but the spawned route owns its transition rather than merely returning evidence to
-its caller. It also routes onward and has the spawned route publish durable evidence, like
+its caller. It also routes onward and has the spawned route publish an evidence comment, like
 **routes to** and **publishes to**, while the spawn ledger correlates that completion. It does neither by
-ending the caller's session nor by only writing a ticket comment. The fifth kind makes those
+ending the caller's session nor by only writing an evidence comment. The fifth kind makes those
 combined lifecycle and ownership semantics explicit. Nor is it **reads config from**: spawning
 starts and owns executable work, rather than consuming configuration another skill wrote.
 
@@ -31,7 +31,7 @@ One skill is a hub. [`next`](./next.md) is the **router** — it reads live stat
 diff, worktrees) and names one action. When the AFK-safe chain gate approves, it reserves and
 spawns that action as an in-session subagent.
 
-Eleven skills leave a durable evidence comment on the ticket they acted on and name the skill that
+Eleven skills leave an evidence comment on the ticket they acted on and name the skill that
 succeeds them: `code-review`, `grill-with-docs`, `implement`, `prototype`, `push`,
 `research`, `resolving-merge-conflicts`, `to-spec`, `to-tickets`, `triage`, `wayfinder`.
 
@@ -141,15 +141,15 @@ sequenceDiagram
 
     Note over GD,TT: one unbroken context
     U->>GD: sharpen it, a round of questions at a time
-    GD->>GD: post the grilled decision as a ticket comment
+    GD->>GD: post the grilled decision as an evidence comment
     GD->>TS: destination agreed
-    TS->>TS: post the spec as a ticket comment
+    TS->>TS: post the spec as an evidence comment
     TS->>TT: break the spec into tracer bullets
-    TT->>TT: post the ticket graph as a ticket comment
+    TT->>TT: post the ticket graph as an evidence comment
     
     Note over IM,PU: fresh context per ticket
     TT->>IM: one unblocked ticket
-    IM->>IM: post the implementation as a ticket comment
+    IM->>IM: post the implementation as an evidence comment
     IM->>CR: review this candidate head
     alt findings
         CR->>IM: address them, republish a head
@@ -251,12 +251,12 @@ sequenceDiagram
     end
 
     GR->>NX: conclude and route onward
-    GD->>GD: post the grilled decision as a ticket comment
+    GD->>GD: post the grilled decision as an evidence comment
 ```
 
 `/batch-grill-me` is a standalone variant of the same discipline — it asks the whole frontier at
 once instead of one question at a time, and calls nothing else. `/grill-with-docs` is the only
-member that leaves a ticket comment; a grilling nested inside `/triage` or `/wayfinder` records
+member that leaves an evidence comment; a grilling nested inside `/triage` or `/wayfinder` records
 nothing of its own.
 
 ## 4. Wayfinder: planning beyond one context
@@ -283,11 +283,11 @@ sequenceDiagram
     par AFK, in parallel subagents
         WF->>RS: a research ticket
         RS-->>WF: findings on a throwaway research branch
-        RS->>RS: post the resolution as a ticket comment
+        RS->>RS: post the resolution as an evidence comment
     and HITL, when discussion is not enough
         WF->>PR: a prototype ticket
         PR-->>WF: a concrete artifact to react to
-        PR->>PR: post the resolution as a ticket comment
+        PR->>PR: post the resolution as an evidence comment
     end
 
     loop until the frontier is empty
@@ -296,7 +296,7 @@ sequenceDiagram
     end
 
     WF->>TS: the way is clear, publish the spec
-    WF->>WF: post map-complete as a ticket comment
+    WF->>WF: post map-complete as an evidence comment
 ```
 
 Wayfinder routes to [`to-spec`](./to-spec.md), **not** straight to implementation — unless the
@@ -324,10 +324,10 @@ sequenceDiagram
     end
 
     alt agent-ready
-        TR->>TR: post triage-agent-ready as a ticket comment
+        TR->>TR: post triage-agent-ready as an evidence comment
         TR-->>IM: implement the triaged issue
     else needs info
-        TR->>TR: post triage-needs-info as a ticket comment
+        TR->>TR: post triage-needs-info as an evidence comment
         TR-->>M: a brief naming exactly what is missing
     end
 ```
@@ -361,7 +361,7 @@ sequenceDiagram
 
     IM->>IM: typecheck, targeted tests, full suite once
     IM->>IM: commit and push so the head is durable
-    IM->>IM: post the implementation as a ticket comment
+    IM->>IM: post the implementation as an evidence comment
     IM->>CR: review this exact candidate head
 ```
 
@@ -394,20 +394,20 @@ sequenceDiagram
     end
 
     alt findings
-        CR->>CR: post review-findings as a ticket comment
+        CR->>CR: post review-findings as an evidence comment
         CR->>IM: address them, republish a head
     else clean
-        CR->>CR: post review-clean as a ticket comment
+        CR->>CR: post review-clean as an evidence comment
         CR->>PU: publish the reviewed head
     end
 
     PU->>PU: stage intended changes, commit, push, open the PR
     alt the remote moved
         PU->>RMC: reconcile with the remote head
-        RMC->>RMC: post resolve-conflict as a ticket comment
+        RMC->>RMC: post resolve-conflict as an evidence comment
         RMC->>CR: review the resolved head
     else clean
-        PU->>PU: post publish-head as a ticket comment
+        PU->>PU: post publish-head as an evidence comment
     end
 ```
 
