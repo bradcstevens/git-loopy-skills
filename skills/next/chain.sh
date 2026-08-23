@@ -19,6 +19,8 @@ usage:
 A PID-less ledger lock is recoverable after CHAIN_LOCK_STALE_SECONDS (default: 300).
 --parent-pid names the running process whose death orphans the reservation, which
 is the session that will bind the run and never the shell that invokes this script.
+Worktree ownership markers live at .git-loopy/worktree-owner and contain
+"<pid>\t<process start time>\n"; compare both values to determine liveness.
 Route repetition and chain depth count bound rows only. Reservations claim
 capacity and a worktree, but do not represent a spawned hop.
 The two --no-ready and --all-collide forms end a fan-out fill; they are mutually
@@ -551,7 +553,7 @@ reserve() {
     exit 2
   }
   local ledger_dir row spawn_commit worktree_branch max_concurrency open_reservations
-  local parent_start
+  local parent_start marker_dir marker_tmp
   if [ -z "$ledger" ]; then
     ledger="$(repository_root)/.git-loopy/subagents.jsonl"
   fi
@@ -666,6 +668,16 @@ PY
   fi
   created_worktree=1
   created_worktree_path="$worktree"
+  marker_dir="$worktree/.git-loopy"
+  marker_tmp="$marker_dir/.worktree-owner.$$"
+  if ! mkdir -p "$marker_dir" ||
+    ! printf '%s\t%s\n' "$PPID" "$(ps -o lstart= -p "$PPID" | xargs)" > "$marker_tmp" ||
+    ! mv "$marker_tmp" "$marker_dir/worktree-owner"
+  then
+    rm -f "$marker_tmp"
+    mark_record_failed "$worktree"
+    exit 1
+  fi
   created_worktree=0
   release_lock
 }

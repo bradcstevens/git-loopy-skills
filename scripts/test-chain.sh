@@ -116,6 +116,26 @@ fi
 if [[ "$(git -C "$tmp_dir/worktree-1" branch --show-current)" != git-loopy/reservation-* ]]; then
   err "reserve did not create a branch for the reserved worktree"
 fi
+if [ ! -f "$tmp_dir/worktree-1/.git-loopy/worktree-owner" ]; then
+  err "reserve did not create a worktree ownership marker"
+else
+  python3 - "$tmp_dir/worktree-1/.git-loopy/worktree-owner" <<'PY' || exit 1
+import subprocess
+import sys
+
+pid_text, start_time = open(sys.argv[1], encoding="utf-8").read().rstrip("\n").split("\t", 1)
+assert int(pid_text) > 0
+assert start_time
+assert " ".join(
+    subprocess.run(
+        ["ps", "-o", "lstart=", "-p", pid_text],
+        capture_output=True,
+        text=True,
+        check=True,
+    ).stdout.split()
+) == start_time
+PY
+fi
 
 "$CHAIN" bind \
   --ledger "$ledger" \

@@ -253,7 +253,21 @@ code fence. For `/compact`, pass the instruction the phase-boundary procedure re
 `Context` to the phase-boundary procedure. When another agent holds the primary
 worktree, carry that constraint into the prompt and do not direct work into it.
 If the procedure selects `Fresh session in a new worktree`, open the prompt with
-the `git worktree add` that clears the constraint before the agent writes.
+the `git worktree add` that clears the constraint, followed immediately by a
+marker command, before the agent writes anything else:
+
+```bash
+git worktree add <worktree> <start-point>
+mkdir -p <worktree>/.git-loopy
+printf '%s\t%s\n' "$$" "$(ps -o lstart= -p "$$" | xargs)" > <worktree>/.git-loopy/worktree-owner
+```
+
+The marker is a single line containing the owning process PID, a tab, and that
+process's `ps -o lstart=` value. A reader checks liveness with `kill -0 PID`
+and compares the current `ps -o lstart= -p PID` value to the recorded start
+time; a missing process or changed start time means the worktree is abandoned.
+This is the same PID-and-start-time stale-owner check used by `chain.sh`'s
+ledger lock, not a second identity mechanism.
 
 Carry into the prompt every constraint that came from live state and is absent
 from the target's own record: the worktree to work in, the files it shares with
