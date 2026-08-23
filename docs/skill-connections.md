@@ -36,6 +36,10 @@ flowchart LR
         handoff["/handoff"]
     end
 
+    subgraph TRACKER["Tracker continuity"]
+        looseends["/loose-ends"]
+    end
+
     subgraph ONRAMP["On-ramps"]
         grillme["/grill-me"]
         loopme["/loop-me"]
@@ -74,6 +78,8 @@ flowchart LR
     next --> implement
     next --> handoff
     handoff --> next
+
+    looseends --> totickets
 
     grillme --> grilling
     loopme --> grilling
@@ -420,7 +426,32 @@ sequenceDiagram
 
 A candidate picked here becomes an *idea* for [`grill-with-docs`](./grill-with-docs.md).
 
-## 9. Bootstrap
+## 9. Tracker continuity
+
+`/loose-ends` is a user-invoked, read-only survey of the gap between publication and decomposition.
+It finds open spec-shaped issues with zero native sub-issues, then recommends `/to-tickets` directly
+from its static report. The user chooses that HITL follow-up; the survey does not route it through
+[`next`](./next.md).
+
+`/continuation` reports what was recorded; `/loose-ends` reports what was never recorded. A published
+spec abandoned before `/to-tickets` has no continuation record, so the surveys cover complementary
+tracker evidence rather than sharing a workflow edge.
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor U as You
+    participant LE as /loose-ends
+    participant TT as /to-tickets
+
+    U->>LE: survey open specs
+    LE->>LE: read issues, sub-issues, and qualifying activity
+    LE-->>U: static HTML report
+    U->>TT: choose a never-decomposed spec
+    TT->>TT: publish native sub-issues
+```
+
+## 10. Bootstrap
 
 [`setup-git-loopy-skills`](./setup-git-loopy-skills.md) runs **once per repo**, before anything else. It
 writes the config that four other skills read.
@@ -453,7 +484,7 @@ sequenceDiagram
     end
 ```
 
-## 10. Writing for agents, and the Microsoft cluster
+## 11. Writing for agents, and the Microsoft cluster
 
 Two small chains that sit off to the side of the engineering flow.
 
@@ -528,6 +559,9 @@ These have no workflow edges. Reach for them directly; they neither route onward
 | `improve-codebase-architecture` | `grilling`, `domain-modeling` | runs inside | Once a candidate is picked |
 | `improve-codebase-architecture` | `next` | routes to | The survey never implements |
 | `diagnosing-bugs` | `improve-codebase-architecture` | routes to | The bug exposed a structural cause |
+| `loose-ends` | `to-tickets` | routes to | The user chooses the report's never-decomposed finding |
+| `loose-ends` | `next` | no edge | Its selected HITL follow-up is invoked directly |
+| `loose-ends` | `continuation` | no edge | They read complementary evidence: never recorded and recorded |
 | `wayfinder` | `grilling`, `domain-modeling` | runs inside | Naming the destination, resolving tickets |
 | `wayfinder` | `research` | runs inside | A fact-shaped ticket, resolved AFK in parallel |
 | `wayfinder` | `prototype` | runs inside | A ticket needing something concrete |
@@ -559,7 +593,7 @@ These have no workflow edges. Reach for them directly; they neither route onward
 - **Reviews come back.** `/code-review` findings return to `/implement`, which republishes a head
   and re-enters review. `/resolving-merge-conflicts` re-enters review too.
 - **Surveys do not build.** `/improve-codebase-architecture` and `/diagnosing-bugs` produce ideas
-  and causes; they route onward rather than implementing.
+  and causes; `/loose-ends` reports a tracker gap. None implements the follow-up.
 - **Detours are bridged.** A `/prototype` or `/research` detour out of a live thread is bridged with
   `/handoff` in both directions when the original thread must survive.
 - **Direct reach is narrow.** Reach for `/domain-modeling`, `/codebase-design`, or `/tdd` directly
