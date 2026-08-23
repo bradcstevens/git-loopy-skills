@@ -10,13 +10,15 @@ usage:
   chain.sh plan --no-ready [--ledger PATH]
   chain.sh plan --all-collide [--ledger PATH]
   chain.sh reserve --route ROUTE --target TARGET --spawn-time TIMESTAMP \
-    --worktree PATH --chain-depth N [--ledger PATH]
+    --worktree PATH --chain-depth N --parent-pid PID [--ledger PATH]
   chain.sh bind --worktree PATH --session-id ID --agent-id ID \
     --agent-type TYPE --agent-name NAME [--ledger PATH]
   chain.sh complete [--ledger PATH] < subagent-stop-payload.json
   chain.sh recover --stale-after-seconds N [--now TIMESTAMP] [--ledger PATH]
 
 A PID-less ledger lock is recoverable after CHAIN_LOCK_STALE_SECONDS (default: 300).
+--parent-pid names the running process whose death orphans the reservation, which
+is the session that will bind the run and never the shell that invokes this script.
 Route repetition and chain depth count bound rows only. Reservations claim
 capacity and a worktree, but do not represent a spawned hop.
 The two --no-ready and --all-collide forms end a fan-out fill; they are mutually
@@ -527,7 +529,7 @@ PY
 }
 
 reserve() {
-  local route="" target="" spawn_time="" worktree="" chain_depth=""
+  local route="" target="" spawn_time="" worktree="" chain_depth="" parent_pid=""
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -536,19 +538,20 @@ reserve() {
       --spawn-time) spawn_time="${2:?missing value for --spawn-time}"; shift 2 ;;
       --worktree) worktree="${2:?missing value for --worktree}"; shift 2 ;;
       --chain-depth) chain_depth="${2:?missing value for --chain-depth}"; shift 2 ;;
+      --parent-pid) parent_pid="${2:?missing value for --parent-pid}"; shift 2 ;;
       --ledger) ledger="${2:?missing value for --ledger}"; shift 2 ;;
       *) usage ;;
     esac
   done
 
   [ -n "$route" ] && [ -n "$target" ] && [ -n "$spawn_time" ] &&
-    [ -n "$worktree" ] && [ -n "$chain_depth" ] || usage
+    [ -n "$worktree" ] && [ -n "$chain_depth" ] && [ -n "$parent_pid" ] || usage
   [[ "$chain_depth" =~ ^[0-9]+$ ]] || {
     echo "error: --chain-depth must be a non-negative integer" >&2
     exit 2
   }
   local ledger_dir row spawn_commit worktree_branch max_concurrency open_reservations
-  local parent_pid parent_start
+  local parent_start
   if [ -z "$ledger" ]; then
     ledger="$(repository_root)/.git-loopy/subagents.jsonl"
   fi
@@ -558,10 +561,13 @@ reserve() {
   repo_root="$(repository_root)"
   worktree_branch="git-loopy/reservation-${$}-${RANDOM}"
   worktree="$(python3 -c 'import os; import sys; print(os.path.realpath(os.path.abspath(sys.argv[1])))' "$worktree")"
-  parent_pid="$PPID"
+  [[ "$parent_pid" =~ ^[1-9][0-9]*$ ]] || {
+    echo "error: --parent-pid must be a process id" >&2
+    exit 2
+  }
   parent_start="$(process_start "$parent_pid")"
-  [[ "$parent_pid" =~ ^[1-9][0-9]*$ ]] && [ -n "$parent_start" ] || {
-    echo "error: could not record reserving parent identity" >&2
+  [ -n "$parent_start" ] || {
+    echo "error: reserving parent is not running: $parent_pid" >&2
     exit 2
   }
   mkdir -p "$ledger_dir"

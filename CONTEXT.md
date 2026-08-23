@@ -62,6 +62,12 @@ _Avoid_: Placeholder, pending row
 Attaching the runtime-assigned agent identity to a reservation, which is what later lets a
 completion payload find its row.
 
+**Reserving parent**:
+The process whose death orphans a reservation — the routing session that will do the binding, not
+the shell that invokes the chain script and exits with the command. A reservation records its
+process identity so liveness can be checked later.
+_Avoid_: Caller, spawner
+
 **Orphaned reservation**:
 A reservation that never got bound, because the spawn failed or its parent died in between. It
 holds a slot no agent will ever release, so it is reclaimed by checking whether the parent is still
