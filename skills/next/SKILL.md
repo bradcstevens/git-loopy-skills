@@ -297,10 +297,15 @@ user-launched fresh session.
 Set `Context: Subagent` only for the `spawn` decision from step 5. Reserve the target in the
 decision's new worktree before launching the returned custom agent in background mode. The routing
 agent performs the background custom-agent `task` invocation; `chain.sh` deliberately owns only
-the durable reserve, bind, complete, and guard operations. Bind the run immediately after launch,
-then carry the recommendation's paste-safe prompt and runtime into the agent. Do not launch a
-declined action, an action that reaches the checkpoint boundary, or an action whose phase-boundary
-choice is anything other than `Subagent`.
+the durable reserve, bind, complete, and guard operations. Each reservation records the process
+identity of its reserving parent, which is this routing session and never the shell that runs the
+command: pass `--parent-pid "$PPID"` from that shell, whose own parent is the session. Recovery
+reclaims an unbound orphan as soon as that parent is gone, or after the configured timeout if the
+parent has lost track of it. `plan` runs that recovery before
+it evaluates concurrency, so an orphan cannot make a later candidate appear to be at the ceiling.
+Bind the run immediately after launch, then carry the recommendation's paste-safe prompt and
+runtime into the agent. Do not launch a declined action, an action that reaches the checkpoint
+boundary, or an action whose phase-boundary choice is anything other than `Subagent`.
 
 Three of the four `bind` arguments decide whether the row ever closes, and only one of them comes
 back from the `task` invocation. `--agent-id` takes the agent id it returned and `--agent-type` the

@@ -10,13 +10,15 @@ usage:
   chain.sh plan --no-ready [--ledger PATH]
   chain.sh plan --all-collide [--ledger PATH]
   chain.sh reserve --route ROUTE --target TARGET --spawn-time TIMESTAMP \
-    --worktree PATH --chain-depth N [--ledger PATH]
+    --worktree PATH --chain-depth N --parent-pid PID [--ledger PATH]
   chain.sh bind --worktree PATH --session-id ID --agent-id ID \
     --agent-type TYPE --agent-name NAME [--ledger PATH]
   chain.sh complete [--ledger PATH] < subagent-stop-payload.json
   chain.sh recover --stale-after-seconds N [--now TIMESTAMP] [--ledger PATH]
 
 A PID-less ledger lock is recoverable after CHAIN_LOCK_STALE_SECONDS (default: 300).
+--parent-pid names the running process whose death orphans the reservation, which
+is the session that will bind the run and never the shell that invokes this script.
 Route repetition and chain depth count bound rows only. Reservations claim
 capacity and a worktree, but do not represent a spawned hop.
 The two --no-ready and --all-collide forms end a fan-out fill; they are mutually
@@ -30,6 +32,8 @@ EOF
 }
 
 ledger="${CHAIN_LEDGER:-}"
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+claim_recovery="$script_dir/claim-recovery.py"
 lock_dir=""
 tmp=""
 metadata=""
@@ -65,59 +69,17 @@ repository_root() {
     awk '/^worktree / { sub(/^worktree /, ""); print; exit }'
 }
 
+process_start() {
+  TZ=UTC ps -o lstart= -p "$1" | xargs
+}
+
 remove_stale_lock() {
   local stale claim_dir recovery_dir
   recovery_dir="$lock_dir.recovery"
   mkdir "$recovery_dir" 2>/dev/null || return 0
-  printf '%s\t%s\n' "$$" "$(ps -o lstart= -p "$$" | xargs)" > "$recovery_dir/pid"
+  printf '%s\t%s\n' "$$" "$(process_start "$$")" > "$recovery_dir/pid"
 
-  if ! stale="$(python3 - "$lock_dir" "${CHAIN_LOCK_STALE_SECONDS:-300}" <<'PY'
-import os
-import subprocess
-import sys
-import time
-
-lock_dir, stale_after = sys.argv[1:]
-try:
-    stale_after_seconds = int(stale_after)
-except ValueError:
-    print("error: CHAIN_LOCK_STALE_SECONDS must be a non-negative integer", file=sys.stderr)
-    raise SystemExit(2)
-if stale_after_seconds < 0:
-    print("error: CHAIN_LOCK_STALE_SECONDS must be a non-negative integer", file=sys.stderr)
-    raise SystemExit(2)
-
-pid_path = os.path.join(lock_dir, "pid")
-try:
-    with open(pid_path, encoding="utf-8") as owner:
-        pid_text, owner_start = owner.read().rstrip("\n").split("\t", 1)
-        pid = int(pid_text)
-except (FileNotFoundError, ValueError):
-    try:
-        stale = time.time() - os.stat(lock_dir).st_mtime >= stale_after_seconds
-    except FileNotFoundError:
-        stale = False
-else:
-    try:
-        if pid <= 0:
-            raise ProcessLookupError
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        stale = True
-    except PermissionError:
-        stale = False
-    else:
-        current_start = subprocess.run(
-            ["ps", "-o", "lstart=", "-p", str(pid)],
-            capture_output=True,
-            text=True,
-        ).stdout.split()
-        current_start = " ".join(current_start)
-        stale = current_start != owner_start
-
-print("true" if stale else "false")
-PY
-  )"; then
+  if ! stale="$(python3 "$claim_recovery" claim-stale "$lock_dir" "${CHAIN_LOCK_STALE_SECONDS:-300}")"; then
     rm -f "$recovery_dir/pid"
     rmdir "$recovery_dir"
     return 2
@@ -138,44 +100,7 @@ recover_stale_recovery_lock() {
   local recovery_dir="$lock_dir.recovery" stale claim_dir
 
   [ -d "$recovery_dir" ] || return 0
-  stale="$(python3 - "$recovery_dir" "${CHAIN_LOCK_STALE_SECONDS:-300}" <<'PY'
-import os
-import subprocess
-import sys
-import time
-
-lock_dir, stale_after = sys.argv[1:]
-stale_after_seconds = int(stale_after)
-pid_path = os.path.join(lock_dir, "pid")
-try:
-    with open(pid_path, encoding="utf-8") as owner:
-        pid_text, owner_start = owner.read().rstrip("\n").split("\t", 1)
-        pid = int(pid_text)
-except (FileNotFoundError, ValueError):
-    try:
-        stale = time.time() - os.stat(lock_dir).st_mtime >= stale_after_seconds
-    except FileNotFoundError:
-        stale = False
-else:
-    try:
-        if pid <= 0:
-            raise ProcessLookupError
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        stale = True
-    except PermissionError:
-        stale = False
-    else:
-        current_start = subprocess.run(
-            ["ps", "-o", "lstart=", "-p", str(pid)],
-            capture_output=True,
-            text=True,
-        ).stdout.split()
-        stale = " ".join(current_start) != owner_start
-
-print("true" if stale else "false")
-PY
-)"
+  stale="$(python3 "$claim_recovery" claim-stale "$recovery_dir" "${CHAIN_LOCK_STALE_SECONDS:-300}")"
   if [ "$stale" = "true" ]; then
   claim_dir="$recovery_dir.reclaim.$$.$RANDOM"
   if mv "$recovery_dir" "$claim_dir" 2>/dev/null; then
@@ -193,7 +118,7 @@ acquire_lock() {
     done
     if mkdir "$lock_dir" 2>/dev/null; then
       lock_acquired=1
-      printf '%s\t%s\n' "$$" "$(ps -o lstart= -p "$$" | xargs)" > "$lock_dir/pid"
+      printf '%s\t%s\n' "$$" "$(process_start "$$")" > "$lock_dir/pid"
       return
     fi
     remove_stale_lock
@@ -484,6 +409,9 @@ plan() {
     ledger="$(repository_root)/.git-loopy/subagents.jsonl"
   fi
 
+  recover --ledger "$ledger" \
+    --stale-after-seconds "${CHAIN_RESERVATION_STALE_SECONDS:-300}" >/dev/null
+
   local worktree_held=0 collision_status max_concurrency guard="" route_allowed=0
   max_concurrency="$(concurrency_limit)" || return $?
   if allowlisted_route "$route"; then
@@ -605,7 +533,7 @@ PY
 }
 
 reserve() {
-  local route="" target="" spawn_time="" worktree="" chain_depth=""
+  local route="" target="" spawn_time="" worktree="" chain_depth="" parent_pid=""
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -614,18 +542,20 @@ reserve() {
       --spawn-time) spawn_time="${2:?missing value for --spawn-time}"; shift 2 ;;
       --worktree) worktree="${2:?missing value for --worktree}"; shift 2 ;;
       --chain-depth) chain_depth="${2:?missing value for --chain-depth}"; shift 2 ;;
+      --parent-pid) parent_pid="${2:?missing value for --parent-pid}"; shift 2 ;;
       --ledger) ledger="${2:?missing value for --ledger}"; shift 2 ;;
       *) usage ;;
     esac
   done
 
   [ -n "$route" ] && [ -n "$target" ] && [ -n "$spawn_time" ] &&
-    [ -n "$worktree" ] && [ -n "$chain_depth" ] || usage
+    [ -n "$worktree" ] && [ -n "$chain_depth" ] && [ -n "$parent_pid" ] || usage
   [[ "$chain_depth" =~ ^[0-9]+$ ]] || {
     echo "error: --chain-depth must be a non-negative integer" >&2
     exit 2
   }
   local ledger_dir row spawn_commit worktree_branch max_concurrency open_reservations
+  local parent_start
   if [ -z "$ledger" ]; then
     ledger="$(repository_root)/.git-loopy/subagents.jsonl"
   fi
@@ -635,6 +565,15 @@ reserve() {
   repo_root="$(repository_root)"
   worktree_branch="git-loopy/reservation-${$}-${RANDOM}"
   worktree="$(python3 -c 'import os; import sys; print(os.path.realpath(os.path.abspath(sys.argv[1])))' "$worktree")"
+  [[ "$parent_pid" =~ ^[1-9][0-9]*$ ]] || {
+    echo "error: --parent-pid must be a process id" >&2
+    exit 2
+  }
+  parent_start="$(process_start "$parent_pid")"
+  [ -n "$parent_start" ] || {
+    echo "error: reserving parent is not running: $parent_pid" >&2
+    exit 2
+  }
   mkdir -p "$ledger_dir"
   max_concurrency="$(concurrency_limit)" || return $?
 
@@ -692,17 +631,19 @@ PY
   fi
 
   tmp="$(mktemp "$ledger_dir/.subagents.XXXXXX")"
-  row="$(python3 - "$route" "$target" "$spawn_time" "$worktree" "$chain_depth" <<'PY'
+  row="$(python3 - "$route" "$target" "$spawn_time" "$worktree" "$chain_depth" "$parent_pid" "$parent_start" <<'PY'
 import json
 import sys
 
-route, target, spawn_time, worktree, chain_depth = sys.argv[1:]
+route, target, spawn_time, worktree, chain_depth, parent_pid, parent_start = sys.argv[1:]
 row = {
     "route": route,
     "target": target,
     "spawn_time": spawn_time,
     "worktree": worktree,
     "chain_depth": int(chain_depth),
+    "parent_pid": int(parent_pid),
+    "parent_start": parent_start,
     "finish_time": "",
     "outcome": "",
 }
@@ -1096,6 +1037,11 @@ recover() {
     ledger="$(repository_root)/.git-loopy/subagents.jsonl"
   fi
 
+  [ -e "$ledger" ] || {
+    printf '{"recovered":0,"targets":[]}\n'
+    return
+  }
+
   local ledger_dir result
   ledger_dir="$(dirname "$ledger")"
   mkdir -p "$ledger_dir"
@@ -1109,9 +1055,10 @@ recover() {
 import datetime
 import json
 import os
+import subprocess
 import sys
 
-ledger_path, output_path, metadata_path, stale_after, now = sys.argv[1:]
+ledger_path, output_path, metadata_path, stale_after, now, claim_recovery = sys.argv[1:]
 
 try:
     stale_after_seconds = int(stale_after)
@@ -1143,7 +1090,7 @@ if os.path.exists(ledger_path):
 recovered_worktrees = []
 recovered_targets = []
 for row in rows:
-    if row.get("finish_time"):
+    if row.get("finish_time") or row.get("agent_id"):
         continue
     spawn_time = row.get("spawn_time")
     worktree = row.get("worktree")
@@ -1165,13 +1112,33 @@ for row in rows:
     if spawned_at.tzinfo is None:
         print("error: open spawn ledger row spawn_time must include a timezone", file=sys.stderr)
         raise SystemExit(2)
-    if (recovered_at - spawned_at).total_seconds() >= stale_after_seconds:
+    parent_pid = row.get("parent_pid")
+    parent_start = row.get("parent_start")
+    parent_is_gone = False
+    if isinstance(parent_pid, int) and isinstance(parent_start, str) and parent_start:
+        liveness = subprocess.run(
+            [
+                sys.executable,
+                claim_recovery,
+                "owner-gone",
+                str(parent_pid),
+                parent_start,
+            ],
+            capture_output=True,
+            text=True,
+        )
+        parent_is_gone = liveness.returncode == 0 and liveness.stdout.strip() == "true"
+
+    if parent_is_gone or (
+        recovered_at - spawned_at
+    ).total_seconds() >= stale_after_seconds:
         row["finish_time"] = (
             recovered_at.astimezone(datetime.timezone.utc)
             .isoformat(timespec="seconds")
             .replace("+00:00", "Z")
         )
-        row["outcome"] = "failed"
+        row["outcome"] = "reclaimed"
+        row["reclaimed_at"] = row["finish_time"]
         recovered_worktrees.append(worktree)
         recovered_targets.append(target)
 
@@ -1186,7 +1153,7 @@ print(json.dumps({
     "recovered": len(recovered_targets),
     "targets": recovered_targets,
 }, separators=(",", ":")))
-' "$ledger" "$tmp" "$metadata" "$stale_after" "$now"
+' "$ledger" "$tmp" "$metadata" "$stale_after" "$now" "$claim_recovery"
   )"
 
   local worktree
