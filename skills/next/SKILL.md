@@ -25,6 +25,8 @@ issues and their relationships to find the active maps, specs, tickets, and PRs.
 Use live records rather than session summaries because concurrent sessions may
 have changed them.
 
+An issue is **workflow-bearing** when its open body is a durable artifact produced by a workflow transition or is an anchor from which one should follow.
+
 Then account for what is already **in flight**, which no tracker records: the
 worktrees (`git worktree list`), the uncommitted files in each, and the runner
 or agent process holding one. A git-loopy run names the issue it bound in the
@@ -61,6 +63,7 @@ choose the first matching transition:
 | An unblocked `ready-for-agent` ticket or small agreed change is available | `/implement` |
 | Implemented work or review fixes still need a fixed-point review | `/code-review` |
 | Reviewed work remains local or the current branch lacks its PR | `/push` |
+| No workflow-bearing workstream is active | `/loose-ends` |
 | No delivery work is active and codebase health needs a survey | `/improve-codebase-architecture` |
 | The user wants a stateful learning path | `/teach` |
 | The task is to write or revise an agent skill | `/writing-for-agents` |

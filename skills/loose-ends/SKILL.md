@@ -127,4 +127,5 @@ native sub-issues.` This is a normal successful report, including on an empty tr
 After writing the report, open it with the platform opener (`open` on macOS, `xdg-open` on
 Linux, or `start` on Windows), then print the absolute file path in the terminal. End the
 skill there; when the user chooses a finding, they invoke the recommendation directly
-rather than routing the already-selected follow-up through `/next`.
+rather than routing the already-selected follow-up through `/next`. The audit has already
+presented the available follow-ups; `/next` would collapse them to one recommendation.
