@@ -21,6 +21,8 @@ Route repetition and chain depth count bound rows only. Reservations claim
 capacity and a worktree, but do not represent a spawned hop.
 The two --no-ready and --all-collide forms end a fan-out fill; they are mutually
 exclusive, take no candidate, and record nothing.
+`bind --agent-name` is recorded for readability only; `complete` matches a row on
+session id, agent id and agent type.
 EOF
   exit 2
 }
@@ -842,9 +844,9 @@ import sys
 
 ledger_path, output_path, metadata_path = sys.argv[1:]
 # Required because `complete` reads them, and for no other reason. sessionId,
-# agentId, agentType and agentName find the ledger row; cwd locates the
-# repository and the worktree; timestamp closes the row. Everything else the
-# runtime sends — transcriptPath, agentDisplayName, response, stopReason, and
+# agentId and agentType find the ledger row; cwd locates the repository and the
+# worktree; timestamp closes the row. Everything else the runtime sends —
+# transcriptPath, agentName, agentDisplayName, response, stopReason, and
 # whatever a later release adds — is optional, because a field that is required
 # and never read rejects real payloads and silences the whole chain (#41).
 required_fields = (
@@ -853,7 +855,6 @@ required_fields = (
     "cwd",
     "agentId",
     "agentType",
-    "agentName",
 )
 
 try:
@@ -906,6 +907,11 @@ if os.path.exists(ledger_path):
         print(f"error: invalid spawn ledger: {error}", file=sys.stderr)
         raise SystemExit(2)
 
+# agentId identifies the run on its own; sessionId and agentType stop a payload
+# from another session or another agent type reaching this row. The bound
+# agent_name is deliberately not read: the runtime sets agentName to the agent
+# type and sends no field carrying the descriptive name a caller binds, so
+# matching on it left every descriptively named row open forever (#67).
 matches = [
     index
     for index, row in enumerate(rows)
@@ -913,7 +919,6 @@ matches = [
         row.get("session_id") == payload["sessionId"]
         and row.get("agent_id") == agent_id
         and row.get("agent_type") == payload["agentType"]
-        and row.get("agent_name") == payload["agentName"]
         and not row.get("finish_time")
     )
 ]

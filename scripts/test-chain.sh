@@ -922,13 +922,127 @@ reserve_and_bind \
 cp "$complete_ledger" "$complete_ledger.before-unmatched"
 unmatched_output="$(
   PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete --ledger "$complete_ledger" \
-    <<< "$(completion_payload agent-unmatched 2026-08-22T00:11:00Z wrong-agent implement-agent session-unmatched)"
+    <<< "$(completion_payload agent-from-another-run 2026-08-22T00:11:00Z implement-agent implement-agent session-unmatched)"
 )"
 assert_plan "unmatched completion" "$unmatched_output" \
+  '{"continue":false,"reason":"unmatched-payload","agent_id":"agent-from-another-run"}'
+
+# Agents this chain never spawned reach the same hook, so identity still has to
+# decline them. Each of these differs from the bound row in exactly one field
+# the match reads.
+other_session_output="$(
+  PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete --ledger "$complete_ledger" \
+    <<< "$(completion_payload agent-unmatched 2026-08-22T00:11:00Z implement-agent implement-agent session-from-another-run)"
+)"
+assert_plan "completion from another session" "$other_session_output" \
+  '{"continue":false,"reason":"unmatched-payload","agent_id":"agent-unmatched"}'
+
+other_type_output="$(
+  PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete --ledger "$complete_ledger" \
+    <<< "$(completion_payload agent-unmatched 2026-08-22T00:11:00Z code-review code-review session-unmatched)"
+)"
+assert_plan "completion from another agent type" "$other_type_output" \
   '{"continue":false,"reason":"unmatched-payload","agent_id":"agent-unmatched"}'
 
 if ! cmp -s "$complete_ledger.before-unmatched" "$complete_ledger"; then
   err "unmatched completion modified the ledger"
+fi
+
+# A row bound with a descriptive agent name must be closed by the payload the
+# runtime actually sends. The runtime sets `agentName` to the agent *type* and
+# carries no field at all for the name the caller chose, so a match that read
+# the bound name could never close such a row and every hop leaked one (#67).
+#
+# The payload below is captured, not constructed: it is the verbatim
+# `subagentStop` hook input recorded in a real session's events.jsonl, and that
+# very invocation is recorded returning `unmatched-payload` against a live
+# ledger. A payload built from the same variables the test passes to `bind` is
+# self-consistent by construction and cannot observe this bug at all.
+captured_fixture="$REPO/scripts/fixtures/subagent-stop-hook-invocation.json"
+captured_ledger="$tmp_dir/.git-loopy/captured-subagents.jsonl"
+captured_worktree="$tmp_dir/worktree-captured"
+# The name a caller binds after launching a descriptively named background
+# agent. Taken from a row this bug left open in this repo's own ledger.
+captured_bound_name="Confirm route before marking routed"
+
+IFS=$'\t' read -r captured_session_id captured_agent_id captured_agent_type captured_agent_name <<<"$(
+  python3 - "$captured_fixture" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as fixture:
+    event = json.load(fixture)
+assert event["data"]["hookType"] == "subagentStop", event["data"]["hookType"]
+payload = event["data"]["input"]
+print("\t".join([
+    payload["sessionId"],
+    payload["agentId"],
+    payload["agentType"],
+    payload["agentName"],
+]))
+PY
+)"
+
+# Without this the test could be quietly rewritten into the self-consistent
+# shape it exists to rule out.
+if [ "$captured_agent_name" = "$captured_bound_name" ]; then
+  err "the captured payload carries the bound name, so it cannot distinguish the two payload shapes"
+fi
+
+reserve_and_bind \
+  --ledger "$captured_ledger" \
+  --route implement \
+  --target issue-captured \
+  --session-id "$captured_session_id" \
+  --agent-id "$captured_agent_id" \
+  --agent-type "$captured_agent_type" \
+  --agent-name "$captured_bound_name" \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$captured_worktree" \
+  --chain-depth 1
+
+captured_payload="$(
+  python3 - "$captured_fixture" "$captured_worktree" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as fixture:
+    payload = json.load(fixture)["data"]["input"]
+# `cwd` is the only captured value rewritten, because the recorded absolute path
+# belongs to the machine that produced the capture. Every field the match reads
+# reaches `complete` exactly as the runtime sent it.
+payload["cwd"] = sys.argv[2]
+print(json.dumps(payload, separators=(",", ":")))
+PY
+)"
+
+captured_output="$(
+  PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete --ledger "$captured_ledger" \
+    <<< "$captured_payload"
+)"
+assert_plan "captured payload completion" "$captured_output" \
+  '{"continue":true,"outcome":"published","target":"issue-captured"}'
+
+if ! python3 - "$captured_ledger" "$captured_bound_name" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger if line.strip()]
+
+assert len(rows) == 1, rows
+assert rows[0]["finish_time"] == "2026-08-22T23:22:11Z", rows
+assert rows[0]["outcome"] == "published", rows
+# The bound name stays on the row: it is still what a human reads to tell one
+# hop from another, it just no longer decides which row a payload closes.
+assert rows[0]["agent_name"] == sys.argv[2], rows
+PY
+then
+  err "the captured subagentStop payload did not close the row bound with a descriptive agent name"
+fi
+
+if [ -e "$captured_worktree" ]; then
+  err "captured payload completion did not remove its worktree"
 fi
 
 # Real payloads from built-in agent types carry only what the runtime chooses to
@@ -1025,7 +1139,7 @@ print(json.dumps(payload, separators=(",", ":")))
 }
 
 required_payload="$(completion_payload agent-required 2026-08-22T00:11:00Z implement-agent implement-agent session-required)"
-for required_field in sessionId timestamp cwd agentId agentType agentName; do
+for required_field in sessionId timestamp cwd agentId agentType; do
   missing_error="$tmp_dir/missing-$required_field.err"
   if PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete \
     --ledger "$required_ledger" \
@@ -1045,6 +1159,17 @@ fi
 if [ -e "$required_ledger.lock" ]; then
   err "a rejected payload left the ledger lock behind"
 fi
+
+# `agentName` is not among them any more. Nothing reads it once identity stops
+# depending on it, and a field that is required and never read is exactly what
+# silenced the chain in #41.
+absent_name_output="$(
+  PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete \
+    --ledger "$required_ledger" \
+    <<< "$(payload_without "$required_payload" agentName)"
+)"
+assert_plan "completion without agentName" "$absent_name_output" \
+  '{"continue":true,"outcome":"published","target":"issue-required"}'
 
 # The whole point of closing the row: agentStop must then find it unrouted, or
 # the chain does nothing and reports nothing wrong.

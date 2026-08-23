@@ -302,11 +302,17 @@ invocation immediately after launch, then carry the recommendation's paste-safe 
 into the agent. Do not launch a declined action, an action that reaches the checkpoint boundary, or
 an action whose phase-boundary choice is anything other than `Subagent`.
 
-When a run completes, `subagentStop` frees its reservation and `agentStop` re-enters `/next`. Every
-completion frees one slot, and a re-entry can carry several at once: fan-out finishes in batches, so
-`agentStop` routes the whole batch in a single block and names every freed target in its reason.
-Begin the same one-recommendation fill again and it refills all of them, rather than waiting for the
-other in-flight runs to finish.
+What closes the row later is `--session-id`, `--agent-id` and `--agent-type`, so bind those exactly
+as the runtime returned them. `--agent-name` is decorative — it is recorded on the row so a human
+reading the ledger can tell one hop from another, and nothing matches on it. Do not treat a
+descriptive name as identity: the `subagentStop` payload carries no field holding it, so a name is
+never what a completion finds its row by.
+
+When a run completes, `subagentStop` frees its reservation and `agentStop` re-enters `/next`. Each
+completion frees one slot, and a re-entry may carry several completed runs at once: fan-out finishes
+in batches, so `agentStop` routes the whole batch in a single block and names every freed target in
+its reason. Begin the same one-recommendation fill again and refill every freed slot while ready work
+remains, rather than waiting for the other in-flight runs to finish.
 
 Every other route ends at step 6 and leaves a user-launched fresh session, continued session, or
 `/handoff` transition to its own documented behavior.
