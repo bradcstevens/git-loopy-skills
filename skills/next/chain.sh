@@ -554,7 +554,7 @@ reserve() {
     exit 2
   }
   local ledger_dir row spawn_commit worktree_branch max_concurrency open_reservations
-  local parent_start marker_dir marker_tmp
+  local parent_start marker_dir marker_tmp owner_pid owner_start
   if [ -z "$ledger" ]; then
     ledger="$(repository_root)/.git-loopy/subagents.jsonl"
   fi
@@ -671,8 +671,13 @@ PY
   created_worktree_path="$worktree"
   marker_dir="$worktree/.git-loopy"
   marker_tmp="$marker_dir/.worktree-owner.$$"
+  owner_pid="$PPID"
+  if ! owner_start="$(ps -o lstart= -p "$owner_pid")" || [ -z "$(printf '%s' "$owner_start" | xargs)" ]; then
+    mark_record_failed "$worktree"
+    exit 1
+  fi
   if ! mkdir -p "$marker_dir" ||
-    ! printf '%s\t%s\n' "$PPID" "$(ps -o lstart= -p "$PPID" | xargs)" > "$marker_tmp" ||
+    ! printf '%s\t%s\n' "$owner_pid" "$(printf '%s' "$owner_start" | xargs)" > "$marker_tmp" ||
     ! mv "$marker_tmp" "$marker_dir/worktree-owner"
   then
     rm -f "$marker_tmp"
@@ -1200,8 +1205,11 @@ try:
     if pid <= 0:
         raise ProcessLookupError
     os.kill(pid, 0)
-except (ProcessLookupError, PermissionError):
+except ProcessLookupError:
     print('{"alive":false}')
+    raise SystemExit
+except PermissionError:
+    print('{"alive":true,"reason":"permission-denied"}')
     raise SystemExit
 current_start = " ".join(subprocess.run(
     ["ps", "-o", "lstart=", "-p", str(pid)],

@@ -258,8 +258,10 @@ marker command, before the agent writes anything else:
 
 ```bash
 if git worktree add <worktree> <start-point>; then
-  if ! mkdir -p <worktree>/.git-loopy ||
-     ! printf '%s\t%s\n' "$PPID" "$(ps -o lstart= -p "$PPID" | xargs)" > <worktree>/.git-loopy/worktree-owner
+  if ! owner_start="$(ps -o lstart= -p "$PPID")" ||
+     [ -z "$(printf '%s' "$owner_start" | xargs)" ] ||
+     ! mkdir -p <worktree>/.git-loopy ||
+     ! printf '%s\t%s\n' "$PPID" "$(printf '%s' "$owner_start" | xargs)" > <worktree>/.git-loopy/worktree-owner
   then
     git worktree remove --force <worktree> 2>/dev/null || true
     exit 1
