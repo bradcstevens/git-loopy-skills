@@ -425,6 +425,13 @@ printf '999999\tstale process\n' > "$fixture_ledger.lock/pid"
 assert_decision "a stale ledger lock" "$(reenter false)" "$block_decision"
 assert_ledger_intact "the reclaimed lock"
 
+# A replacement left by an interrupted writer is safe to remove once the
+# helper owns the ledger lock again.
+write_fixture_ledger
+printf 'orphaned replacement\n' > "$(dirname "$fixture_ledger")/.subagents.orphan"
+assert_decision "an orphaned replacement" "$(reenter false)" "$block_decision"
+assert_ledger_intact "the orphaned replacement cleanup"
+
 # A lock held by a live process is not stale, and a hook that cannot take the
 # lock must leave the ledger exactly as it found it.
 write_fixture_ledger

@@ -16,6 +16,7 @@ still usable because the runtime's evidence is the hook state itself. A request
 that is never confirmed blocks again rather than being silently consumed.
 """
 import atexit
+import glob
 import json
 import os
 import subprocess
@@ -123,6 +124,15 @@ def release_lock(lock_dir: str) -> None:
         pass
 
 
+def cleanup_replacements(ledger_path: str) -> None:
+    """Remove replacement files left by a helper interrupted after creation."""
+    for replacement in glob.glob(os.path.join(os.path.dirname(ledger_path), ".subagents.*")):
+        try:
+            os.unlink(replacement)
+        except FileNotFoundError:
+            pass
+
+
 def read_ledger(ledger_path: str) -> list | None:
     try:
         with open(ledger_path, encoding="utf-8") as ledger:
@@ -216,6 +226,7 @@ def confirm_route_request(payload: dict, ledger_path: str | None) -> None:
         decision("stop-hook-active")
         return
     atexit.register(release_lock, lock_dir)
+    cleanup_replacements(ledger_path)
 
     rows = read_ledger(ledger_path)
     if rows is None:
@@ -292,6 +303,7 @@ if not acquire_lock(lock_dir):
     decision("ledger-busy")
     raise SystemExit(0)
 atexit.register(release_lock, lock_dir)
+cleanup_replacements(ledger_path)
 
 rows = read_ledger(ledger_path)
 if rows is None:
