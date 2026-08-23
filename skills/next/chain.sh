@@ -694,6 +694,8 @@ else:
             "PENDING",
             "QUEUED",
             "IN_PROGRESS",
+            "REQUESTED",
+            "WAITING",
             "EXPECTED",
         }:
             pending_checks.append(name)

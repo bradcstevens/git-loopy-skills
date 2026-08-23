@@ -559,6 +559,12 @@ if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
     pending-check)
       printf '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"%s","statusCheckRollup":[{"name":"tests","state":"IN_PROGRESS","conclusion":""}]}\n' "$CHAIN_GATE_HEAD"
       ;;
+    requested-check)
+      printf '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"%s","statusCheckRollup":[{"name":"tests","status":"REQUESTED","conclusion":""}]}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    waiting-check)
+      printf '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"%s","statusCheckRollup":[{"name":"tests","status":"WAITING","conclusion":""}]}\n' "$CHAIN_GATE_HEAD"
+      ;;
     missing-checks)
       printf '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"%s"}\n' "$CHAIN_GATE_HEAD"
       ;;
@@ -684,6 +690,10 @@ assert_gate "merge gate refuses red check" red-check 1 \
 assert_gate "merge gate refuses state-based red check" red-state 1 \
   '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["checks-green"],"reason":"checks-green"}'
 assert_gate "merge gate refuses pending check" pending-check 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["checks-complete"],"reason":"checks-complete"}'
+assert_gate "merge gate refuses requested check as pending" requested-check 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["checks-complete"],"reason":"checks-complete"}'
+assert_gate "merge gate refuses waiting check as pending" waiting-check 1 \
   '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["checks-complete"],"reason":"checks-complete"}'
 assert_gate "merge gate refuses an absent check rollup" missing-checks 1 \
   '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["checks-present"],"reason":"checks-present"}'
