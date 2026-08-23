@@ -31,6 +31,7 @@ EOF
 ledger="${CHAIN_LEDGER:-}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 claim_recovery="$script_dir/claim-recovery.py"
+review_clean_record="$script_dir/../../scripts/review-clean-record.py"
 lock_dir=""
 tmp=""
 metadata=""
@@ -557,82 +558,160 @@ gate() {
 
   local evidence
   if ! evidence="$(gh "${gh_args[@]}")"; then
-    echo '{"decision":"refuse","reason":"pull-request-evidence-unavailable"}'
+    printf '{"decision":"refuse","pull_request":"%s","reason":"pull-request-evidence-unavailable"}\n' \
+      "$pull_request"
     return 2
   fi
 
-  local comments
+  local comments ticket_available=1
   local -a issue_args=(issue view "$ticket")
   [ -z "$repo" ] || issue_args+=(--repo "$repo")
   issue_args+=(--json comments)
   if ! comments="$(gh "${issue_args[@]}")"; then
-    echo '{"decision":"refuse","reason":"ticket-evidence-unavailable"}'
-    return 2
+    comments=""
+    ticket_available=0
   fi
 
-  python3 - "$pull_request" "$evidence" "$comments" <<'PY'
+  python3 - "$pull_request" "$evidence" "$comments" "$ticket_available" \
+    "$review_clean_record" <<'PY'
 import json
-import re
+import subprocess
 import sys
 
-pull_request, raw, raw_comments = sys.argv[1:]
+pull_request, raw, raw_comments, ticket_available, review_clean_record = sys.argv[1:]
+
+
+def refuse(reason, status, *, head=None, missing=None):
+    decision = {
+        "decision": "refuse",
+        "pull_request": pull_request,
+    }
+    if head is not None:
+        decision["headRefOid"] = head
+    if missing:
+        decision["missing"] = missing
+    decision["reason"] = reason
+    print(json.dumps(decision, separators=(",", ":")))
+    raise SystemExit(status)
+
+
+def match_review_record(body, head):
+    return subprocess.run(
+        [sys.executable, review_clean_record, "match", head],
+        input=body,
+        text=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    ).returncode
+
+
 try:
     view = json.loads(raw)
+except json.JSONDecodeError:
+    refuse("pull-request-evidence-invalid", 2)
+if not isinstance(view, dict):
+    refuse("pull-request-evidence-invalid", 2)
+
+head_sha = view.get("headRefOid")
+if (
+    not isinstance(head_sha, str)
+    or not head_sha
+    or match_review_record("", head_sha) not in {0, 1}
+):
+    refuse("pull-request-evidence-invalid", 2)
+
+if ticket_available != "1":
+    refuse("ticket-evidence-unavailable", 2, head=head_sha)
+
+try:
     ticket_view = json.loads(raw_comments)
 except json.JSONDecodeError:
-    print(json.dumps({
-        "decision": "refuse",
-        "reason": "pull-request-evidence-invalid",
-        "pull_request": pull_request,
-    }, separators=(",", ":")))
-    raise SystemExit(2)
+    refuse("ticket-evidence-invalid", 2, head=head_sha)
+if not isinstance(ticket_view, dict):
+    refuse("ticket-evidence-invalid", 2, head=head_sha)
+
+comments = ticket_view.get("comments")
+if not isinstance(comments, list) or any(
+    not isinstance(comment, dict) or not isinstance(comment.get("body"), str)
+    for comment in comments
+):
+    refuse("ticket-evidence-invalid", 2, head=head_sha)
 
 missing = []
-if view.get("isDraft") is True:
+if view.get("isDraft") is not False:
     missing.append("pull-request-not-draft")
 if view.get("mergeable") != "MERGEABLE":
     missing.append("pull-request-mergeable")
 
-comments = ticket_view.get("comments") or []
-head_sha = view.get("headRefOid")
-review_clean = isinstance(head_sha, str) and bool(head_sha) and any(
-    isinstance(comment, dict)
-    and isinstance(comment.get("body"), str)
-    and re.fullmatch(r"\s*review-clean\s+" + re.escape(head_sha) + r"\s*", comment["body"])
-    for comment in comments
-)
+review_clean = False
+for comment in comments:
+    match_status = match_review_record(comment["body"], head_sha)
+    if match_status == 0:
+        review_clean = True
+        break
+    if match_status != 1:
+        refuse("review-clean-matcher-unavailable", 2, head=head_sha)
 if not review_clean:
     missing.append("review-clean-evidence-comment")
 
-checks = view.get("statusCheckRollup") or []
 red_checks = []
 pending_checks = []
-for check in checks:
-    if not isinstance(check, dict):
-        pending_checks.append("unknown")
-        continue
-    conclusion = str(check.get("conclusion") or "").upper()
-    state = str(check.get("state") or "").upper()
-    name = check.get("name") or check.get("context") or "unknown"
-    if state in {"FAILURE", "ERROR", "CANCELLED", "TIMED_OUT"} or conclusion in {
-        "FAILURE", "ERROR", "CANCELLED", "TIMED_OUT"
-    }:
-        red_checks.append(name)
-    elif state in {"PENDING", "QUEUED", "IN_PROGRESS", "EXPECTED"} or (
-        not conclusion and state not in {"SUCCESS"}
-    ):
-        pending_checks.append(name)
-    elif conclusion != "SUCCESS" and state != "SUCCESS":
-        red_checks.append(name)
+if (
+    "statusCheckRollup" not in view
+    or view["statusCheckRollup"] is None
+    or view["statusCheckRollup"] == []
+):
+    missing.append("checks-present")
+elif not isinstance(view["statusCheckRollup"], list):
+    missing.append("checks-valid")
+else:
+    checks_valid = True
+    for check in view["statusCheckRollup"]:
+        if not isinstance(check, dict) or any(
+            key in check
+            and check[key] is not None
+            and not isinstance(check[key], str)
+            for key in ("state", "status", "conclusion")
+        ):
+            checks_valid = False
+            break
 
-if red_checks:
-    missing.append("checks-green")
-if pending_checks:
-    missing.append("checks-complete")
+        state = (check.get("state") or "").upper()
+        status = (check.get("status") or "").upper()
+        conclusion = (check.get("conclusion") or "").upper()
+        if not state and not status and not conclusion:
+            checks_valid = False
+            break
+
+        name = check.get("name") or check.get("context") or "unknown"
+        if (
+            state in {"FAILURE", "ERROR", "CANCELLED", "TIMED_OUT"}
+            or conclusion in {"FAILURE", "ERROR", "CANCELLED", "TIMED_OUT"}
+        ):
+            red_checks.append(name)
+        elif state in {"PENDING", "QUEUED", "IN_PROGRESS", "EXPECTED"} or status in {
+            "PENDING",
+            "QUEUED",
+            "IN_PROGRESS",
+            "EXPECTED",
+        }:
+            pending_checks.append(name)
+        elif conclusion != "SUCCESS" and state != "SUCCESS":
+            red_checks.append(name)
+
+    if not checks_valid:
+        missing.append("checks-valid")
+    else:
+        if red_checks:
+            missing.append("checks-green")
+        if pending_checks:
+            missing.append("checks-complete")
 
 decision = {
     "decision": "allow" if not missing else "refuse",
     "pull_request": pull_request,
+    "headRefOid": head_sha,
 }
 if missing:
     decision["missing"] = missing
