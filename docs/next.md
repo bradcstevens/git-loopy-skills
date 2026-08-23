@@ -58,8 +58,9 @@ AFK-safe and allowlisted are the two eligibility conditions for consulting `chai
 guarantee of a spawn. The planner is authoritative and may decline an otherwise eligible action when
 its target or worktree is already in flight, the target is halted or failed, or the concurrency limit
 is reached. A completed run without tracker evidence halts its target with `no-evidence`; the
-repetition and depth guards likewise halt it after four runs for one route and target or nine lineage
-hops. Every decline remains at the checkpoint boundary for a human rather than launching a subagent.
+repetition and depth guards likewise decline a fourth repeat for one route and target or a ninth
+lineage hop. Every decline remains at the checkpoint boundary for a human rather than launching a
+subagent.
 
 ## It's working if
 
