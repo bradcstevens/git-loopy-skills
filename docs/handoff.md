@@ -26,7 +26,12 @@ The command returns straight away. You follow the run with `tail -f <log path>` 
 
 ## When to reach for it
 
-You invoke this by typing `/handoff`, and `/next` reaches it on its own whenever it routes to [implement](./implement.md) — a ticket is already specified, so the agent starts rather than waits. Pass a note about what the next session is for and the prompt is tailored to it.
+You invoke this by typing `/handoff` when work needs to outlive this session: a long refactor, a
+separate harness or directory, a colleague, or a mid-phase side task. Pass a note about what the next
+session is for and the prompt is tailored to it. It remains distinct from `/next`'s chain: the chain
+spawns an in-session, ledger-backed subagent only for an AFK-safe allowlisted route, while `handoff`
+launches a detached session that survives its caller, is followed through its log, and is resumed by
+its session name.
 
 Reach for it when the next stretch of work doesn't need you in the loop: a long refactor, a test suite to get green, a chore you'd rather not watch. When you'd rather run the step yourself, [next](./next.md) already hands you the same launch as one copyable `Command` block for your own terminal.
 

@@ -34,7 +34,20 @@ A recommendation also names the **runtime** to run it on: `--model`, `--effort`,
 
 When the route calls for a fresh session, the recommendation also comes with the whole thing already assembled: a `Command` block holding the prompt in a quoted heredoc and the sized flags spliced into a `copilot --yolo -n "..." --model ... --effort ... --context ... -p "$PROMPT"` invocation. Select it, paste it, and the next session starts — named, so `copilot --yolo --resume="<name>"` finds it again. It's the same launch [handoff](./handoff.md) performs for you in the background, offered here as one copyable selection instead.
 
-An [implement](./implement.md) route is the exception, because its ticket already specifies it: `next` runs [handoff](./handoff.md) itself, so the background agent is working by the time you read the recommendation, and no `Command` block comes with it — one launcher, one agent, one worktree. Resume it by the name `handoff` gave it.
+## The chain it can spawn
+
+An ordinary `/next` invocation still returns exactly one recommendation. The chain is the separate
+AFK-safe path: after the phase-boundary procedure selects a subagent, the spawn gate requires both an
+AFK-safe target and one of its five allowlisted routes — `/implement`, `/code-review`, `/research`,
+`/push`, or `/resolving-merge-conflicts`. It reserves a worktree and a concurrency slot in the spawn
+ledger before starting the in-session subagent, then binds the run to that reservation.
+
+The ledger records each reservation, binding, worktree, completion, and per-target chain depth so the
+chain neither duplicates in-flight work nor exceeds ten concurrent runs. It stops at a checkpoint
+boundary rather than spawning when the route is HITL or not allowlisted, a route repeats four times
+for a target, or a target would take its ninth hop. `subagentStop` closes the completed ledger row;
+`agentStop` re-enters `/next` for the batch of completed, unrouted runs, allowing one fill to replace
+every slot that batch freed.
 
 ## It's working if
 
@@ -42,7 +55,8 @@ An [implement](./implement.md) route is the exception, because its ticket alread
 - Fan-out never turns that into a menu either: the chain reaches its ten concurrent worktrees by asking for one recommendation at a time, and names which of the three limits stopped it — the ceiling of ten, no ready action left, or every remaining candidate waiting on a worktree another agent holds.
 - Once the ten are running, the chain keeps itself full: each finished run frees its slot, and the batch of runs that finished since the last turn comes back as one re-entry that refills every one of them while ready work remains.
 - A recommendation that opens a fresh session arrives as a runnable `copilot` command, not as flags you assemble yourself.
-- An `/implement` recommendation arrives with its background agent already running, and its resume command instead of a `copilot` command to paste.
+- A chain-approved recommendation starts one in-session agent in its reserved worktree; an ordinary
+  `/next` recommendation remains one action and does not start work automatically.
 - The recommendation names whether to continue in this context or start a fresh session, matching the flow's own rules: grill → spec → tickets stays in one context, each `/implement` ticket starts in a new one.
 - In a repo missing either its tracker configuration or
   `.github/hooks/git-loopy-chain.json`, it routes to

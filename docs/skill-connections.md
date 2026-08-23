@@ -7,9 +7,9 @@ The set is **composable, not a fixed pipeline**. [`next`](./next.md) picks the e
 gate rather than the next item on a checklist, so any skill can be an entry point. What follows are
 the paths that actually get walked.
 
-## Four kinds of connection
+## Five kinds of connection
 
-Every edge in this document is one of four kinds. Read the arrows with these in mind.
+Every edge in this document is one of five kinds. Read the arrows with these in mind.
 
 | Kind | Meaning | Example |
 | --- | --- | --- |
@@ -17,6 +17,10 @@ Every edge in this document is one of four kinds. Read the arrows with these in 
 | **Runs inside** | Nested in the caller's session; owns no transition and records nothing of its own | `/implement` → `/tdd` |
 | **Publishes to** | Leaves a durable evidence comment that a later session reads back | `/code-review` → the ticket |
 | **Reads config from** | Depends on files another skill wrote | `/next` → `/setup-git-loopy-skills` |
+| **Spawns** | Starts a concurrent in-session subagent that owns its transition and publishes evidence | `/next` → `/implement` |
+
+**Spawns** is nested in the caller's session like **runs inside**, but it owns a transition and
+publishes evidence like **routes to**. Neither existing kind therefore describes the chain.
 
 One skill is a hub. [`next`](./next.md) is the **router** — it reads live state (tracker, branch,
 diff, worktrees) and names one action. It does no work itself.
@@ -71,7 +75,11 @@ flowchart LR
     next --> wayfinder
     next --> diag
     next --> ica
-    next --> implement
+    next -->|spawns when AFK-safe| implement
+    next -->|spawns when AFK-safe| review
+    next -->|spawns when AFK-safe| research
+    next -->|spawns when AFK-safe| push
+    next -->|spawns when AFK-safe| rmc
     next --> handoff
     handoff --> next
 
@@ -101,7 +109,8 @@ flowchart LR
     next --> questionnaire
 ```
 
-Solid arrows route or nest; dotted arrows publish or read config.
+Solid arrows route or run inside; dotted arrows publish or read config. Labeled chain arrows are
+**spawns** edges.
 
 ---
 
@@ -152,7 +161,9 @@ A genuinely small change may skip the middle and go straight from grilling to
 
 ## 2. Routing and session continuity
 
-[`next`](./next.md) decides *what*; [`handoff`](./handoff.md) *launches* it.
+[`next`](./next.md) decides *what*; [`handoff`](./handoff.md) launches detached work that must
+outlive this session. The chain instead spawns its AFK-safe allowlisted routes in-session and records
+them in the spawn ledger.
 
 ```mermaid
 sequenceDiagram
@@ -160,6 +171,8 @@ sequenceDiagram
     actor U as You
     participant SK as any workflow skill
     participant NX as /next
+    participant CH as chain and spawn ledger
+    participant SA as spawned subagent
     participant HO as /handoff
     participant BG as fresh session
 
@@ -171,10 +184,11 @@ sequenceDiagram
         U->>SK: paste the prompt into this conversation
     else Fresh session, you drive
         U->>BG: run the copyable copilot command block
-    else /implement route
-        NX->>HO: run /handoff with the prompt and flags just returned
-        HO->>BG: nohup copilot --yolo --no-ask-user with the same flags
-        BG-->>U: resume by session name
+    else AFK-safe allowlisted route
+        NX->>CH: reserve worktree and ledger slot
+        CH->>SA: spawn an in-session subagent
+        SA->>CH: subagentStop closes its ledger row
+        CH->>NX: agentStop re-enters /next for the completed batch
     else Fresh session, agent drives
         U->>HO: /handoff
         HO->>NX: run /next first if it is not the last output
@@ -515,7 +529,8 @@ These have no workflow edges. Reach for them directly; they neither route onward
 | From | To | Kind | When |
 | --- | --- | --- | --- |
 | `next` | 22 routes | routes to | The earliest unresolved gate decides which |
-| `next` | `handoff` | runs | The chosen route is `/implement` |
+| `next` | `implement`, `code-review`, `research`, `push`, `resolving-merge-conflicts` | spawns | The chain gate selected an AFK-safe allowlisted route and reserved its worktree |
+| `next` | `handoff` | routes to | Detached work must outlive the current session |
 | `next` | `setup-git-loopy-skills` | reads config from | `docs/agents/issue-tracker.md` is missing |
 | `handoff` | `next` | routes to | Runs `/next` first if it is not the last output |
 | `handoff` | fresh session | routes to | Launches the sized runtime in the background |
@@ -550,12 +565,21 @@ These have no workflow edges. Reach for them directly; they neither route onward
 | `azure-mcaps-resource-deployment` | `microsoft-foundry` | routes to | Creating or configuring a Foundry resource |
 | eleven producers | the ticket | publishes to | On completing a transition they own |
 
+### Chain hook edges
+
+| Event | Configured command | Effect |
+| --- | --- | --- |
+| `subagentStop` | `.github/hooks/git-loopy-chain.sh complete` | Closes the bound run's spawn-ledger row |
+| `agentStop` | `.github/hooks/git-loopy-chain.sh reenter` | Re-enters `/next` once for every completed, unrouted batch |
+
 ## Rules that govern the edges
 
 - **Context boundaries.** `/grill-with-docs` → `/to-spec` → `/to-tickets` stays in one context.
   Every `/implement` ticket starts in a fresh one.
 - **Nesting owns nothing.** A skill running inside another's session hands its evidence back and
   records no transition of its own.
+- **Spawning owns a transition.** The chain's in-session subagent records its own evidence and
+  ledger state, unlike ordinary nested support.
 - **Reviews come back.** `/code-review` findings return to `/implement`, which republishes a head
   and re-enters review. `/resolving-merge-conflicts` re-enters review too.
 - **Surveys do not build.** `/improve-codebase-architecture` and `/diagnosing-bugs` produce ideas
