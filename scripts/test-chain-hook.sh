@@ -334,6 +334,26 @@ fi
 assert_decision "an abandoned route" "$(reenter false 2026-08-22T00:09:00Z)" \
   '{"decision":"allow","reason":"no-unrouted-completion"}'
 
+# A capped row must be reported before another pending row can request a route;
+# otherwise the normal block decision would hide the abandoned target.
+python3 - "$fixture_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "w", encoding="utf-8") as ledger:
+    for target, attempts in (("issue-capped", 3), ("issue-pending", 0)):
+        ledger.write(json.dumps({
+            "target": target,
+            "finish_time": "2026-08-22T00:00:00Z",
+            "outcome": "published",
+            "route_attempts": attempts,
+        }) + "\n")
+PY
+assert_decision "a mixed cap trip" "$(reenter false 2026-08-22T00:10:00Z)" \
+  '{"decision":"allow","reason":"route-abandoned","target":"issue-capped"}'
+assert_decision "the pending row after a cap trip" "$(reenter false 2026-08-22T00:11:00Z)" \
+  '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","target":"issue-pending"}'
+
 python3 - "$fixture_ledger" <<'PY'
 import json
 import sys

@@ -10,11 +10,10 @@ would drop a chain hop while reporting nothing wrong.
 
 So the request is promoted to `routed` only on evidence the block landed:
 `stop_hook_active` true on a following payload, which is the runtime's way of
-saying the parent took the turn the block forced. The request records the
-session it was asked in, so that evidence confirms the hop it was actually
-forced for, and a payload with no `sessionId` cannot make a request at all. A
-request that is never confirmed blocks again rather than being silently
-consumed.
+saying the parent took the turn the block forced. A single forced turn confirms
+the complete batch requested by the block, and a payload without `sessionId` is
+still usable because the runtime's evidence is the hook state itself. A request
+that is never confirmed blocks again rather than being silently consumed.
 """
 import atexit
 import json
@@ -302,8 +301,7 @@ for row in abandoned:
     row["route_abandoned"] = True
     row["route_abandoned_at"] = payload.get("timestamp")
 
-pending = [row for row in unrouted if row not in abandoned and row.get("target")]
-if not pending:
+if abandoned:
     if not write_ledger(ledger_path, rows):
         decision("ledger-update-failed")
         raise SystemExit(0)
@@ -313,6 +311,12 @@ if not pending:
     else:
         decision("route-abandoned", targets=abandoned_targets)
     raise SystemExit(0)
+
+pending = [row for row in unrouted if row not in abandoned and row.get("target")]
+if not pending:
+    if not write_ledger(ledger_path, rows):
+        decision("ledger-update-failed")
+        raise SystemExit(0)
 
 for row in pending:
     row["route_attempts"] = route_attempts(row) + 1
