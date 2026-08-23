@@ -39,6 +39,7 @@ An [implement](./implement.md) route is the exception, because its ticket alread
 ## It's working if
 
 - You get back exactly one action, with a live target — a linked issue, PR, spec, branch, or the current conversation — and never a menu of possibilities.
+- Fan-out never turns that into a menu either: the chain reaches its ten concurrent worktrees by asking for one recommendation at a time, and names which of the three limits stopped it — the ceiling of ten, no ready action left, or every remaining candidate waiting on a worktree another agent holds.
 - A recommendation that opens a fresh session arrives as a runnable `copilot` command, not as flags you assemble yourself.
 - An `/implement` recommendation arrives with its background agent already running, and its resume command instead of a `copilot` command to paste.
 - The recommendation names whether to continue in this context or start a fresh session, matching the flow's own rules: grill → spec → tickets stays in one context, each `/implement` ticket starts in a new one.

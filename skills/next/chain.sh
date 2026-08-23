@@ -8,6 +8,7 @@ usage:
     --agent AGENT --model MODEL --effort EFFORT --context-tier TIER \
     --worktree PATH [--ledger PATH]
   chain.sh plan --no-ready [--ledger PATH]
+  chain.sh plan --all-collide [--ledger PATH]
   chain.sh reserve --route ROUTE --target TARGET --spawn-time TIMESTAMP \
     --worktree PATH --chain-depth N [--ledger PATH]
   chain.sh bind --worktree PATH --session-id ID --agent-id ID \
@@ -18,6 +19,8 @@ usage:
 A PID-less ledger lock is recoverable after CHAIN_LOCK_STALE_SECONDS (default: 300).
 Route repetition and chain depth count bound rows only. Reservations claim
 capacity and a worktree, but do not represent a spawned hop.
+The two --no-ready and --all-collide forms end a fan-out fill; they are mutually
+exclusive, take no candidate, and record nothing.
 EOF
   exit 2
 }
@@ -437,29 +440,35 @@ PY
 }
 
 plan() {
-  local route="" target="" safety="" agent="" model="" effort="" context_tier="" worktree="" no_ready=0
+  local route="" target="" safety="" agent="" model="" effort="" context_tier="" worktree=""
+  local fill_terminal="" ledger_set=0
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --route) route="${2:?missing value for --route}"; shift 2 ;;
-      --target) target="${2:?missing value for --target}"; shift 2 ;;
-      --safety) safety="${2:?missing value for --safety}"; shift 2 ;;
-      --agent) agent="${2:?missing value for --agent}"; shift 2 ;;
-      --model) model="${2:?missing value for --model}"; shift 2 ;;
-      --effort) effort="${2:?missing value for --effort}"; shift 2 ;;
-      --context-tier) context_tier="${2:?missing value for --context-tier}"; shift 2 ;;
-      --worktree) worktree="${2:?missing value for --worktree}"; shift 2 ;;
-      --no-ready) no_ready=1; shift ;;
-      --ledger) ledger="${2:?missing value for --ledger}"; shift 2 ;;
+      --route) [ -z "$route" ] || usage; route="${2:?missing value for --route}"; shift 2 ;;
+      --target) [ -z "$target" ] || usage; target="${2:?missing value for --target}"; shift 2 ;;
+      --safety) [ -z "$safety" ] || usage; safety="${2:?missing value for --safety}"; shift 2 ;;
+      --agent) [ -z "$agent" ] || usage; agent="${2:?missing value for --agent}"; shift 2 ;;
+      --model) [ -z "$model" ] || usage; model="${2:?missing value for --model}"; shift 2 ;;
+      --effort) [ -z "$effort" ] || usage; effort="${2:?missing value for --effort}"; shift 2 ;;
+      --context-tier)
+        [ -z "$context_tier" ] || usage
+        context_tier="${2:?missing value for --context-tier}"; shift 2 ;;
+      --worktree) [ -z "$worktree" ] || usage; worktree="${2:?missing value for --worktree}"; shift 2 ;;
+      --no-ready) [ -z "$fill_terminal" ] || usage; fill_terminal="no-ready-action"; shift ;;
+      --all-collide) [ -z "$fill_terminal" ] || usage; fill_terminal="all-candidates-collide"; shift ;;
+      --ledger)
+        [ "$ledger_set" -eq 0 ] || usage
+        ledger="${2:?missing value for --ledger}"; ledger_set=1; shift 2 ;;
       *) usage ;;
     esac
   done
 
-  if [ "$no_ready" -eq 1 ]; then
+  if [ -n "$fill_terminal" ]; then
     [ -z "$route" ] && [ -z "$target" ] && [ -z "$safety" ] && [ -z "$agent" ] &&
       [ -z "$model" ] && [ -z "$effort" ] && [ -z "$context_tier" ] &&
       [ -z "$worktree" ] || usage
-    printf '%s\n' '{"decision":"exhausted","reason":"no-ready-action"}'
+    printf '{"decision":"exhausted","reason":"%s"}\n' "$fill_terminal"
     return
   fi
 

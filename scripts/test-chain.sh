@@ -288,8 +288,68 @@ all_collide="$(
 )"
 assert_plan "all remaining candidates collide" "$all_collide" \
   '{"decision":"decline","reason":"worktree-in-flight","route":"/code-review","target":"issue-collision-candidate","worktree":"'"$tmp_dir"'/worktree-collision-holder"}'
+cp "$collision_ledger" "$collision_ledger.before-terminal"
+all_collide_terminal="$("$CHAIN" plan --ledger "$collision_ledger" --all-collide)"
+assert_plan "every remaining candidate collides" "$all_collide_terminal" \
+  '{"decision":"exhausted","reason":"all-candidates-collide"}'
+if ! cmp -s "$collision_ledger.before-terminal" "$collision_ledger"; then
+  err "ending the fill on collisions modified the ledger"
+fi
+if "$CHAIN" plan --ledger "$collision_ledger" --no-ready --all-collide 2>/dev/null; then
+  err "plan accepted two fill terminals at once"
+fi
 
 fan_out_ledger="$tmp_dir/.git-loopy/fan-out-subagents.jsonl"
+list_ledger="$tmp_dir/.git-loopy/list-subagents.jsonl"
+if "$CHAIN" plan \
+  --ledger "$list_ledger" \
+  --route /implement \
+  --route /code-review \
+  --target issue-fill-list \
+  --safety AFK-safe \
+  --agent implement-agent \
+  --model gpt-5.6-terra \
+  --effort high \
+  --context-tier default \
+  --worktree "$tmp_dir/worktree-fill-list" \
+  2>/dev/null
+then
+  err "plan accepted a list of routes"
+fi
+if "$CHAIN" plan \
+  --ledger "$list_ledger" \
+  --route /implement \
+  --target issue-fill-list-one \
+  --target issue-fill-list-two \
+  --safety AFK-safe \
+  --agent implement-agent \
+  --model gpt-5.6-terra \
+  --effort high \
+  --context-tier default \
+  --worktree "$tmp_dir/worktree-fill-list" \
+  2>/dev/null
+then
+  err "plan accepted a list of targets"
+fi
+if "$CHAIN" plan \
+  --ledger "$list_ledger" \
+  --route /implement \
+  --target issue-fill-list \
+  --safety AFK-safe \
+  --agent implement-agent \
+  --model gpt-5.6-terra \
+  --effort high \
+  --context-tier default \
+  --worktree "$tmp_dir/worktree-fill-list-one" \
+  --worktree "$tmp_dir/worktree-fill-list-two" \
+  2>/dev/null
+then
+  err "plan accepted a list of worktrees"
+fi
+if [ -e "$list_ledger" ]; then
+  err "a rejected list of candidates reached the ledger"
+fi
+
 for slot in $(seq 1 10); do
   fan_out_worktree="$tmp_dir/worktree-fan-out-$slot"
   fan_out_decision="$(
@@ -329,6 +389,16 @@ PY
 then
   err "fan-out did not reserve ten distinct in-flight worktrees"
 fi
+
+fan_out_worktrees="$(git -C "$tmp_dir" worktree list --porcelain | awk '/^worktree /')"
+for slot in $(seq 1 10); do
+  if [ ! -e "$tmp_dir/worktree-fan-out-$slot/.git" ]; then
+    err "fan-out slot $slot has no working tree of its own"
+  fi
+  if ! grep -qxF "worktree $tmp_dir/worktree-fan-out-$slot" <<< "$fan_out_worktrees"; then
+    err "fan-out slot $slot is not a registered worktree"
+  fi
+done
 
 ceiling_decision="$(
   "$CHAIN" plan \

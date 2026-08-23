@@ -188,13 +188,22 @@ authoritative. A `decline` means do not spawn; report its reason and leave the a
 checkpoint boundary. A `spawn` proceeds to step 7. The script owns the ledger, collision, and
 concurrency decisions; do not reimplement them in this skill.
 
-The chain fills capacity one recommendation at a time. After each successful spawn, return to step
-1 and ask `/next` again; never ask it for a list. Give every pass a new proposed worktree. A
-`concurrency-limit` decline ends this fill. On a `worktree-in-flight` decline, re-evaluate the live
-state and ask again for a different candidate; if none remains, call `chain.sh plan --no-ready` and
-end the fill. The same `--no-ready` result ends a fill when `/next` has no ready action without
-creating a ledger row or retrying a candidate. This keeps `/next`'s one-action contract intact
-while the chain fills up to ten independent worktrees.
+The chain fills capacity one recommendation at a time. After each successful spawn, return to step 1
+and ask for one more recommendation. `chain.sh plan` takes a single candidate and rejects a repeated
+`--route`, `--target`, or `--worktree`, so there is no form in which to ask it for a list. Give every
+pass a new proposed worktree, and never re-offer a candidate an earlier pass declined.
+
+Three things end a fill, and the same command the fill has been asking all along records which one.
+A `concurrency-limit` decline ends it at the ceiling of ten. When no ready action is left,
+`chain.sh plan --no-ready` returns `exhausted` / `no-ready-action`. When ready actions remain but
+every one of them takes a `worktree-in-flight` decline, `chain.sh plan --all-collide` returns
+`exhausted` / `all-candidates-collide` — a separate terminal, because work waiting on a held
+worktree is not the same as no work. Both forms take no candidate, record nothing, and retry
+nothing, so a fill that cannot spawn stops on its first full pass instead of circling.
+
+The fill belongs to this chain gate, not to `/next` itself. Invoked by hand, `/next` returns exactly
+one recommendation at step 6 and stops there; only a `spawn` decision reached through this gate goes
+round again.
 
 The chain stops and asks a human before an unexplained runaway: it permits a route at most **three**
 times for one target and a target lineage at most **eight** hops deep. A fourth repeat or ninth hop
@@ -206,7 +215,8 @@ this session and ends with it. `/handoff` launches detached work that outlives t
 `/handoff` separate; never use it as the chain's launcher.
 
 This step is complete when the first applicable phase-boundary choice is known, every `Subagent`
-outcome has a `plan` decision, every decline carries its reason, and every spawn is handed to step 7.
+outcome has a `plan` decision, every decline carries its reason, every fill that stopped short of
+the ceiling has recorded the terminal that stopped it, and every spawn is handed to step 7.
 
 ## 6. Return the recommendation
 
@@ -292,9 +302,9 @@ invocation immediately after launch, then carry the recommendation's paste-safe 
 into the agent. Do not launch a declined action, an action that reaches the checkpoint boundary, or
 an action whose phase-boundary choice is anything other than `Subagent`.
 
-When a run completes, `subagentStop` frees its reservation and `agentStop` re-enters `/next`. Begin
-the same one-recommendation fill procedure again, so the freed slot is refilled while ready work
-remains. Do not wait for every in-flight run to finish before refilling one slot.
+When a run completes, `subagentStop` frees its reservation and `agentStop` re-enters `/next`. One
+completion frees one slot: begin the same one-recommendation fill again so that slot is refilled
+while ready work remains, rather than waiting for the other in-flight runs to finish.
 
 Every other route ends at step 6 and leaves a user-launched fresh session, continued session, or
 `/handoff` transition to its own documented behavior.
