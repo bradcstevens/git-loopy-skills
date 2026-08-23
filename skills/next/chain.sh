@@ -22,7 +22,9 @@ capacity and a worktree, but do not represent a spawned hop.
 The two --no-ready and --all-collide forms end a fan-out fill; they are mutually
 exclusive, take no candidate, and record nothing.
 `bind --agent-name` is recorded for readability only; `complete` matches a row on
-session id, agent id and agent type.
+session id, agent id and agent type. `bind --session-id` is the routing session
+that launches the run, never the agent id that launch returns, because
+`subagentStop` reports a run under the session that launched it.
 EOF
   exit 2
 }

@@ -297,16 +297,22 @@ user-launched fresh session.
 Set `Context: Subagent` only for the `spawn` decision from step 5. Reserve the target in the
 decision's new worktree before launching the returned custom agent in background mode. The routing
 agent performs the background custom-agent `task` invocation; `chain.sh` deliberately owns only
-the durable reserve, bind, complete, and guard operations. Bind the identity returned by that
-invocation immediately after launch, then carry the recommendation's paste-safe prompt and runtime
-into the agent. Do not launch a declined action, an action that reaches the checkpoint boundary, or
-an action whose phase-boundary choice is anything other than `Subagent`.
+the durable reserve, bind, complete, and guard operations. Bind the run immediately after launch,
+then carry the recommendation's paste-safe prompt and runtime into the agent. Do not launch a
+declined action, an action that reaches the checkpoint boundary, or an action whose phase-boundary
+choice is anything other than `Subagent`.
 
-What closes the row later is `--session-id`, `--agent-id` and `--agent-type`, so bind those exactly
-as the runtime returned them. `--agent-name` is decorative — it is recorded on the row so a human
-reading the ledger can tell one hop from another, and nothing matches on it. Do not treat a
-descriptive name as identity: the `subagentStop` payload carries no field holding it, so a name is
-never what a completion finds its row by.
+Three of the four `bind` arguments decide whether the row ever closes, and only one of them comes
+back from the `task` invocation. `--agent-id` takes the agent id it returned and `--agent-type` the
+custom agent it ran, but `--session-id` takes **this routing session's own id**, the same session
+whose process is passed as `--parent-pid`, and never that returned agent id: `subagentStop` reports
+a run under the session that launched it, so a row bound with the agent id there matches no payload
+and stays open forever.
+
+`--agent-name` is decorative — it is recorded on the row so a human reading the ledger can tell one
+hop from another, and nothing matches on it. Do not treat a descriptive name as identity: the
+`subagentStop` payload carries no field holding it, so a name is never what a completion finds its
+row by.
 
 When a run completes, `subagentStop` frees its reservation and `agentStop` re-enters `/next`. Each
 completion frees one slot, and a re-entry may carry several completed runs at once: fan-out finishes

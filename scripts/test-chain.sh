@@ -989,6 +989,15 @@ if [ "$captured_agent_name" = "$captured_bound_name" ]; then
   err "the captured payload carries the bound name, so it cannot distinguish the two payload shapes"
 fi
 
+# The runtime reports a run under the session that launched it, so a real
+# payload's session id is never the agent's own id. A capture where the two
+# agreed would close the row no matter which of them `bind` recorded, and the
+# documented rule that `--session-id` takes the routing session would go
+# unexercised.
+if [ "$captured_session_id" = "$captured_agent_id" ]; then
+  err "the captured payload's session id equals its agent id, so it cannot exercise the documented bind path"
+fi
+
 reserve_and_bind \
   --ledger "$captured_ledger" \
   --route implement \
@@ -1002,15 +1011,20 @@ reserve_and_bind \
   --chain-depth 1
 
 captured_payload="$(
-  python3 - "$captured_fixture" "$captured_worktree" <<'PY'
+  python3 - "$captured_fixture" "$tmp_dir" <<'PY'
 import json
 import sys
 
 with open(sys.argv[1], encoding="utf-8") as fixture:
     payload = json.load(fixture)["data"]["input"]
 # `cwd` is the only captured value rewritten, because the recorded absolute path
-# belongs to the machine that produced the capture. Every field the match reads
-# reaches `complete` exactly as the runtime sent it.
+# belongs to the machine that produced the capture. It is repointed at this
+# test's repository and not at the row's worktree, because that is the
+# relationship the capture recorded: the runtime reports the launching session's
+# own directory, never the reserved worktree the run worked in. A payload whose
+# `cwd` were the row's worktree could be matched by directory instead of by
+# identity, which is exactly what this test must not allow. Every field the
+# match reads reaches `complete` exactly as the runtime sent it.
 payload["cwd"] = sys.argv[2]
 print(json.dumps(payload, separators=(",", ":")))
 PY
