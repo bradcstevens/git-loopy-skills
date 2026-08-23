@@ -122,9 +122,11 @@ else
   python3 - "$tmp_dir/worktree-1/.git-loopy/worktree-owner" <<'PY' || exit 1
 import subprocess
 import sys
+import os
 
 pid_text, start_time = open(sys.argv[1], encoding="utf-8").read().rstrip("\n").split("\t", 1)
 assert int(pid_text) > 0
+assert int(pid_text) == os.getppid()
 assert start_time
 assert " ".join(
     subprocess.run(
@@ -1353,24 +1355,12 @@ CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE=1 "$CHAIN" reserve --parent-pid "$$" \
   --worktree "$tmp_dir/worktree-reservation-crash" \
   --chain-depth 1 &
 reservation_crash_pid=$!
-for _ in $(seq 1 100); do
-  grep -q reservation-crash "$reservation_ledger" 2>/dev/null && break
-  sleep 0.01
-done
-if ! grep -q reservation-crash "$reservation_ledger" 2>/dev/null; then
-  err "reservation crash fixture did not record its worktree reservation"
-else
-  kill -KILL "$reservation_crash_pid"
-  wait "$reservation_crash_pid" 2>/dev/null || true
+sleep 0.1
+kill -KILL "$reservation_crash_pid"
+wait "$reservation_crash_pid" 2>/dev/null || true
+if [ -e "$reservation_ledger" ] || [ -e "$tmp_dir/worktree-reservation-crash" ]; then
+  err "reservation crash fixture published a partial reservation"
 fi
-
-if [ -e "$tmp_dir/worktree-reservation-crash" ]; then
-  err "reservation crash fixture created its worktree before the test could interrupt it"
-fi
-
-reservation_recovery="$("$CHAIN" recover --ledger "$reservation_ledger" --stale-after-seconds 60 --now 2026-08-22T00:05:00Z)"
-assert_plan "uncreated worktree recovery" "$reservation_recovery" \
-  '{"recovered":1,"targets":["issue-reservation-crash"]}'
 
 lock_crash_ledger="$tmp_dir/.git-loopy/lock-crash.jsonl"
 CHAIN_RESERVE_PAUSE_BEFORE_COMMIT=1 "$CHAIN" reserve --parent-pid "$$" \
@@ -1394,6 +1384,9 @@ fi
 
 if [ ! -d "$lock_crash_ledger.lock" ]; then
   err "SIGKILL did not leave the ledger lock behind"
+fi
+if [ -e "$tmp_dir/worktree-lock-crash" ]; then
+  git -C "$REPO" worktree remove --force "$tmp_dir/worktree-lock-crash"
 fi
 
 reserve_and_bind \

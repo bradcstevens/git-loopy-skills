@@ -629,6 +629,27 @@ PY
     exit 1
   fi
 
+  if [ -n "${CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE:-}" ]; then
+    sleep "$CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE"
+  fi
+  marker_dir="$worktree/.git-loopy"
+  marker_tmp="$marker_dir/.worktree-owner.$$"
+  owner_pid="$parent_pid"
+  owner_start="$parent_start"
+  if ! git -C "$repo_root" worktree add -b "$worktree_branch" "$worktree" "$spawn_commit"; then
+    git -C "$repo_root" worktree remove --force "$worktree" 2>/dev/null || git -C "$repo_root" worktree prune
+    exit 1
+  fi
+  created_worktree=1
+  created_worktree_path="$worktree"
+  if ! mkdir -p "$marker_dir" ||
+    ! printf '%s\t%s\n' "$owner_pid" "$owner_start" > "$marker_tmp" ||
+    ! mv "$marker_tmp" "$marker_dir/worktree-owner"
+  then
+    rm -f "$marker_tmp"
+    exit 1
+  fi
+
   tmp="$(mktemp "$ledger_dir/.subagents.XXXXXX")"
   row="$(python3 - "$route" "$target" "$spawn_time" "$worktree" "$chain_depth" "$parent_pid" "$parent_start" <<'PY'
 import json
@@ -660,30 +681,6 @@ PY
   fi
   mv "$tmp" "$ledger"
   tmp=""
-  if [ -n "${CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE:-}" ]; then
-    sleep "$CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE"
-  fi
-  if ! git -C "$repo_root" worktree add -b "$worktree_branch" "$worktree" "$spawn_commit"; then
-    mark_record_failed "$worktree"
-    exit 1
-  fi
-  created_worktree=1
-  created_worktree_path="$worktree"
-  marker_dir="$worktree/.git-loopy"
-  marker_tmp="$marker_dir/.worktree-owner.$$"
-  owner_pid="$PPID"
-  if ! owner_start="$(ps -o lstart= -p "$owner_pid")" || [ -z "$(printf '%s' "$owner_start" | xargs)" ]; then
-    mark_record_failed "$worktree"
-    exit 1
-  fi
-  if ! mkdir -p "$marker_dir" ||
-    ! printf '%s\t%s\n' "$owner_pid" "$(printf '%s' "$owner_start" | xargs)" > "$marker_tmp" ||
-    ! mv "$marker_tmp" "$marker_dir/worktree-owner"
-  then
-    rm -f "$marker_tmp"
-    mark_record_failed "$worktree"
-    exit 1
-  fi
   created_worktree=0
   release_lock
 }
@@ -1189,33 +1186,29 @@ owner() {
   done
   [ -n "$worktree" ] || usage
   marker="$worktree/.git-loopy/worktree-owner"
-  python3 - "$marker" <<'PY'
-import os
+  python3 - "$marker" "$claim_recovery" <<'PY'
 import subprocess
 import sys
 
-marker = sys.argv[1]
+marker, claim_recovery = sys.argv[1:]
 try:
     pid_text, owner_start = open(marker, encoding="utf-8").read().rstrip("\n").split("\t", 1)
     pid = int(pid_text)
 except (FileNotFoundError, ValueError):
     print('{"alive":false,"reason":"invalid-marker"}')
     raise SystemExit
-try:
-    if pid <= 0:
-        raise ProcessLookupError
-    os.kill(pid, 0)
-except ProcessLookupError:
-    print('{"alive":false}')
+if pid <= 0 or not owner_start.strip():
+    print('{"alive":false,"reason":"invalid-marker"}')
     raise SystemExit
-except PermissionError:
-    print('{"alive":true,"reason":"permission-denied"}')
+liveness = subprocess.run(
+    [sys.executable, claim_recovery, "owner-gone", str(pid), owner_start],
+    capture_output=True,
+    text=True,
+)
+if liveness.returncode != 0:
+    print('{"alive":false,"reason":"liveness-check-failed"}')
     raise SystemExit
-current_start = " ".join(subprocess.run(
-    ["ps", "-o", "lstart=", "-p", str(pid)],
-    capture_output=True, text=True,
-).stdout.split())
-print('{"alive":' + ("true" if current_start == owner_start else "false") + '}')
+print('{"alive":' + ("false" if liveness.stdout.strip() == "true" else "true") + '}')
 PY
 }
 
