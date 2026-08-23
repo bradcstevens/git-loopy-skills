@@ -189,41 +189,8 @@ def route_attempts(row: dict) -> int:
     return attempts if isinstance(attempts, int) and attempts > 0 else 0
 
 
-def route_requesters(row: dict) -> list:
-    """The sessions still owed a forced turn for this row.
-
-    A block holds open the session it was emitted in, so that is the session
-    whose next turn is evidence the block landed. Recording who asked is what
-    lets a confirmation find the request it belongs to rather than whichever
-    request happens to come first.
-    """
-    requesters = row.get("route_requested_by")
-    if not isinstance(requesters, list):
-        return []
-    return [name for name in requesters if isinstance(name, str) and name]
-
-
 def awaiting_confirmation(row: object) -> bool:
     return owed_a_route(row) and route_attempts(row) > 0
-
-
-def confirmable_by(rows: list, session: object) -> dict | None:
-    """The pending request this forced turn is evidence for.
-
-    A turn forced in one session says nothing about a request another session
-    made, so only a request this session asked for is confirmed here. The rest
-    are left standing for their own sessions to confirm or ask again.
-    """
-    if not isinstance(session, str) or not session:
-        return None
-    return next(
-        (
-            row
-            for row in rows
-            if awaiting_confirmation(row) and session in route_requesters(row)
-        ),
-        None,
-    )
 
 
 def confirm_route_request(payload: dict, ledger_path: str | None) -> None:
@@ -248,22 +215,27 @@ def confirm_route_request(payload: dict, ledger_path: str | None) -> None:
         decision("stop-hook-active")
         return
 
-    requested = confirmable_by(rows, payload.get("sessionId"))
-    if requested is None:
+    requested = [row for row in rows if awaiting_confirmation(row)]
+    if not requested:
         decision("stop-hook-active")
         return
 
-    requested["routed"] = True
-    requested["routed_at"] = payload.get("timestamp")
+    for row in requested:
+        row["routed"] = True
+        row["routed_at"] = payload.get("timestamp")
     if not write_ledger(ledger_path, rows):
         decision("stop-hook-active")
         return
 
-    target = requested.get("target")
-    if isinstance(target, str) and target:
-        decision("stop-hook-active", confirmed=target)
+    targets = [
+        row["target"]
+        for row in requested
+        if isinstance(row.get("target"), str) and row["target"]
+    ]
+    if len(targets) == 1:
+        decision("stop-hook-active", confirmed=targets[0])
     else:
-        decision("stop-hook-active")
+        decision("stop-hook-active", confirmed=targets)
 
 
 try:
@@ -306,61 +278,65 @@ if rows is None:
     decision("invalid-ledger")
     raise SystemExit(0)
 
-unrouted = next((row for row in rows if owed_a_route(row)), None)
-if unrouted is None:
+unrouted = [row for row in rows if owed_a_route(row)]
+if not unrouted:
     decision("no-unrouted-completion")
     raise SystemExit(0)
 
-target = unrouted.get("target")
-if not isinstance(target, str) or not target:
+targets = [
+    row["target"]
+    for row in unrouted
+    if isinstance(row.get("target"), str) and row["target"]
+]
+if not targets:
     decision("invalid-completed-row")
     raise SystemExit(0)
 
-attempts = route_attempts(unrouted)
+abandoned = [
+    row for row in unrouted
+    if isinstance(row.get("target"), str)
+    and row["target"]
+    and route_attempts(row) >= MAX_ROUTE_ATTEMPTS
+]
+for row in abandoned:
+    row["route_abandoned"] = True
+    row["route_abandoned_at"] = payload.get("timestamp")
 
-if attempts >= MAX_ROUTE_ATTEMPTS:
-    # Every request so far went unconfirmed, so asking again will not land
-    # either. Give up under a reason that names what was dropped, rather than
-    # re-blocking until the runtime halts the session without explaining why.
-    unrouted["route_abandoned"] = True
-    unrouted["route_abandoned_at"] = payload.get("timestamp")
+pending = [row for row in unrouted if row not in abandoned and row.get("target")]
+if not pending:
     if not write_ledger(ledger_path, rows):
         decision("ledger-update-failed")
         raise SystemExit(0)
-    decision("route-abandoned", target=target)
+    abandoned_targets = [row["target"] for row in abandoned]
+    if len(abandoned_targets) == 1:
+        decision("route-abandoned", target=abandoned_targets[0])
+    else:
+        decision("route-abandoned", targets=abandoned_targets)
     raise SystemExit(0)
 
-# A request is confirmed by a turn from the session that asked for it, so a
-# payload carrying no `sessionId` cannot produce one. Blocking on it anyway
-# would force a turn nothing could ever credit, and re-block until the cap
-# abandoned a hop that had in fact landed. ADR-0005 requires a field the chain
-# reads, and this path reads this one, so name what is missing and stand aside.
-session = payload.get("sessionId")
-if not isinstance(session, str) or not session:
-    decision("missing-session-id", target=target)
-    raise SystemExit(0)
-
-unrouted["route_attempts"] = attempts + 1
-# The first request time is the one worth keeping: with the attempt count it
-# says how long this hop has been owed, not merely when it was last asked for.
-# Keeping it means skipping an absent one rather than storing a null, which
-# would claim the first slot and lose every later time the payload did carry.
-requested_at = payload.get("timestamp")
-if requested_at and not unrouted.get("route_requested_at"):
-    unrouted["route_requested_at"] = requested_at
-# Every session that asked is kept, not just the latest: each one is holding a
-# forced turn that will arrive, and the first to arrive should confirm the hop
-# rather than find its request taken over and ask again.
-requesters = route_requesters(unrouted)
-if session not in requesters:
-    unrouted["route_requested_by"] = requesters + [session]
+for row in pending:
+    row["route_attempts"] = route_attempts(row) + 1
+    # The attempt count is the request. The timestamp is provenance only and
+    # may be absent, so it must never control whether a request is confirmable.
+    requested_at = payload.get("timestamp")
+    if requested_at and not row.get("route_requested_at"):
+        row["route_requested_at"] = requested_at
 if not write_ledger(ledger_path, rows):
     decision("ledger-update-failed")
     raise SystemExit(0)
 
+requested_targets = [row["target"] for row in pending]
 print(
     json.dumps(
-        {"decision": "block", "reason": BLOCK_REASON, "target": target},
+        {
+            "decision": "block",
+            "reason": BLOCK_REASON,
+            **(
+                {"target": requested_targets[0]}
+                if len(requested_targets) == 1
+                else {"targets": requested_targets}
+            ),
+        },
         separators=(",", ":"),
     )
 )

@@ -273,93 +273,27 @@ assert_decision "an untimestamped confirmation" "$(reenter true "")" \
 assert_decision "a completion routed without a timestamp" "$(reenter false)" \
   '{"decision":"allow","reason":"no-unrouted-completion"}'
 
-# A turn forced in one session is no evidence for a request another session
-# made, so a request has to name who asked for it.
-#
-# Two rows can hold requests at the same time. The block path always takes the
-# first owed row, and rows are appended at reservation time but finished in
-# place, so a run reserved earlier and completed later becomes the first owed
-# row *after* a later row was already blocked for. Crediting whichever pending
-# row comes first then marks one target routed on a turn forced for another,
-# and the miscredited hop is never asked for again — the silent dropped hop
-# this helper exists to remove.
+# A fan-out can finish several rows between parent turns. One block should
+# request the whole batch, and the following forced turn should confirm it all.
 python3 - "$fixture_ledger" <<'PY'
 import json
 import sys
 
 with open(sys.argv[1], "w", encoding="utf-8") as ledger:
-    for row in (
-        {"target": "issue-27", "finish_time": "", "outcome": ""},
-        {"target": "issue-26", "finish_time": "2026-08-22T00:00:00Z", "outcome": "published"},
-    ):
-        ledger.write(json.dumps(row) + "\n")
+    for target in ("issue-26", "issue-27"):
+        ledger.write(json.dumps({
+            "target": target,
+            "finish_time": "2026-08-22T01:00:00Z",
+            "outcome": "published",
+        }) + "\n")
 PY
 
-assert_decision "a request from one session" \
-  "$(reenter false 2026-08-22T01:00:00Z session-a)" "$(block_decision_for issue-26)"
-
-# The earlier reservation finishes, so it becomes the first owed row and the
-# next block takes it while issue-26's request is still unconfirmed.
-python3 - "$fixture_ledger" <<'PY'
-import json
-import sys
-
-with open(sys.argv[1], encoding="utf-8") as ledger:
-    rows = [json.loads(line) for line in ledger if line.strip()]
-rows[0]["finish_time"] = "2026-08-22T01:01:00Z"
-rows[0]["outcome"] = "published"
-with open(sys.argv[1], "w", encoding="utf-8") as ledger:
-    for row in rows:
-        ledger.write(json.dumps(row) + "\n")
-PY
-
-assert_decision "a request from a second session" \
-  "$(reenter false 2026-08-22T01:02:00Z session-b)" "$(block_decision_for issue-27)"
-assert_decision "the first session's forced turn" \
-  "$(reenter true 2026-08-22T01:03:00Z session-a)" "$(confirmed_decision_for issue-26)"
-assert_ledger_intact "the correlated confirmation"
-
-assert_decision "the confirmed row" "$(ledger_field issue-26 routed)" "true"
-if [ "$(ledger_field issue-27 routed)" != "null" ]; then
-  err "agentStop credited a forced turn to a request another session made"
-fi
-
-# A session holding no request of its own confirms nothing, rather than
-# consuming somebody else's and dropping their hop.
-assert_decision "an unrelated session's forced turn" \
-  "$(reenter true 2026-08-22T01:04:00Z session-c)" \
-  '{"decision":"allow","reason":"stop-hook-active"}'
-assert_decision "the request left standing" "$(ledger_field issue-27 routed)" "null"
-
-assert_decision "the second session asking again" \
-  "$(reenter false 2026-08-22T01:05:00Z session-b)" "$(block_decision_for issue-27)"
-assert_decision "the second session's forced turn" \
-  "$(reenter true 2026-08-22T01:06:00Z session-b)" "$(confirmed_decision_for issue-27)"
-
-# A request is confirmed by a turn from the session that asked, so a payload
-# carrying no `sessionId` cannot make one. ADR-0005 requires a field the chain
-# reads and this path reads this one, so the hook names what is missing and
-# stands aside rather than forcing a turn nothing could ever credit — which
-# would re-block to the cap and abandon a hop that had in fact landed.
-write_fixture_ledger
-cp "$fixture_ledger" "$fixture_ledger.before-unidentified"
-assert_decision "a request from an unidentified session" \
-  "$(reenter false 2026-08-22T02:00:00Z "")" \
-  '{"decision":"allow","reason":"missing-session-id","target":"issue-26"}'
-if ! cmp -s "$fixture_ledger.before-unidentified" "$fixture_ledger"; then
-  err "agentStop recorded a request no forced turn could confirm"
-fi
-assert_ledger_intact "the unidentified request"
-
-# And the same absence on the confirming side confirms nothing, rather than
-# taking over a request some identified session is still owed a turn for.
-assert_decision "a request from one session again" \
-  "$(reenter false 2026-08-22T02:01:00Z session-d)" "$block_decision"
-assert_decision "an unidentified forced turn" "$(reenter true 2026-08-22T02:02:00Z "")" \
-  '{"decision":"allow","reason":"stop-hook-active"}'
-assert_decision "the request left standing" "$(ledger_field issue-26 routed)" "null"
-assert_decision "the identified forced turn" \
-  "$(reenter true 2026-08-22T02:03:00Z session-d)" "$(confirmed_decision_for issue-26)"
+assert_decision "a batch request" "$(reenter false 2026-08-22T01:01:00Z "")" \
+  '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","targets":["issue-26","issue-27"]}'
+assert_decision "the batch confirmation" "$(reenter true 2026-08-22T01:02:00Z "")" \
+  '{"decision":"allow","reason":"stop-hook-active","confirmed":["issue-26","issue-27"]}'
+assert_decision "the first confirmed row" "$(ledger_field issue-26 routed)" "true"
+assert_decision "the second confirmed row" "$(ledger_field issue-27 routed)" "true"
 
 # ADR-0004: the runtime permits 8 consecutive blocks and then exits without
 # saying why, so the chain's own cap has to trip first and name what it dropped.
