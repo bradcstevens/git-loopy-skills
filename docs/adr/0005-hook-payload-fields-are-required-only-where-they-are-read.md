@@ -1,14 +1,19 @@
 # A hook payload field is required only where the chain reads it
 
-`complete` validates the six `subagentStop` fields it actually uses — `sessionId`, `agentId`,
-`agentType` and `agentName` to find the ledger row, `cwd` to locate the repository, `timestamp` to
-close the row. Every other field the runtime sends is optional and unvalidated, including ones no
-release has sent yet.
+`complete` validates the five `subagentStop` fields it actually uses — `sessionId`, `agentId` and
+`agentType` to find the ledger row, `cwd` to locate the repository, `timestamp` to close the row.
+Every other field the runtime sends is optional and unvalidated, including ones no release has sent
+yet.
 
 It previously required ten, four of which it never read. Real payloads from built-in agent types
 carry no `agentDisplayName`, so the hook exited 2 on genuine traffic: no completion closed its
 ledger row, `agentStop` never saw an unrouted run, and the chain did nothing while reporting
 nothing wrong (#41).
+
+`agentName` was the sixth until #67. It found the ledger row until the runtime was observed to set
+it to the agent *type* rather than to the descriptive name a caller binds, at which point matching
+on it could only ever decline a correctly bound row. It left the match, and this rule then required
+it to leave `required_fields` too.
 
 ## Why the payload shape is not a contract
 

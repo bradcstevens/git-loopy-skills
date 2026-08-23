@@ -1048,9 +1048,11 @@ fi
 # Real payloads from built-in agent types carry only what the runtime chooses to
 # send. `complete` must require nothing beyond the fields it reads: requiring an
 # unread one rejected every live completion, and the chain went silent (#41).
+# `agentName` is absent below because nothing reads it any more (#67), so this
+# also fails if it ever creeps back into required_fields.
 minimal_payload() {
-  local agent_id="$1" agent_type="$2" agent_name="$3" session_id="$4" payload_cwd="$5"
-  printf '%s' '{"sessionId":"'"$session_id"'","timestamp":"2026-08-22T00:11:00Z","cwd":"'"$payload_cwd"'","agentId":"'"$agent_id"'","agentType":"'"$agent_type"'","agentName":"'"$agent_name"'"}'
+  local agent_id="$1" agent_type="$2" session_id="$3" payload_cwd="$4"
+  printf '%s' '{"sessionId":"'"$session_id"'","timestamp":"2026-08-22T00:11:00Z","cwd":"'"$payload_cwd"'","agentId":"'"$agent_id"'","agentType":"'"$agent_type"'"}'
 }
 
 minimal_ledger="$tmp_dir/.git-loopy/minimal-subagents.jsonl"
@@ -1068,7 +1070,7 @@ reserve_and_bind \
 
 minimal_output="$(
   PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete --ledger "$minimal_ledger" \
-    <<< "$(minimal_payload agent-minimal code-review code-review session-minimal "$tmp_dir")"
+    <<< "$(minimal_payload agent-minimal code-review session-minimal "$tmp_dir")"
 )"
 assert_plan "minimal completion" "$minimal_output" \
   '{"continue":true,"outcome":"published","target":"issue-minimal"}'
@@ -1160,17 +1162,6 @@ if [ -e "$required_ledger.lock" ]; then
   err "a rejected payload left the ledger lock behind"
 fi
 
-# `agentName` is not among them any more. Nothing reads it once identity stops
-# depending on it, and a field that is required and never read is exactly what
-# silenced the chain in #41.
-absent_name_output="$(
-  PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete \
-    --ledger "$required_ledger" \
-    <<< "$(payload_without "$required_payload" agentName)"
-)"
-assert_plan "completion without agentName" "$absent_name_output" \
-  '{"continue":true,"outcome":"published","target":"issue-required"}'
-
 # The whole point of closing the row: agentStop must then find it unrouted, or
 # the chain does nothing and reports nothing wrong.
 reentry_repo="$tmp_dir/reentry-repository"
@@ -1194,7 +1185,7 @@ git -C "$reentry_repo" -c user.name=test -c user.email=test@example.com \
 reentry_output="$(
   cd "$reentry_repo"
   PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete \
-    <<< "$(minimal_payload agent-reentry code-review code-review session-reentry "$reentry_repo")"
+    <<< "$(minimal_payload agent-reentry code-review session-reentry "$reentry_repo")"
 )"
 assert_plan "re-entry completion" "$reentry_output" \
   '{"continue":true,"outcome":"published","target":"issue-reentry"}'
