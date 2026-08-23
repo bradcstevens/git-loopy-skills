@@ -117,7 +117,7 @@ block_output="$(
     "$REPO/.github/hooks/git-loopy-chain.sh" reenter \
     <<< "$(agent_stop_payload false)"
 )"
-if [ "$block_output" != '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","target":"issue-26"}' ]; then
+if [ "$block_output" != '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","targets":["issue-26"]}' ]; then
   err "agentStop did not block for an unrouted completion"
 fi
 
@@ -141,6 +141,108 @@ routed_output="$(
 )"
 if [ "$routed_output" != '{"decision":"allow","reason":"no-unrouted-completion"}' ]; then
   err "agentStop did not stand aside after routing the completion"
+fi
+
+# Fan-out finishes in batches, so several runs can complete between two parent
+# turns. One `/next` fill refills every slot the batch freed, so the batch is
+# worth one block: the runtime allows eight consecutive blocks and stands the
+# hook aside on the turn a block forces, so a second unrouted row would strand
+# the rest of the batch and force a spurious re-entry later.
+write_batch_fixture_ledger() {
+  python3 - "$fixture_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "w", encoding="utf-8") as ledger:
+    for target in ("issue-26", "issue-27", "issue-30"):
+        ledger.write(json.dumps({
+            "target": target,
+            "finish_time": "2026-08-22T00:00:00Z",
+            "outcome": "published",
+        }) + "\n")
+    ledger.write(json.dumps({
+        "target": "issue-31",
+        "finish_time": "",
+        "outcome": "",
+    }) + "\n")
+PY
+}
+
+write_batch_fixture_ledger
+batch_output="$(
+  COPILOT_HOME="$tmp_dir/missing-copilot-home" \
+    "$REPO/.github/hooks/git-loopy-chain.sh" reenter \
+    <<< "$(agent_stop_payload false)"
+)"
+if [ "$batch_output" != '{"decision":"block","reason":"3 completed runs are unrouted. Run /next now and refill every freed slot.","targets":["issue-26","issue-27","issue-30"]}' ]; then
+  err "agentStop did not route a batch of completions in one block"
+fi
+
+if ! python3 - "$fixture_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger if line.strip()]
+
+completed = [row for row in rows if row["finish_time"]]
+assert all(row["routed"] is True for row in completed), rows
+assert all(row["routed_at"] == "2026-08-22T00:01:00Z" for row in completed), rows
+assert "routed" not in rows[-1], rows
+PY
+then
+  err "agentStop left part of the batch unrouted or routed a run still in flight"
+fi
+
+batch_routed_output="$(
+  COPILOT_HOME="$tmp_dir/missing-copilot-home" \
+    "$REPO/.github/hooks/git-loopy-chain.sh" reenter \
+    <<< "$(agent_stop_payload false)"
+)"
+if [ "$batch_routed_output" != '{"decision":"allow","reason":"no-unrouted-completion"}' ]; then
+  err "agentStop blocked a second time for a batch it had already routed"
+fi
+
+# A row the chain script could not have written is ledger corruption, and it must
+# not hold the rest of the batch hostage: it is never marked routed, so refusing
+# the whole batch over it would stall every later natural stop too.
+python3 - "$fixture_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "w", encoding="utf-8") as ledger:
+    ledger.write(json.dumps({
+        "target": "issue-32",
+        "finish_time": "2026-08-22T00:00:00Z",
+        "outcome": "published",
+    }) + "\n")
+    ledger.write(json.dumps({
+        "target": "",
+        "finish_time": "2026-08-22T00:00:00Z",
+        "outcome": "published",
+    }) + "\n")
+    ledger.write(json.dumps({
+        "target": "issue-33",
+        "finish_time": "2026-08-22T00:00:00Z",
+        "outcome": "published",
+    }) + "\n")
+PY
+corrupt_batch_output="$(
+  COPILOT_HOME="$tmp_dir/missing-copilot-home" \
+    "$REPO/.github/hooks/git-loopy-chain.sh" reenter \
+    <<< "$(agent_stop_payload false)"
+)"
+if [ "$corrupt_batch_output" != '{"decision":"block","reason":"2 completed runs are unrouted. Run /next now and refill every freed slot.","targets":["issue-32","issue-33"]}' ]; then
+  err "agentStop let one unusable row withhold the rest of the batch"
+fi
+
+corrupt_only_output="$(
+  COPILOT_HOME="$tmp_dir/missing-copilot-home" \
+    "$REPO/.github/hooks/git-loopy-chain.sh" reenter \
+    <<< "$(agent_stop_payload false)"
+)"
+if [ "$corrupt_only_output" != '{"decision":"allow","reason":"invalid-completed-row"}' ]; then
+  err "agentStop did not name the unusable row once it was all that was left"
 fi
 
 python3 - "$fixture_ledger" <<'PY'
@@ -171,7 +273,7 @@ stale_lock_output="$(
     "$REPO/.github/hooks/git-loopy-chain.sh" reenter \
     <<< "$(agent_stop_payload false)"
 )"
-if [ "$stale_lock_output" != '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","target":"issue-26"}' ]; then
+if [ "$stale_lock_output" != '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","targets":["issue-26"]}' ]; then
   err "agentStop did not reclaim a stale ledger lock"
 fi
 if [ -e "$fixture_ledger.lock" ]; then

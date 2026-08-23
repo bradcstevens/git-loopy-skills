@@ -302,9 +302,11 @@ invocation immediately after launch, then carry the recommendation's paste-safe 
 into the agent. Do not launch a declined action, an action that reaches the checkpoint boundary, or
 an action whose phase-boundary choice is anything other than `Subagent`.
 
-When a run completes, `subagentStop` frees its reservation and `agentStop` re-enters `/next`. One
-completion frees one slot: begin the same one-recommendation fill again so that slot is refilled
-while ready work remains, rather than waiting for the other in-flight runs to finish.
+When a run completes, `subagentStop` frees its reservation and `agentStop` re-enters `/next`. Every
+completion frees one slot, and a re-entry can carry several at once: fan-out finishes in batches, so
+`agentStop` routes the whole batch in a single block and names every freed target in its reason.
+Begin the same one-recommendation fill again and it refills all of them, rather than waiting for the
+other in-flight runs to finish.
 
 Every other route ends at step 6 and leaves a user-launched fresh session, continued session, or
 `/handoff` transition to its own documented behavior.

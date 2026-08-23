@@ -136,25 +136,34 @@ except (OSError, json.JSONDecodeError):
     decision("invalid-ledger")
     raise SystemExit(0)
 
-unrouted = next(
-    (
-        row
-        for row in rows
-        if isinstance(row, dict) and row.get("finish_time") and not row.get("routed")
-    ),
-    None,
-)
-if unrouted is None:
+unrouted = [
+    row
+    for row in rows
+    if isinstance(row, dict) and row.get("finish_time") and not row.get("routed")
+]
+if not unrouted:
     decision("no-unrouted-completion")
     raise SystemExit(0)
 
-target = unrouted.get("target")
-if not isinstance(target, str) or not target:
+routable = [
+    row for row in unrouted if isinstance(row.get("target"), str) and row["target"]
+]
+if not routable:
     decision("invalid-completed-row")
     raise SystemExit(0)
+targets = [row["target"] for row in routable]
 
-unrouted["routed"] = True
-unrouted["routed_at"] = payload.get("timestamp")
+# Fan-out finishes in batches, and one `/next` fill refills every slot the batch
+# freed, so the whole batch is routed by a single block. Blocking once per
+# completion would spend the runtime's eight consecutive blocks on turns with
+# nothing left to fill, and stop_hook_active stands this hook aside on the turn
+# a block forces, so the rest of the batch would be stranded unrouted. A row the
+# chain script could not have written is left out rather than withholding the
+# batch: it is never marked routed, so refusing the readable rows over it would
+# stall every later natural stop as well.
+for row in routable:
+    row["routed"] = True
+    row["routed_at"] = payload.get("timestamp")
 ledger_dir = os.path.dirname(ledger_path)
 try:
     with tempfile.NamedTemporaryFile(
@@ -177,12 +186,20 @@ except OSError:
     decision("ledger-update-failed")
     raise SystemExit(0)
 
+if len(targets) == 1:
+    reason = "A completed run is unrouted. Run /next now."
+else:
+    reason = (
+        f"{len(targets)} completed runs are unrouted. "
+        "Run /next now and refill every freed slot."
+    )
+
 print(
     json.dumps(
         {
             "decision": "block",
-            "reason": "A completed run is unrouted. Run /next now.",
-            "target": target,
+            "reason": reason,
+            "targets": targets,
         },
         separators=(",", ":"),
     )
