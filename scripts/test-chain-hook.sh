@@ -265,6 +265,40 @@ if [ "$ordinary_output" != '{"decision":"allow","reason":"no-unrouted-completion
   err "agentStop did not stand aside without a completed run"
 fi
 
+# Recovery closes an orphaned reservation to release capacity, but no agent completed
+# that row. It must not force a spurious `/next` re-entry or mark it as routed.
+python3 - "$fixture_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "w", encoding="utf-8") as ledger:
+    ledger.write(json.dumps({
+        "target": "issue-reclaimed",
+        "finish_time": "2026-08-22T00:00:00Z",
+        "outcome": "reclaimed",
+    }) + "\n")
+PY
+reclaimed_output="$(
+  COPILOT_HOME="$tmp_dir/missing-copilot-home" \
+    "$REPO/.github/hooks/git-loopy-chain.sh" reenter \
+    <<< "$(agent_stop_payload false)"
+)"
+if [ "$reclaimed_output" != '{"decision":"allow","reason":"no-unrouted-completion"}' ]; then
+  err "agentStop treated a reclaimed reservation as a completed run"
+fi
+if ! python3 - "$fixture_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    row = json.loads(ledger.readline())
+
+assert "routed" not in row
+PY
+then
+  err "agentStop routed a reclaimed reservation"
+fi
+
 write_fixture_ledger
 mkdir "$fixture_ledger.lock"
 printf '999999\tstale process\n' > "$fixture_ledger.lock/pid"

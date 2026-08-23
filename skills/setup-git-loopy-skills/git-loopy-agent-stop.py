@@ -139,7 +139,12 @@ except (OSError, json.JSONDecodeError):
 unrouted = [
     row
     for row in rows
-    if isinstance(row, dict) and row.get("finish_time") and not row.get("routed")
+    if (
+        isinstance(row, dict)
+        and row.get("finish_time")
+        and row.get("outcome") != "reclaimed"
+        and not row.get("routed")
+    )
 ]
 if not unrouted:
     decision("no-unrouted-completion")
