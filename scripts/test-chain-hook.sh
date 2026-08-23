@@ -336,10 +336,6 @@ assert_decision "the second session asking again" \
 assert_decision "the second session's forced turn" \
   "$(reenter true 2026-08-22T01:06:00Z session-b)" "$(confirmed_decision_for issue-27)"
 
-# A request that named nobody — because its payload carried no `sessionId` —
-# stays confirmable by whoever takes the forced turn. Narrowing it to a session
-# that never identified itself would leave a request nothing can confirm, which
-# re-blocks to the cap and abandons a hop that had in fact landed.
 # A request is confirmed by a turn from the session that asked, so a payload
 # carrying no `sessionId` cannot make one. ADR-0005 requires a field the chain
 # reads and this path reads this one, so the hook names what is missing and

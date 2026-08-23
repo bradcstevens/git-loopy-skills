@@ -19,13 +19,12 @@ next `/next` runs whether or not the model remembers.
 
 It is the only signal the runtime gives that a block landed. ADR-0004 established it as the
 loop-breaker — `false` on a natural stop, `true` on a turn a block forced — and a forced turn is
-exactly the thing a route request is waiting on. Reading it as confirmation asks nothing new of the
-runtime.
+exactly the thing a route request is waiting on.
 
-It is deliberately indirect, so the request records the session it was asked in and is confirmed
-only by a turn from that session. Confirming whichever request came first instead would let two
-sessions routing one repository credit each other's hops — one target marked routed on a turn
-forced for another, and the miscredited hop never asked for again.
+It is also indirect, so the request records the session it was asked in and is confirmed only by a
+turn from that session. Confirming whichever request came first instead would let two sessions
+routing one repository credit each other's hops — one target marked routed on a turn forced for
+another, and the miscredited hop never asked for again.
 
 That makes `sessionId` a field this path reads, so a block requires one. **This extends
 [ADR-0005](./0005-hook-payload-fields-are-required-only-where-they-are-read.md)**, which lists
@@ -39,8 +38,8 @@ What that leaves is a session's own hooks. `stop_hook_active` says a turn was fo
 `/next` ran inside it, so a turn some other stop hook forced in the same session can still
 over-confirm a request the operator had dismissed. The chain accepts that: closing it would mean
 reading the transcript, a much larger dependency for a much smaller gain, and the confirmation names
-its target in the decision it emits, so the hook invocation log (#27) shows the hop and the turn
-credited with it — whereas the pre-emptive write it replaces named nothing at all.
+its target in the decision it emits, so the log shows the hop and the turn credited with it —
+whereas the pre-emptive write it replaces named nothing at all.
 
 ## Consequences
 
@@ -48,10 +47,9 @@ credited with it — whereas the pre-emptive write it replaces named nothing at 
   dismissed prompt, an interrupted turn, or an exited session leaves the row owed and a later
   `agentStop` blocks again for the same target.
 - **The attempt count is the request, not the request time.** `route_attempts` is written by the
-  helper itself, so it is on the row whatever the payload carried. `route_requested_at` comes from
-  `timestamp`, which ADR-0005 leaves optional; gating confirmation on it would make an absent
-  `timestamp` produce a request nothing could confirm. The time stays as provenance, omitted rather
-  than stored null.
+  helper itself, so it is on the row whatever the payload carried, whereas `route_requested_at`
+  comes from `timestamp`, which ADR-0005 leaves optional. Gating confirmation on the time would
+  make an absent one produce a request nothing could confirm.
 - **Re-blocking is capped at three attempts per row**, and giving up is a decision the log can see.
   ADR-0004 requires the chain's own guard to trip inside the runtime's ceiling of 8, so the halt is
   explained rather than the runtime halting it first with no visible reason; three matches the
@@ -60,23 +58,18 @@ credited with it — whereas the pre-emptive write it replaces named nothing at 
 - **A request names every session owed a forced turn for it.** `route_requested_by` collects them
   rather than keeping only the latest, because each one is holding a turn that will arrive: the
   first to arrive confirms the hop, instead of finding the request taken over and having to ask
-  again. It joins `route_requested_at`, `route_attempts`, `route_abandoned` and `route_abandoned_at`
-  on the row, all written through the same atomic replace, so an interrupted helper leaves the
-  previous ledger whole.
+  again. It is written through the same atomic replace as the rest of the row, so an interrupted
+  helper leaves the previous ledger whole.
 - **`stop_hook_active` still never starts a route.** It may only promote a request that already
-  exists. A ledger that is missing, unreadable, or locked simply means there is nothing to confirm,
-  and the hook stands aside under `stop-hook-active` as before.
+  exists, so a ledger that is missing, unreadable, or locked simply means there is nothing to
+  confirm, and the hook stands aside under `stop-hook-active` as before.
 
 ## Considered options
 
 **Keep writing `routed` on the block and add a sweeper that reopens rows nothing followed up on.**
-Rejected because it needs a second clock to decide what "nothing followed up" means, and it can
-only run in a session that may never come.
+Rejected: it needs a second clock to decide what "nothing followed up" means, and can only run in a
+session that may never come.
 
-**Treat the block as authoritative and ask the runtime for a non-dismissible prompt.** Rejected
-because the dismissible queue is the runtime's behaviour, not a setting this repository controls,
-and a chain that depends on an operator never pressing `x` is not a chain.
-
-**Re-block until the runtime's ceiling of 8 stops it.** Rejected because the runtime exits cleanly
-and says nothing, so the halt would be invisible at precisely the moment someone needs to know a
-hop was abandoned.
+**Treat the block as authoritative and ask the runtime for a non-dismissible prompt.** Rejected: the
+dismissible queue is the runtime's behaviour, not a setting this repository controls, and a chain
+that depends on an operator never pressing `x` is not a chain.
