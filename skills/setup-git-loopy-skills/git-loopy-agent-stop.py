@@ -214,7 +214,13 @@ def confirm_route_request(payload: dict, ledger_path: str | None) -> None:
         decision("stop-hook-active")
         return
 
-    requested = [row for row in rows if awaiting_confirmation(row)]
+    requested = [
+        row
+        for row in rows
+        if awaiting_confirmation(row)
+        and isinstance(row.get("target"), str)
+        and row["target"]
+    ]
     if not requested:
         decision("stop-hook-active")
         return
@@ -312,7 +318,13 @@ if abandoned:
         decision("route-abandoned", targets=abandoned_targets)
     raise SystemExit(0)
 
-pending = [row for row in unrouted if row not in abandoned and row.get("target")]
+pending = [
+    row
+    for row in unrouted
+    if row not in abandoned
+    and isinstance(row.get("target"), str)
+    and row["target"]
+]
 if not pending:
     if not write_ledger(ledger_path, rows):
         decision("ledger-update-failed")

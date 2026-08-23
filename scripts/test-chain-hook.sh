@@ -354,6 +354,35 @@ assert_decision "a mixed cap trip" "$(reenter false 2026-08-22T00:10:00Z)" \
 assert_decision "the pending row after a cap trip" "$(reenter false 2026-08-22T00:11:00Z)" \
   '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","target":"issue-pending"}'
 
+# Invalid targets must not be treated as routable batch members.
+python3 - "$fixture_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "w", encoding="utf-8") as ledger:
+    for target in (123, {"issue": 26}, "issue-valid"):
+        ledger.write(json.dumps({
+            "target": target,
+            "finish_time": "2026-08-22T00:00:00Z",
+            "outcome": "published",
+        }) + "\n")
+PY
+assert_decision "a batch with invalid targets" "$(reenter false 2026-08-22T00:12:00Z)" \
+  '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","target":"issue-valid"}'
+python3 - "$fixture_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "w", encoding="utf-8") as ledger:
+    ledger.write(json.dumps({
+        "target": {"issue": 26},
+        "finish_time": "2026-08-22T00:00:00Z",
+        "outcome": "published",
+    }) + "\n")
+PY
+assert_decision "an invalid target alone" "$(reenter false 2026-08-22T00:13:00Z)" \
+  '{"decision":"allow","reason":"invalid-completed-row"}'
+
 python3 - "$fixture_ledger" <<'PY'
 import json
 import sys
