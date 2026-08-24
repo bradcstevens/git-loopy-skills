@@ -134,10 +134,10 @@ remove_worktree() {
   local worktree="$1"
   local ledger_root
 
+  ledger_root="$(repository_root)"
   if [ -e "$worktree" ]; then
-    git -C "$worktree" worktree remove --force "$worktree"
+    git -C "$ledger_root" worktree remove --force "$worktree"
   else
-    ledger_root="$(repository_root)"
     git -C "$ledger_root" worktree prune
   fi
 }
@@ -208,7 +208,9 @@ try:
                     if not isinstance(row, dict):
                         unreadable()
                     recorded = row.get("reservation_id")
-                    if recorded is not None and not isinstance(recorded, str):
+                    if "reservation_id" in row and (
+                        not isinstance(recorded, str) or not recorded
+                    ):
                         unreadable()
                     if recorded == reservation_id:
                         raise SystemExit(1)
@@ -246,15 +248,34 @@ listing = subprocess.run(
     text=True,
 )
 if listing.returncode != 0:
-    raise SystemExit(1)
+    sys.stderr.write(listing.stderr)
+    raise SystemExit(2)
 
-current = None
+# Porcelain groups one record per worktree, blank-line separated. Read whole
+# records: a `prunable` worktree is registration git itself no longer trusts, so
+# whatever occupies that path now is not what this transaction created.
+record = {}
+records = []
 for line in listing.stdout.splitlines():
-    if line.startswith("worktree "):
-        current = os.path.realpath(os.path.abspath(line[len("worktree "):]))
-    elif line.startswith("branch ") and current == path:
-        if line[len("branch "):] == "refs/heads/" + branch:
-            raise SystemExit(0)
+    if not line.strip():
+        if record:
+            records.append(record)
+            record = {}
+        continue
+    key, _, value = line.partition(" ")
+    record[key] = value
+if record:
+    records.append(record)
+
+for record in records:
+    if "worktree" not in record:
+        continue
+    if os.path.realpath(os.path.abspath(record["worktree"])) != path:
+        continue
+    if "prunable" in record or "detached" in record or "bare" in record:
+        raise SystemExit(1)
+    if record.get("branch") == "refs/heads/" + branch:
+        raise SystemExit(0)
 raise SystemExit(1)
 PY
 }
@@ -274,8 +295,13 @@ rollback_pending_worktree() {
   if record="$(unfinished_worktree "$pending_path")"; then
     IFS=$'\t' read -r pending_worktree pending_branch <<< "$record"
     if [ -e "$pending_worktree" ] || [ -L "$pending_worktree" ]; then
-      if ! worktree_registered_on_branch "$pending_worktree" "$pending_branch"; then
-        echo "error: refusing to remove a worktree this transaction did not create: $pending_worktree" >&2
+      worktree_registered_on_branch "$pending_worktree" "$pending_branch" || ownership=$?
+      if [ "${ownership:-0}" -ne 0 ]; then
+        if [ "${ownership:-0}" -eq 2 ]; then
+          echo "error: could not ask git who owns $pending_worktree; keeping $pending_path" >&2
+        else
+          echo "error: $pending_worktree is not on branch ${pending_branch:-<none>}, so this transaction did not create it; inspect it, then remove it and $pending_path by hand if it is abandoned" >&2
+        fi
         return 1
       fi
       removed=1
@@ -674,7 +700,7 @@ reserve() {
     echo "error: --chain-depth must be a non-negative integer" >&2
     exit 2
   }
-  local ledger_dir row reservation spawn_commit worktree_branch max_concurrency open_reservations
+  local ledger_dir row reservation spawn_commit worktree_branch worktree_argument max_concurrency open_reservations
   local parent_start
   if [ -z "$ledger" ]; then
     ledger="$(repository_root)/.git-loopy/subagents.jsonl"
@@ -684,6 +710,7 @@ reserve() {
   spawn_commit="$(git rev-parse HEAD)"
   repo_root="$(repository_root)"
   worktree_branch="git-loopy/reservation-${$}-${RANDOM}"
+  worktree_argument="$worktree"
   worktree="$(python3 -c 'import os; import sys; print(os.path.realpath(os.path.abspath(sys.argv[1])))' "$worktree")"
   [[ "$parent_pid" =~ ^[1-9][0-9]*$ ]] || {
     echo "error: --parent-pid must be a process id" >&2
@@ -757,7 +784,7 @@ PY
   # next; appending the row to the ledger commits it. Refuse a path or branch that
   # already exists first: rollback proves what this transaction made from the
   # branch it created, which only means anything if that branch was free.
-  if [ -e "$worktree" ] || [ -L "$worktree" ]; then
+  if [ -e "$worktree" ] || [ -L "$worktree" ] || [ -L "$worktree_argument" ]; then
     echo "error: worktree path already exists: $worktree" >&2
     exit 1
   fi
@@ -1359,7 +1386,7 @@ PY
 # made here rather than by the caller, so creating and marking it is one journaled
 # transaction and no interruption can leave a worktree nothing vouches for.
 claim() {
-  local worktree="" owner_pid="" create_branch="" owner_start ledger_dir spawn_commit
+  local worktree="" owner_pid="" create_branch="" owner_start ledger_dir spawn_commit worktree_argument
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -1395,6 +1422,7 @@ claim() {
 
   repo_root="$(repository_root)"
   spawn_commit="$(git rev-parse HEAD)"
+  worktree_argument="$worktree"
   worktree="$(python3 -c 'import os; import sys; print(os.path.realpath(os.path.abspath(sys.argv[1])))' "$worktree")"
   if [ -z "$ledger" ]; then
     ledger="$repo_root/.git-loopy/subagents.jsonl"
@@ -1408,7 +1436,7 @@ claim() {
   # Refuse a path or branch that already exists, before anything claims the right
   # to undo them. Rollback proves what this transaction made from the branch it
   # created, which only means anything if that branch was free to begin with.
-  if [ -e "$worktree" ] || [ -L "$worktree" ]; then
+  if [ -e "$worktree" ] || [ -L "$worktree" ] || [ -L "$worktree_argument" ]; then
     echo "error: worktree path already exists: $worktree" >&2
     exit 1
   fi

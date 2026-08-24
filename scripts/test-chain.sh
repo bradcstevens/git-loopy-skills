@@ -267,6 +267,9 @@ fi
 if ! git -C "$tmp_dir" rev-parse --verify --quiet race-winner >/dev/null; then
   err "rollback deleted the branch of a worktree it did not create"
 fi
+if ! git -C "$tmp_dir" worktree list --porcelain | grep -qxF "worktree $race_worktree"; then
+  err "rollback unregistered a worktree it did not create"
+fi
 if [ ! -f "$claim_ledger.pending" ]; then
   err "rollback dropped the record of a worktree it refused to remove"
 fi
