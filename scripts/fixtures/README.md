@@ -14,6 +14,18 @@ returning `{"reason":"unmatched-payload"}` against a live ledger, which is the d
 the run was launched by a custom `implement-agent`, and the runtime set `agentName` to the agent
 *type*, not to the descriptive name the caller bound.
 
+## `subagent-stop-hook-invocation-without-identity.json`
+
+The other shape the runtime sends, captured the same way. It carries neither `agentId` nor
+`agentType`, the shape 61% of real `subagentStop` traffic arrives in: the two fields are perfectly
+correlated, so a payload has both or neither, and which shape a run produces follows the session it
+was launched from rather than the agent it ran (#70). Requiring
+either one rejected all of it at exit 2, before the match ran at all, and `complete` finds the row
+for a payload in this shape by session, worktree and agent type instead.
+
+Keep both fixtures. Each covers one tier of the match, and a change that breaks one while the other
+still passes is exactly the failure mode this directory exists to catch.
+
 To capture another one:
 
 ```bash
@@ -34,3 +46,6 @@ PY
 
 Rewrite as little as possible when a test uses one. `cwd` has to become a path that exists on the
 machine running the suite; every field an assertion depends on should stay exactly as captured.
+Where the two fixtures point `cwd` differs, and deliberately: the with-identity one is repointed at
+the repository, because it must be matched by identity and never by directory, while the
+no-identity one is repointed at the row's worktree, because the directory is the clause under test.
