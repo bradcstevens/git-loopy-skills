@@ -258,10 +258,14 @@ chain `chain.sh claim --worktree <path> --owner-pid "$PPID"` onto it so the new
 worktree records its owner before the agent writes anything else. That worktree
 is the second producer of an ownership marker: it never passes through the
 chain's `reserve`, so without `claim` nothing vouches for it and a later reader
-cannot tell it from abandoned clutter. `claim` writes the same marker `reserve`
-writes — give the prompt that one command and do not restate the format. Splice
-in this skill's own absolute path to `chain.sh`, because the fresh session starts
-somewhere that has not loaded `/next`.
+cannot tell it from abandoned clutter. The prompt creates that worktree, so the
+prompt also undoes it — write the pair as `git worktree add <path> -b <branch> &&
+{ chain.sh claim --worktree <path> --owner-pid "$PPID" || git worktree remove
+--force <path>; }`, so a worktree that cannot be marked does not survive being
+made. `claim` writes the same marker `reserve` writes — give the prompt that one
+command and do not restate the format. Splice in this skill's own absolute path
+to `chain.sh`, because the fresh session starts somewhere that has not loaded
+`/next`.
 
 Carry into the prompt every constraint that came from live state and is absent
 from the target's own record: the worktree to work in, the files it shares with

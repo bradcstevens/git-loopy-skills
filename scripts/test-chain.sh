@@ -1477,17 +1477,19 @@ fi
 
 # A SIGKILL in the other half of the window — after the row is published but
 # before the pending record is cleared — must keep the reservation, not undo it.
-python3 - "$tmp_dir/worktree-after-lock-crash" "$$" > "$lock_crash_ledger.pending" <<'PY'
+python3 - "$tmp_dir/worktree-after-lock-crash" "$lock_crash_ledger" > "$lock_crash_ledger.pending" <<'PY'
 import json
 import sys
 
-worktree, parent_pid = sys.argv[1:]
+worktree, ledger_path = sys.argv[1:]
+with open(ledger_path, encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger if line.strip()]
+committed = next(row for row in rows if row["worktree"] == worktree)
 print(json.dumps({
     "branch": "no-such-branch",
     "row": {
         "worktree": worktree,
-        "spawn_time": "2026-08-22T00:01:00Z",
-        "parent_pid": int(parent_pid),
+        "reservation_id": committed["reservation_id"],
     },
 }, separators=(",", ":")))
 PY
@@ -1500,34 +1502,66 @@ if [ ! -f "$tmp_dir/worktree-after-lock-crash/.git-loopy/worktree-owner" ]; then
   err "recovery rolled back a reservation that had already committed"
 fi
 
-# A worktree path reused by a later transaction: an existing row for the same path
-# is not this transaction's commit, so the uncommitted worktree must still go.
+# A retry that reuses every reserve argument: only the reservation's own id tells
+# the new transaction from the row the previous one left, so the unrecorded
+# worktree must still go.
 reuse_worktree="$tmp_dir/worktree-after-lock-crash"
 git -C "$tmp_dir" worktree remove --force "$reuse_worktree"
 git -C "$tmp_dir" worktree add --quiet -b reused-path "$reuse_worktree" >/dev/null
 "$CHAIN" claim --worktree "$reuse_worktree" --owner-pid "$$"
-python3 - "$reuse_worktree" "$$" > "$lock_crash_ledger.pending" <<'PY'
+python3 - "$reuse_worktree" "$lock_crash_ledger" > "$lock_crash_ledger.pending" <<'PY'
 import json
 import sys
 
-worktree, parent_pid = sys.argv[1:]
+worktree, ledger_path = sys.argv[1:]
+with open(ledger_path, encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger if line.strip()]
+committed = next(row for row in rows if row["worktree"] == worktree)
 print(json.dumps({
     "branch": "reused-path",
     "row": {
         "worktree": worktree,
-        "spawn_time": "2026-08-22T09:00:00Z",
-        "parent_pid": int(parent_pid),
+        "spawn_time": committed["spawn_time"],
+        "parent_pid": committed["parent_pid"],
+        "reservation_id": "0" * 32,
     },
 }, separators=(",", ":")))
 PY
 "$CHAIN" recover --ledger "$lock_crash_ledger" --stale-after-seconds 999999999 \
   --now 2026-08-22T09:01:00Z >/dev/null
 if [ -e "$reuse_worktree" ]; then
-  err "an existing row for a reused path was mistaken for an uncommitted reservation's commit"
+  err "a retry that reused every reserve argument was mistaken for its own commit"
 fi
 if git -C "$tmp_dir" rev-parse --verify --quiet reused-path >/dev/null; then
   err "rolling back an uncommitted reservation left its branch behind"
 fi
+
+# A rollback that cannot remove the worktree must keep its record, because
+# dropping it would leave nothing naming the directory it failed to remove.
+stuck_dir="$tmp_dir/worktree-unremovable"
+mkdir -p "$stuck_dir"
+python3 - "$stuck_dir" > "$lock_crash_ledger.pending" <<'PY'
+import json
+import sys
+
+print(json.dumps({
+    "branch": "",
+    "row": {"worktree": sys.argv[1], "reservation_id": "f" * 32},
+}, separators=(",", ":")))
+PY
+if "$CHAIN" recover --ledger "$lock_crash_ledger" --stale-after-seconds 999999999 \
+  --now 2026-08-22T10:00:00Z >/dev/null 2>&1
+then
+  err "recovery reported success after failing to remove an unrecorded worktree"
+fi
+if [ ! -f "$lock_crash_ledger.pending" ]; then
+  err "a failed rollback dropped the record of the worktree it could not remove"
+fi
+if [ -e "$lock_crash_ledger.lock" ]; then
+  err "a failed rollback stranded the ledger lock"
+fi
+rm -f "$lock_crash_ledger.pending"
+rmdir "$stuck_dir"
 
 pidless_lock_ledger="$tmp_dir/.git-loopy/pidless-lock.jsonl"
 mkdir -p "$pidless_lock_ledger.lock"

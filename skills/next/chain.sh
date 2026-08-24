@@ -48,7 +48,7 @@ repo_root=""
 
 cleanup() {
   if [ -n "$pending" ]; then
-    rollback_pending_reservation "$pending"
+    rollback_pending_reservation "$pending" || true
     pending=""
   fi
   if [ "$lock_acquired" -eq 1 ]; then
@@ -156,9 +156,9 @@ write_marker() {
 }
 
 # Print "<worktree>\t<branch>" and succeed when a pending reservation record still
-# needs undoing. The match is on the reserve arguments rather than the worktree
-# path alone, so neither an older closed row for a reused path nor a bind that has
-# since rewritten this row can be mistaken for the commit.
+# needs undoing. The match is on the reservation's own id, so neither a retry that
+# reuses every argument, nor an older row for a reused worktree path, nor a bind
+# that has since rewritten this row can be mistaken for the commit.
 uncommitted_reservation() {
   python3 - "$1" "$ledger" <<'PY'
 import json
@@ -171,12 +171,12 @@ try:
         record = json.load(pending)
     branch = record.get("branch") or ""
     worktree = record["row"]["worktree"]
-    spawn_time = record["row"]["spawn_time"]
-    parent_pid = record["row"]["parent_pid"]
+    reservation_id = record["row"]["reservation_id"]
 except (OSError, ValueError, KeyError, TypeError):
     raise SystemExit(1)
+if not isinstance(reservation_id, str) or not reservation_id:
+    raise SystemExit(1)
 
-resolved = os.path.realpath(os.path.abspath(worktree))
 if os.path.exists(ledger_path):
     with open(ledger_path, encoding="utf-8") as ledger:
         for line in ledger:
@@ -186,13 +186,7 @@ if os.path.exists(ledger_path):
                 row = json.loads(line)
             except json.JSONDecodeError:
                 raise SystemExit(1)
-            recorded = row.get("worktree")
-            if (
-                isinstance(recorded, str)
-                and os.path.realpath(os.path.abspath(recorded)) == resolved
-                and row.get("spawn_time") == spawn_time
-                and row.get("parent_pid") == parent_pid
-            ):
+            if row.get("reservation_id") == reservation_id:
                 raise SystemExit(1)
 
 print(worktree + "\t" + branch)
@@ -201,9 +195,10 @@ PY
 
 # Roll a half-finished reservation forward or back. The pending record names the
 # worktree before it exists and survives a SIGKILL that the EXIT trap cannot; the
-# ledger row is the commit. Whoever next holds the lock therefore finds either a
-# recorded row whose worktree and marker are already durable, or no row at all and
-# undoes the physical half — never a marker without its row.
+# ledger row is the commit. Every command that takes the ledger lock runs this
+# first, so no observer holding the lock can see a marker without its row.
+# A physical rollback that fails keeps its record rather than dropping it, because
+# deleting the record would leave nothing naming the worktree it could not remove.
 rollback_pending_reservation() {
   local pending_path="$1" record pending_worktree pending_branch
 
@@ -212,6 +207,7 @@ rollback_pending_reservation() {
     IFS=$'\t' read -r pending_worktree pending_branch <<< "$record"
     if ! remove_worktree "$pending_worktree"; then
       echo "error: could not remove unrecorded worktree: $pending_worktree" >&2
+      return 1
     fi
     if [ -n "$pending_branch" ]; then
       git -C "$(repository_root)" branch -D "$pending_branch" >/dev/null 2>&1 || true
@@ -469,6 +465,7 @@ plan() {
     mkdir -p "$(dirname "$ledger")"
     lock_dir="$ledger.lock"
     acquire_lock
+    rollback_pending_reservation "$ledger.pending" || true
     guard="$(evaluate_and_record_target_guard "$route" "$target")"
     release_lock
   fi
@@ -677,11 +674,13 @@ PY
   reservation="$(python3 - "$route" "$target" "$spawn_time" "$worktree" "$chain_depth" "$parent_pid" "$parent_start" "$worktree_branch" <<'PY'
 import json
 import sys
+import uuid
 
 (
     route, target, spawn_time, worktree, chain_depth, parent_pid, parent_start, branch
 ) = sys.argv[1:]
 row = {
+    "reservation_id": uuid.uuid4().hex,
     "route": route,
     "target": target,
     "spawn_time": spawn_time,
@@ -752,6 +751,7 @@ bind() {
   worktree="$(python3 -c 'import os; import sys; print(os.path.realpath(os.path.abspath(sys.argv[1])))' "$worktree")"
   mkdir -p "$ledger_dir"
   acquire_lock
+  rollback_pending_reservation "$ledger.pending" || true
 
   tmp="$(mktemp "$ledger_dir/.subagents.XXXXXX")"
   if ! python3 - "$ledger" "$tmp" "$worktree" "$session_id" "$agent_id" "$agent_type" "$agent_name" <<'PY'
@@ -825,6 +825,7 @@ complete() {
   lock_dir="$ledger.lock"
 
   acquire_lock
+  rollback_pending_reservation "$ledger.pending" || true
 
   tmp="$(mktemp "$ledger_dir/.subagents.XXXXXX")"
   metadata="$tmp.worktree"
