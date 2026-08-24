@@ -17,11 +17,16 @@ import re
 import sys
 
 
+HEAD_RE = re.compile(r"[0-9a-f]{40}")
 RECORD_RE = re.compile(r"^review-clean: head=([0-9a-f]{40})$")
 
 
+def valid_head(head: str) -> bool:
+    return HEAD_RE.fullmatch(head) is not None
+
+
 def record(head: str) -> str:
-    if not re.fullmatch(r"[0-9a-f]{40}", head):
+    if not valid_head(head):
         raise ValueError("head must be a 40-character lowercase SHA-1")
     return f"review-clean: head={head}"
 
@@ -52,7 +57,7 @@ def main() -> int:
             parser.error(str(error))
         return 0
 
-    if not re.fullmatch(r"[0-9a-f]{40}", args.head):
+    if not valid_head(args.head):
         parser.error("head must be a 40-character lowercase SHA-1")
     return 0 if matching_record(sys.stdin.read(), args.head) else 1
 
