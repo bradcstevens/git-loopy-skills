@@ -253,9 +253,15 @@ code fence. For `/compact`, pass the instruction the phase-boundary procedure re
 `Context` to the phase-boundary procedure. When another agent holds the primary
 worktree, carry that constraint into the prompt and do not direct work into it.
 If the procedure selects `Fresh session in a new worktree`, open the prompt with
-the `git worktree add` that clears the constraint before the agent writes. The
-chain's `reserve` operation creates and records the ownership marker; do not
-reimplement that protocol in the prompt.
+the `git worktree add` that clears the constraint before the agent writes, and
+chain `chain.sh claim --worktree <path> --owner-pid "$PPID"` onto it so the new
+worktree records its owner before the agent writes anything else. That worktree
+is the second producer of an ownership marker: it never passes through the
+chain's `reserve`, so without `claim` nothing vouches for it and a later reader
+cannot tell it from abandoned clutter. `claim` writes the same marker `reserve`
+writes — give the prompt that one command and do not restate the format. Splice
+in this skill's own absolute path to `chain.sh`, because the fresh session starts
+somewhere that has not loaded `/next`.
 
 Carry into the prompt every constraint that came from live state and is absent
 from the target's own record: the worktree to work in, the files it shares with

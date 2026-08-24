@@ -16,12 +16,18 @@ usage:
   chain.sh complete [--ledger PATH] < subagent-stop-payload.json
   chain.sh recover --stale-after-seconds N [--now TIMESTAMP] [--ledger PATH]
   chain.sh owner --worktree PATH
+  chain.sh claim --worktree PATH --owner-pid PID
 
 A PID-less ledger lock is recoverable after CHAIN_LOCK_STALE_SECONDS (default: 300).
 --parent-pid names the running process whose death orphans the reservation, which
 is the session that will bind the run and never the shell that invokes this script.
 Worktree ownership markers live at .git-loopy/worktree-owner and contain
-"<pid>\t<process start time>\n"; compare both values to determine liveness.
+"<pid>\t<process start time>\n"; compare both values to determine liveness. The
+start time is that pid's `ps -o lstart=` output read under TZ=UTC, with runs of
+whitespace collapsed to single spaces. Liveness compares the two strings, so a
+marker recorded from local-time `ps` reports a live owner dead: every writer must
+produce the value in UTC. Use `claim` to mark a worktree this script did not
+create, rather than writing the file by hand.
 Route repetition and chain depth count bound rows only. Reservations claim
 capacity and a worktree, but do not represent a spawned hop.
 The two --no-ready and --all-collide forms end a fan-out fill; they are mutually
@@ -37,22 +43,20 @@ lock_dir=""
 tmp=""
 metadata=""
 lock_acquired=0
-created_worktree=0
-created_worktree_path=""
+pending=""
 repo_root=""
 
 cleanup() {
+  if [ -n "$pending" ]; then
+    rollback_pending_reservation "$pending"
+    pending=""
+  fi
   if [ "$lock_acquired" -eq 1 ]; then
     rm -f "$lock_dir/pid"
     rmdir "$lock_dir" 2>/dev/null || true
   fi
   [ -z "$tmp" ] || rm -f "$tmp"
   [ -z "$metadata" ] || rm -f "$metadata"
-  if [ "$created_worktree" -eq 1 ]; then
-    if ! git -C "$repo_root" worktree remove --force "$created_worktree_path"; then
-      echo "error: could not remove unrecorded worktree: $created_worktree_path" >&2
-    fi
-  fi
 }
 trap cleanup EXIT
 trap 'exit 130' INT TERM
@@ -137,6 +141,85 @@ remove_worktree() {
   fi
 }
 
+write_marker() {
+  local worktree="$1" owner_pid="$2" owner_start="$3" marker_dir marker_tmp
+
+  marker_dir="$worktree/.git-loopy"
+  marker_tmp="$marker_dir/.worktree-owner.$$"
+  if ! mkdir -p "$marker_dir" ||
+    ! printf '%s\t%s\n' "$owner_pid" "$owner_start" > "$marker_tmp" ||
+    ! mv "$marker_tmp" "$marker_dir/worktree-owner"
+  then
+    rm -f "$marker_tmp"
+    return 1
+  fi
+}
+
+# Print "<worktree>\t<branch>" and succeed when a pending reservation record still
+# needs undoing. The match is on the reserve arguments rather than the worktree
+# path alone, so neither an older closed row for a reused path nor a bind that has
+# since rewritten this row can be mistaken for the commit.
+uncommitted_reservation() {
+  python3 - "$1" "$ledger" <<'PY'
+import json
+import os
+import sys
+
+pending_path, ledger_path = sys.argv[1:]
+try:
+    with open(pending_path, encoding="utf-8") as pending:
+        record = json.load(pending)
+    branch = record.get("branch") or ""
+    worktree = record["row"]["worktree"]
+    spawn_time = record["row"]["spawn_time"]
+    parent_pid = record["row"]["parent_pid"]
+except (OSError, ValueError, KeyError, TypeError):
+    raise SystemExit(1)
+
+resolved = os.path.realpath(os.path.abspath(worktree))
+if os.path.exists(ledger_path):
+    with open(ledger_path, encoding="utf-8") as ledger:
+        for line in ledger:
+            if not line.strip():
+                continue
+            try:
+                row = json.loads(line)
+            except json.JSONDecodeError:
+                raise SystemExit(1)
+            recorded = row.get("worktree")
+            if (
+                isinstance(recorded, str)
+                and os.path.realpath(os.path.abspath(recorded)) == resolved
+                and row.get("spawn_time") == spawn_time
+                and row.get("parent_pid") == parent_pid
+            ):
+                raise SystemExit(1)
+
+print(worktree + "\t" + branch)
+PY
+}
+
+# Roll a half-finished reservation forward or back. The pending record names the
+# worktree before it exists and survives a SIGKILL that the EXIT trap cannot; the
+# ledger row is the commit. Whoever next holds the lock therefore finds either a
+# recorded row whose worktree and marker are already durable, or no row at all and
+# undoes the physical half — never a marker without its row.
+rollback_pending_reservation() {
+  local pending_path="$1" record pending_worktree pending_branch
+
+  [ -f "$pending_path" ] || return 0
+  if record="$(uncommitted_reservation "$pending_path")"; then
+    IFS=$'\t' read -r pending_worktree pending_branch <<< "$record"
+    if ! remove_worktree "$pending_worktree"; then
+      echo "error: could not remove unrecorded worktree: $pending_worktree" >&2
+    fi
+    if [ -n "$pending_branch" ]; then
+      git -C "$(repository_root)" branch -D "$pending_branch" >/dev/null 2>&1 || true
+    fi
+  fi
+  rm -f "$pending_path"
+}
+
 ledger_has_open_worktree() {
   python3 - "$ledger" "$1" <<'PY'
 import json
@@ -196,49 +279,6 @@ with open(ledger, encoding="utf-8") as ledger_file:
 
 raise SystemExit(1)
 PY
-}
-
-mark_record_failed() {
-  local worktree="$1"
-
-  tmp="$(mktemp "$(dirname "$ledger")/.subagents.XXXXXX")"
-  python3 - "$ledger" "$tmp" "$worktree" <<'PY'
-import datetime
-import json
-import os
-import sys
-
-ledger_path, output_path, worktree = sys.argv[1:]
-worktree = os.path.realpath(os.path.abspath(worktree))
-with open(ledger_path, encoding="utf-8") as ledger:
-    rows = [json.loads(line) for line in ledger if line.strip()]
-
-matches = [
-    row
-    for row in rows
-    if (
-        isinstance(row.get("worktree"), str)
-        and os.path.realpath(os.path.abspath(row["worktree"])) == worktree
-        and not row.get("finish_time")
-    )
-]
-if len(matches) != 1:
-    print("error: could not close failed worktree reservation", file=sys.stderr)
-    raise SystemExit(2)
-
-matches[0]["finish_time"] = (
-    datetime.datetime.now(datetime.timezone.utc)
-    .isoformat(timespec="seconds")
-    .replace("+00:00", "Z")
-)
-matches[0]["outcome"] = "failed"
-
-with open(output_path, "w", encoding="utf-8") as output:
-    for row in rows:
-        output.write(json.dumps(row, separators=(",", ":")) + "\n")
-PY
-  mv "$tmp" "$ledger"
-  tmp=""
 }
 
 concurrency_limit() {
@@ -553,8 +593,8 @@ reserve() {
     echo "error: --chain-depth must be a non-negative integer" >&2
     exit 2
   }
-  local ledger_dir row spawn_commit worktree_branch max_concurrency open_reservations
-  local parent_start marker_dir marker_tmp owner_pid owner_start
+  local ledger_dir row reservation spawn_commit worktree_branch max_concurrency open_reservations
+  local parent_start
   if [ -z "$ledger" ]; then
     ledger="$(repository_root)/.git-loopy/subagents.jsonl"
   fi
@@ -577,6 +617,7 @@ reserve() {
   max_concurrency="$(concurrency_limit)" || return $?
 
   acquire_lock
+  rollback_pending_reservation "$ledger.pending"
 
   local collision_status guard
   if ledger_has_open_worktree "$worktree"; then
@@ -629,33 +670,17 @@ PY
     exit 1
   fi
 
-  if [ -n "${CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE:-}" ]; then
-    sleep "$CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE"
-  fi
-  marker_dir="$worktree/.git-loopy"
-  marker_tmp="$marker_dir/.worktree-owner.$$"
-  owner_pid="$parent_pid"
-  owner_start="$parent_start"
-  if ! git -C "$repo_root" worktree add -b "$worktree_branch" "$worktree" "$spawn_commit"; then
-    git -C "$repo_root" worktree remove --force "$worktree" 2>/dev/null || git -C "$repo_root" worktree prune
-    exit 1
-  fi
-  created_worktree=1
-  created_worktree_path="$worktree"
-  if ! mkdir -p "$marker_dir" ||
-    ! printf '%s\t%s\n' "$owner_pid" "$owner_start" > "$marker_tmp" ||
-    ! mv "$marker_tmp" "$marker_dir/worktree-owner"
-  then
-    rm -f "$marker_tmp"
-    exit 1
-  fi
-
-  tmp="$(mktemp "$ledger_dir/.subagents.XXXXXX")"
-  row="$(python3 - "$route" "$target" "$spawn_time" "$worktree" "$chain_depth" "$parent_pid" "$parent_start" <<'PY'
+  # One reservation, one transaction. The pending record holds the row this
+  # reserve is about to commit and names its worktree before that worktree
+  # exists, so a hard kill anywhere below is undone by whoever takes this lock
+  # next; appending the row to the ledger commits it.
+  reservation="$(python3 - "$route" "$target" "$spawn_time" "$worktree" "$chain_depth" "$parent_pid" "$parent_start" "$worktree_branch" <<'PY'
 import json
 import sys
 
-route, target, spawn_time, worktree, chain_depth, parent_pid, parent_start = sys.argv[1:]
+(
+    route, target, spawn_time, worktree, chain_depth, parent_pid, parent_start, branch
+) = sys.argv[1:]
 row = {
     "route": route,
     "target": target,
@@ -668,8 +693,22 @@ row = {
     "outcome": "",
 }
 print(json.dumps(row, separators=(",", ":")))
+print(json.dumps({"branch": branch, "row": row}, separators=(",", ":")))
 PY
 )"
+  row="${reservation%%$'\n'*}"
+
+  pending="$ledger.pending"
+  printf '%s\n' "${reservation#*$'\n'}" > "$pending.$$"
+  mv "$pending.$$" "$pending"
+
+  if [ -n "${CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE:-}" ]; then
+    sleep "$CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE"
+  fi
+  git -C "$repo_root" worktree add -b "$worktree_branch" "$worktree" "$spawn_commit" || exit 1
+  write_marker "$worktree" "$parent_pid" "$parent_start" || exit 1
+
+  tmp="$(mktemp "$ledger_dir/.subagents.XXXXXX")"
 
   if [ -f "$ledger" ]; then
     cat "$ledger" > "$tmp"
@@ -681,7 +720,8 @@ PY
   fi
   mv "$tmp" "$ledger"
   tmp=""
-  created_worktree=0
+  rm -f "$pending"
+  pending=""
   release_lock
 }
 
@@ -1045,7 +1085,7 @@ recover() {
     ledger="$(repository_root)/.git-loopy/subagents.jsonl"
   fi
 
-  [ -e "$ledger" ] || {
+  [ -e "$ledger" ] || [ -e "$ledger.pending" ] || {
     printf '{"recovered":0,"targets":[]}\n'
     return
   }
@@ -1055,6 +1095,7 @@ recover() {
   mkdir -p "$ledger_dir"
   lock_dir="$ledger.lock"
   acquire_lock
+  rollback_pending_reservation "$ledger.pending"
 
   tmp="$(mktemp "$ledger_dir/.subagents.XXXXXX")"
   metadata="$tmp.worktrees"
@@ -1212,6 +1253,39 @@ print('{"alive":' + ("false" if liveness.stdout.strip() == "true" else "true") +
 PY
 }
 
+# The second producer of an ownership marker: a worktree an agent made for itself
+# on a /next prompt, which never passes through reserve and would otherwise be
+# indistinguishable from abandoned clutter.
+claim() {
+  local worktree="" owner_pid="" owner_start
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --worktree) worktree="${2:?missing value for --worktree}"; shift 2 ;;
+      --owner-pid) owner_pid="${2:?missing value for --owner-pid}"; shift 2 ;;
+      *) usage ;;
+    esac
+  done
+  [ -n "$worktree" ] && [ -n "$owner_pid" ] || usage
+  [[ "$owner_pid" =~ ^[1-9][0-9]*$ ]] || {
+    echo "error: --owner-pid must be a process id" >&2
+    exit 2
+  }
+  [ -d "$worktree" ] || {
+    echo "error: worktree does not exist: $worktree" >&2
+    exit 2
+  }
+  owner_start="$(process_start "$owner_pid")"
+  [ -n "$owner_start" ] || {
+    echo "error: claiming owner is not running: $owner_pid" >&2
+    exit 2
+  }
+  write_marker "$worktree" "$owner_pid" "$owner_start" || {
+    echo "error: could not write ownership marker: $worktree" >&2
+    exit 1
+  }
+}
+
 [ "$#" -gt 0 ] || usage
 command="$1"
 shift
@@ -1222,5 +1296,6 @@ case "$command" in
   complete) complete "$@" ;;
   recover) recover "$@" ;;
   owner) owner "$@" ;;
+  claim) claim "$@" ;;
   *) usage ;;
 esac

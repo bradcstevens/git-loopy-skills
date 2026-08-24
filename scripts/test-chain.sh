@@ -140,6 +140,31 @@ assert " ".join(
 PY
 fi
 
+if [ "$("$CHAIN" owner --worktree "$tmp_dir/worktree-1")" != '{"alive":true}' ]; then
+  err "owner did not read a live owner from the marker reserve wrote"
+fi
+
+# The second producer: a worktree an agent made for itself on a /next prompt.
+prompt_worktree="$tmp_dir/worktree-prompt-made"
+git -C "$tmp_dir" worktree add --quiet -b prompt-made "$prompt_worktree" >/dev/null
+"$CHAIN" claim --worktree "$prompt_worktree" --owner-pid "$$"
+if [ ! -f "$prompt_worktree/.git-loopy/worktree-owner" ]; then
+  err "claim did not mark a prompt-created worktree"
+elif [ "$(cat "$prompt_worktree/.git-loopy/worktree-owner")" != "$(cat "$tmp_dir/worktree-1/.git-loopy/worktree-owner")" ]; then
+  err "claim and reserve wrote different markers for the same owner"
+fi
+if [ "$("$CHAIN" owner --worktree "$prompt_worktree")" != '{"alive":true}' ]; then
+  err "owner did not read a live owner from a claimed worktree"
+fi
+if "$CHAIN" claim --worktree "$tmp_dir/worktree-absent" --owner-pid "$$" 2>/dev/null; then
+  err "claim marked a worktree that does not exist"
+fi
+if "$CHAIN" claim --worktree "$prompt_worktree" --owner-pid 999999999 2>/dev/null; then
+  err "claim marked a worktree for an owner that is not running"
+fi
+git -C "$tmp_dir" worktree remove --force "$prompt_worktree"
+git -C "$tmp_dir" branch -D prompt-made >/dev/null
+
 "$CHAIN" bind \
   --ledger "$ledger" \
   --worktree "$tmp_dir/worktree-1" \
@@ -1356,28 +1381,50 @@ CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE=1 "$CHAIN" reserve --parent-pid "$$" \
   --worktree "$tmp_dir/worktree-reservation-crash" \
   --chain-depth 1 &
 reservation_crash_pid=$!
-sleep 0.1
-kill -KILL "$reservation_crash_pid"
-wait "$reservation_crash_pid" 2>/dev/null || true
-if [ -e "$reservation_ledger" ] || [ -e "$tmp_dir/worktree-reservation-crash" ]; then
-  err "reservation crash fixture published a partial reservation"
+for _ in $(seq 1 500); do
+  [ -f "$reservation_ledger.pending" ] && break
+  sleep 0.01
+done
+if [ ! -f "$reservation_ledger.pending" ]; then
+  err "reservation crash fixture did not record its pending reservation"
+else
+  kill -KILL "$reservation_crash_pid"
+  wait "$reservation_crash_pid" 2>/dev/null || true
+fi
+
+if [ -e "$reservation_ledger" ]; then
+  err "reservation crash fixture published a reservation row before its worktree"
+fi
+if [ -e "$tmp_dir/worktree-reservation-crash" ]; then
+  err "reservation crash fixture created its worktree before the test could interrupt it"
+fi
+
+reservation_recovery="$("$CHAIN" recover --ledger "$reservation_ledger" --stale-after-seconds 60 --now 2026-08-22T00:05:00Z)"
+assert_plan "uncommitted reservation recovery" "$reservation_recovery" \
+  '{"recovered":0,"targets":[]}'
+if [ -e "$reservation_ledger.pending" ]; then
+  err "recovery left the pending record of an uncommitted reservation behind"
+fi
+if [ -e "$tmp_dir/worktree-reservation-crash" ]; then
+  err "recovery left an uncommitted reservation worktree behind"
 fi
 
 lock_crash_ledger="$tmp_dir/.git-loopy/lock-crash.jsonl"
+lock_crash_worktree="$tmp_dir/worktree-lock-crash"
 CHAIN_RESERVE_PAUSE_BEFORE_COMMIT=1 "$CHAIN" reserve --parent-pid "$$" \
   --ledger "$lock_crash_ledger" \
   --route implement \
   --target issue-lock-crash \
   --spawn-time 2026-08-22T00:00:00Z \
-  --worktree "$tmp_dir/worktree-lock-crash" \
+  --worktree "$lock_crash_worktree" \
   --chain-depth 1 &
 lock_crash_pid=$!
-for _ in $(seq 1 100); do
-  [ -f "$lock_crash_ledger.lock/pid" ] && break
+for _ in $(seq 1 500); do
+  [ -f "$lock_crash_worktree/.git-loopy/worktree-owner" ] && break
   sleep 0.01
 done
-if [ ! -f "$lock_crash_ledger.lock/pid" ]; then
-  err "SIGKILL recovery fixture did not acquire the ledger lock"
+if [ ! -f "$lock_crash_worktree/.git-loopy/worktree-owner" ]; then
+  err "SIGKILL recovery fixture did not reach its marked worktree"
 else
   kill -KILL "$lock_crash_pid"
   wait "$lock_crash_pid" 2>/dev/null || true
@@ -1386,8 +1433,11 @@ fi
 if [ ! -d "$lock_crash_ledger.lock" ]; then
   err "SIGKILL did not leave the ledger lock behind"
 fi
-if [ -e "$tmp_dir/worktree-lock-crash" ]; then
-  git -C "$REPO" worktree remove --force "$tmp_dir/worktree-lock-crash"
+if [ -e "$lock_crash_ledger" ]; then
+  err "SIGKILL published a reservation row past its commit point"
+fi
+if [ ! -f "$lock_crash_ledger.pending" ]; then
+  err "SIGKILL did not leave the pending record of its marked worktree behind"
 fi
 
 reserve_and_bind \
@@ -1404,6 +1454,79 @@ reserve_and_bind \
 
 if [ -e "$lock_crash_ledger.lock" ]; then
   err "reserve did not recover the SIGKILL-stranded ledger lock"
+fi
+if [ -e "$lock_crash_worktree" ]; then
+  err "reserve did not roll back the marked worktree of an uncommitted reservation"
+fi
+if [ -e "$lock_crash_ledger.pending" ]; then
+  err "reserve did not clear the pending record of an uncommitted reservation"
+fi
+if ! python3 - "$lock_crash_ledger" "$lock_crash_worktree" <<'PY'
+import json
+import sys
+
+ledger_path, rolled_back = sys.argv[1:]
+with open(ledger_path, encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger if line.strip()]
+assert [row["target"] for row in rows] == ["issue-after-lock-crash"], rows
+assert all(row["worktree"] != rolled_back for row in rows), rows
+PY
+then
+  err "a SIGKILL before the commit point left a reservation row behind"
+fi
+
+# A SIGKILL in the other half of the window — after the row is published but
+# before the pending record is cleared — must keep the reservation, not undo it.
+python3 - "$tmp_dir/worktree-after-lock-crash" "$$" > "$lock_crash_ledger.pending" <<'PY'
+import json
+import sys
+
+worktree, parent_pid = sys.argv[1:]
+print(json.dumps({
+    "branch": "no-such-branch",
+    "row": {
+        "worktree": worktree,
+        "spawn_time": "2026-08-22T00:01:00Z",
+        "parent_pid": int(parent_pid),
+    },
+}, separators=(",", ":")))
+PY
+"$CHAIN" recover --ledger "$lock_crash_ledger" --stale-after-seconds 999999999 \
+  --now 2026-08-22T00:02:00Z >/dev/null
+if [ -e "$lock_crash_ledger.pending" ]; then
+  err "recovery left the pending record of a committed reservation behind"
+fi
+if [ ! -f "$tmp_dir/worktree-after-lock-crash/.git-loopy/worktree-owner" ]; then
+  err "recovery rolled back a reservation that had already committed"
+fi
+
+# A worktree path reused by a later transaction: an existing row for the same path
+# is not this transaction's commit, so the uncommitted worktree must still go.
+reuse_worktree="$tmp_dir/worktree-after-lock-crash"
+git -C "$tmp_dir" worktree remove --force "$reuse_worktree"
+git -C "$tmp_dir" worktree add --quiet -b reused-path "$reuse_worktree" >/dev/null
+"$CHAIN" claim --worktree "$reuse_worktree" --owner-pid "$$"
+python3 - "$reuse_worktree" "$$" > "$lock_crash_ledger.pending" <<'PY'
+import json
+import sys
+
+worktree, parent_pid = sys.argv[1:]
+print(json.dumps({
+    "branch": "reused-path",
+    "row": {
+        "worktree": worktree,
+        "spawn_time": "2026-08-22T09:00:00Z",
+        "parent_pid": int(parent_pid),
+    },
+}, separators=(",", ":")))
+PY
+"$CHAIN" recover --ledger "$lock_crash_ledger" --stale-after-seconds 999999999 \
+  --now 2026-08-22T09:01:00Z >/dev/null
+if [ -e "$reuse_worktree" ]; then
+  err "an existing row for a reused path was mistaken for an uncommitted reservation's commit"
+fi
+if git -C "$tmp_dir" rev-parse --verify --quiet reused-path >/dev/null; then
+  err "rolling back an uncommitted reservation left its branch behind"
 fi
 
 pidless_lock_ledger="$tmp_dir/.git-loopy/pidless-lock.jsonl"
