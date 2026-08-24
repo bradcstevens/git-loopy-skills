@@ -23,8 +23,8 @@ nobody. The log lands outside the repository, clear of any worktree another agen
 owns.
 
 When `/next` returned `Fresh session in a new worktree`, still launch from the
-current directory: its prompt opens with the `git worktree add` that moves the
-agent before it writes.
+current directory: its prompt opens with the `chain.sh claim` that makes the
+worktree and moves the agent before it writes.
 
 Confirm the agent is alive before reporting it — a few seconds on, `$LOG` shows
 its first tool calls. `nohup ... &` reports success whether the session started

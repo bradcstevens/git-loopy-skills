@@ -175,6 +175,48 @@ if [ -e "$claim_ledger.pending" ]; then
   err "a failed claim --create-branch left its journal behind"
 fi
 
+# A collision must be refused before anything claims the right to undo it: an
+# unmarked worktree and a pre-existing branch both belong to somebody else.
+bystander_worktree="$tmp_dir/worktree-bystander"
+git -C "$tmp_dir" worktree add --quiet -b bystander "$bystander_worktree" >/dev/null
+if "$CHAIN" claim --ledger "$claim_ledger" --worktree "$bystander_worktree" \
+  --create-branch bystander-new --owner-pid "$$" 2>/dev/null
+then
+  err "claim --create-branch took over an unmarked worktree"
+fi
+if [ ! -d "$bystander_worktree" ]; then
+  err "a failed claim --create-branch destroyed an unmarked worktree it did not make"
+fi
+if "$CHAIN" claim --ledger "$claim_ledger" --worktree "$tmp_dir/worktree-branch-taken" \
+  --create-branch bystander --owner-pid "$$" 2>/dev/null
+then
+  err "claim --create-branch reused a branch that already existed"
+fi
+if ! git -C "$tmp_dir" rev-parse --verify --quiet bystander >/dev/null; then
+  err "a failed claim --create-branch deleted a branch it did not make"
+fi
+if [ -e "$claim_ledger.pending" ]; then
+  err "a refused claim --create-branch left its journal behind"
+fi
+git -C "$tmp_dir" worktree remove --force "$bystander_worktree"
+git -C "$tmp_dir" branch -D bystander >/dev/null
+
+# The new worktree starts from the caller's HEAD, not the main checkout's.
+caller_worktree="$tmp_dir/worktree-caller"
+git -C "$tmp_dir" worktree add --quiet -b caller-base "$caller_worktree" >/dev/null
+git -C "$caller_worktree" -c user.name=test -c user.email=test@example.com \
+  commit --quiet --allow-empty -m "ahead of the main checkout"
+caller_head="$(git -C "$caller_worktree" rev-parse HEAD)"
+(cd "$caller_worktree" && "$CHAIN" claim --ledger "$claim_ledger" \
+  --worktree "$tmp_dir/worktree-from-caller" --create-branch from-caller --owner-pid "$$")
+if [ "$(git -C "$tmp_dir/worktree-from-caller" rev-parse HEAD)" != "$caller_head" ]; then
+  err "claim --create-branch based the new worktree on the wrong commit"
+fi
+git -C "$tmp_dir" worktree remove --force "$tmp_dir/worktree-from-caller"
+git -C "$tmp_dir" branch -D from-caller >/dev/null
+git -C "$tmp_dir" worktree remove --force "$caller_worktree"
+git -C "$tmp_dir" branch -D caller-base >/dev/null
+
 # An interrupted claim leaves an unmarked worktree; the marker is its commit, so
 # recovery must undo it exactly as it undoes an uncommitted reservation.
 unmarked_worktree="$tmp_dir/worktree-claim-crash"
@@ -1616,21 +1658,43 @@ rmdir "$stuck_dir"
 
 # An unreadable record is not a committed one. Keep it and fail, rather than
 # dropping the last thing naming whatever worktree it described.
-for unreadable in 'not json' '{"worktree":"/tmp/x","commit":"row"}' '{"worktree":"/tmp/x","commit":"nonsense"}'; do
+for unreadable in \
+  'not json' \
+  '[]' \
+  '{"worktree":"/tmp/x","commit":"row"}' \
+  '{"worktree":"/tmp/x","commit":"nonsense"}' \
+  '{"worktree":"/tmp/x","branch":5,"commit":"marker"}' \
+  '{"commit":"marker"}'
+do
   printf '%s\n' "$unreadable" > "$lock_crash_ledger.pending"
   if "$CHAIN" recover --ledger "$lock_crash_ledger" --stale-after-seconds 999999999 \
     --now 2026-08-22T11:00:00Z >/dev/null 2>&1
   then
-    err "recovery reported success on an unreadable pending reservation record"
+    err "recovery reported success on an unreadable pending worktree record"
   fi
   if [ ! -f "$lock_crash_ledger.pending" ]; then
-    err "an unreadable pending reservation record was deleted as though it had committed"
+    err "an unreadable pending worktree record was deleted as though it had committed"
   fi
   if [ -e "$lock_crash_ledger.lock" ]; then
-    err "an unreadable pending reservation record stranded the ledger lock"
+    err "an unreadable pending worktree record stranded the ledger lock"
   fi
 done
 rm -f "$lock_crash_ledger.pending"
+
+# A ledger the sweep cannot read is unreadable state too, not proof of a commit.
+unreadable_ledger="$tmp_dir/.git-loopy/unreadable.jsonl"
+printf '["not","a","row"]\n' > "$unreadable_ledger"
+printf '{"worktree":"/tmp/x","branch":"","commit":"row","reservation_id":"%s"}\n' "$(printf 'a%.0s' $(seq 32))" \
+  > "$unreadable_ledger.pending"
+if "$CHAIN" recover --ledger "$unreadable_ledger" --stale-after-seconds 999999999 \
+  --now 2026-08-22T12:00:00Z >/dev/null 2>&1
+then
+  err "recovery reported success while the ledger it swept could not be read"
+fi
+if [ ! -f "$unreadable_ledger.pending" ]; then
+  err "an unreadable ledger caused its pending worktree record to be deleted"
+fi
+rm -f "$unreadable_ledger" "$unreadable_ledger.pending"
 
 pidless_lock_ledger="$tmp_dir/.git-loopy/pidless-lock.jsonl"
 mkdir -p "$pidless_lock_ledger.lock"

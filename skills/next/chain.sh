@@ -49,7 +49,7 @@ repo_root=""
 
 cleanup() {
   if [ -n "$pending" ]; then
-    rollback_pending_reservation "$pending" || true
+    rollback_pending_worktree "$pending" || true
     pending=""
   fi
   if [ "$lock_acquired" -eq 1 ]; then
@@ -156,81 +156,98 @@ write_marker() {
   fi
 }
 
-# Decide the fate of a pending record: exit 0 and print "<worktree>\t<branch>"
-# when it still needs undoing, exit 1 when its transaction committed, exit 2 when
-# the record or the ledger cannot be read. The three are distinct because only a
-# committed record is safe to delete — dropping one we could not read would
-# discard the last thing naming its worktree. What counts as the commit differs by
-# producer and the record says which: a reservation commits when its own id
-# reaches the ledger, so no retry reusing every argument and no later rewrite of
-# that row can be mistaken for it; a claimed worktree commits when its marker
-# lands, because a claim has no ledger row.
-uncommitted_reservation() {
+# Decide the fate of a pending worktree record: exit 0 and print
+# "<worktree>\t<branch>" when the worktree still needs undoing, exit 1 when its
+# transaction finished, exit 2 when the record or the ledger cannot be read. The
+# three are distinct because only a finished transaction is safe to forget —
+# dropping a record we could not read would discard the last thing naming its
+# worktree — so anything unexpected here must land on 2 rather than on Python's
+# own exit 1. What counts as finishing differs by producer and the record says
+# which: a reservation finishes when its own id reaches the ledger, so no retry
+# reusing every argument and no later rewrite of that row can be mistaken for it;
+# a claimed worktree finishes when its marker lands, because a claim has no row.
+unfinished_worktree() {
   python3 - "$1" "$ledger" <<'PY'
 import json
 import os
 import sys
 
 pending_path, ledger_path = sys.argv[1:]
+
+
+def unreadable():
+    raise SystemExit(2)
+
+
 try:
     with open(pending_path, encoding="utf-8") as pending:
         record = json.load(pending)
-    worktree = record["worktree"]
+    if not isinstance(record, dict):
+        unreadable()
+    worktree = record.get("worktree")
     branch = record.get("branch") or ""
-    commit = record["commit"]
-except (OSError, ValueError, KeyError, TypeError):
-    raise SystemExit(2)
-if not isinstance(worktree, str) or not worktree:
-    raise SystemExit(2)
+    commit = record.get("commit")
+    if not isinstance(worktree, str) or not worktree:
+        unreadable()
+    if not isinstance(branch, str):
+        unreadable()
 
-if commit == "marker":
-    if os.path.exists(os.path.join(worktree, ".git-loopy", "worktree-owner")):
-        raise SystemExit(1)
-elif commit == "row":
-    reservation_id = record.get("reservation_id")
-    if not isinstance(reservation_id, str) or not reservation_id:
-        raise SystemExit(2)
-    if os.path.exists(ledger_path):
-        try:
+    if commit == "marker":
+        if os.path.exists(os.path.join(worktree, ".git-loopy", "worktree-owner")):
+            raise SystemExit(1)
+    elif commit == "row":
+        reservation_id = record.get("reservation_id")
+        if not isinstance(reservation_id, str) or not reservation_id:
+            unreadable()
+        if os.path.exists(ledger_path):
             with open(ledger_path, encoding="utf-8") as ledger:
                 for line in ledger:
                     if not line.strip():
                         continue
-                    if json.loads(line).get("reservation_id") == reservation_id:
+                    row = json.loads(line)
+                    if not isinstance(row, dict):
+                        unreadable()
+                    if row.get("reservation_id") == reservation_id:
                         raise SystemExit(1)
-        except (OSError, json.JSONDecodeError):
-            raise SystemExit(2)
-else:
-    raise SystemExit(2)
+    else:
+        unreadable()
+except SystemExit:
+    raise
+except Exception:
+    unreadable()
 
 print(worktree + "\t" + branch)
 PY
 }
 
-# Roll a half-finished reservation forward or back. The pending record names the
-# worktree before it exists and survives a SIGKILL that the EXIT trap cannot; the
-# ledger row is the commit. Every command that takes the ledger lock runs this
-# first. A rollback that cannot finish keeps its record and fails rather than
-# dropping it, because the record is the last thing naming the worktree it left.
-# Callers that own recovery — reserve and recover — refuse to continue on that
-# failure; the rest sweep opportunistically and carry on.
-rollback_pending_reservation() {
+# Roll a half-finished worktree forward or back. The pending record names the
+# worktree before it exists and survives a SIGKILL that the EXIT trap cannot.
+# Every command that takes the ledger lock runs this first. A rollback that cannot
+# finish keeps its record and fails rather than dropping it, because the record is
+# the last thing naming the worktree it left. Callers that own recovery — reserve
+# and recover — refuse to continue on that failure; the rest sweep opportunistically
+# and carry on, because an unrelated directory git cannot remove must not stop a
+# finished run from being bound or closed.
+rollback_pending_worktree() {
   local pending_path="$1" record verdict pending_worktree pending_branch
 
   [ -f "$pending_path" ] || return 0
-  if record="$(uncommitted_reservation "$pending_path")"; then
+  if record="$(unfinished_worktree "$pending_path")"; then
     IFS=$'\t' read -r pending_worktree pending_branch <<< "$record"
     if ! remove_worktree "$pending_worktree"; then
       echo "error: could not remove unrecorded worktree: $pending_worktree" >&2
       return 1
     fi
-    if [ -n "$pending_branch" ]; then
-      git -C "$(repository_root)" branch -D "$pending_branch" >/dev/null 2>&1 || true
+    if [ -n "$pending_branch" ] &&
+      git -C "$(repository_root)" rev-parse --verify --quiet "refs/heads/$pending_branch" >/dev/null
+    then
+      git -C "$(repository_root)" branch -D "$pending_branch" >/dev/null 2>&1 ||
+        echo "error: could not delete branch of removed worktree: $pending_branch" >&2
     fi
   else
     verdict=$?
     if [ "$verdict" -ne 1 ]; then
-      echo "error: unreadable pending reservation record: $pending_path" >&2
+      echo "error: unreadable pending worktree record: $pending_path" >&2
       return 1
     fi
   fi
@@ -486,7 +503,7 @@ plan() {
     mkdir -p "$(dirname "$ledger")"
     lock_dir="$ledger.lock"
     acquire_lock
-    rollback_pending_reservation "$ledger.pending" || true
+    rollback_pending_worktree "$ledger.pending" || true
     guard="$(evaluate_and_record_target_guard "$route" "$target")"
     release_lock
   fi
@@ -635,7 +652,7 @@ reserve() {
   max_concurrency="$(concurrency_limit)" || return $?
 
   acquire_lock
-  rollback_pending_reservation "$ledger.pending"
+  rollback_pending_worktree "$ledger.pending"
 
   local collision_status guard
   if ledger_has_open_worktree "$worktree"; then
@@ -691,7 +708,13 @@ PY
   # One reservation, one transaction. The pending record holds the row this
   # reserve is about to commit and names its worktree before that worktree
   # exists, so a hard kill anywhere below is undone by whoever takes this lock
-  # next; appending the row to the ledger commits it.
+  # next; appending the row to the ledger commits it. Refuse a path that already
+  # exists first: rollback tells what this transaction made only by what was
+  # absent when it started.
+  if [ -e "$worktree" ]; then
+    echo "error: worktree path already exists: $worktree" >&2
+    exit 1
+  fi
   reservation="$(python3 - "$route" "$target" "$spawn_time" "$worktree" "$chain_depth" "$parent_pid" "$parent_start" "$worktree_branch" <<'PY'
 import json
 import sys
@@ -777,7 +800,7 @@ bind() {
   worktree="$(python3 -c 'import os; import sys; print(os.path.realpath(os.path.abspath(sys.argv[1])))' "$worktree")"
   mkdir -p "$ledger_dir"
   acquire_lock
-  rollback_pending_reservation "$ledger.pending" || true
+  rollback_pending_worktree "$ledger.pending" || true
 
   tmp="$(mktemp "$ledger_dir/.subagents.XXXXXX")"
   if ! python3 - "$ledger" "$tmp" "$worktree" "$session_id" "$agent_id" "$agent_type" "$agent_name" <<'PY'
@@ -851,7 +874,7 @@ complete() {
   lock_dir="$ledger.lock"
 
   acquire_lock
-  rollback_pending_reservation "$ledger.pending" || true
+  rollback_pending_worktree "$ledger.pending" || true
 
   tmp="$(mktemp "$ledger_dir/.subagents.XXXXXX")"
   metadata="$tmp.worktree"
@@ -1122,7 +1145,7 @@ recover() {
   mkdir -p "$ledger_dir"
   lock_dir="$ledger.lock"
   acquire_lock
-  rollback_pending_reservation "$ledger.pending"
+  rollback_pending_worktree "$ledger.pending"
 
   tmp="$(mktemp "$ledger_dir/.subagents.XXXXXX")"
   metadata="$tmp.worktrees"
@@ -1286,7 +1309,7 @@ PY
 # made here rather than by the caller, so creating and marking it is one journaled
 # transaction and no interruption can leave a worktree nothing vouches for.
 claim() {
-  local worktree="" owner_pid="" create_branch="" owner_start ledger_dir
+  local worktree="" owner_pid="" create_branch="" owner_start ledger_dir spawn_commit
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -1321,6 +1344,7 @@ claim() {
   fi
 
   repo_root="$(repository_root)"
+  spawn_commit="$(git rev-parse HEAD)"
   worktree="$(python3 -c 'import os; import sys; print(os.path.realpath(os.path.abspath(sys.argv[1])))' "$worktree")"
   if [ -z "$ledger" ]; then
     ledger="$repo_root/.git-loopy/subagents.jsonl"
@@ -1329,7 +1353,20 @@ claim() {
   lock_dir="$ledger.lock"
   mkdir -p "$ledger_dir"
   acquire_lock
-  rollback_pending_reservation "$ledger.pending"
+  rollback_pending_worktree "$ledger.pending"
+
+  # Refuse a path or branch that already exists, before anything claims the right
+  # to undo them. Rollback tells what this transaction made only by what was
+  # absent when it started, so publishing over a collision would licence deleting
+  # someone else's worktree or branch.
+  if [ -e "$worktree" ]; then
+    echo "error: worktree path already exists: $worktree" >&2
+    exit 1
+  fi
+  if git -C "$repo_root" rev-parse --verify --quiet "refs/heads/$create_branch" >/dev/null; then
+    echo "error: branch already exists: $create_branch" >&2
+    exit 1
+  fi
 
   pending="$ledger.pending"
   python3 - "$worktree" "$create_branch" > "$pending.$$" <<'PY'
@@ -1345,7 +1382,7 @@ print(json.dumps({
 PY
   mv "$pending.$$" "$pending"
 
-  git -C "$repo_root" worktree add -b "$create_branch" "$worktree" "$(git -C "$repo_root" rev-parse HEAD)" || exit 1
+  git -C "$repo_root" worktree add -b "$create_branch" "$worktree" "$spawn_commit" || exit 1
   write_marker "$worktree" "$owner_pid" "$owner_start" || {
     echo "error: could not write ownership marker: $worktree" >&2
     exit 1
