@@ -88,9 +88,8 @@ _Avoid_: Dead worktree, leftover
 **Worktree marker**:
 The record inside a worktree naming the process that owns it and when that process started, together
 with the route and target it bound. The first pair decides removal; the second attributes the
-directory to a workstream. A worktree carrying none cannot be vouched for, so nothing removes it on
-a single look.
-_Avoid_: Lock file, sentinel
+directory to a workstream.
+_Avoid_: Lock file, owner file, sentinel
 
 **Held**:
 Said of a worktree a live process is using at the moment it is looked at. Weak evidence on its own,
