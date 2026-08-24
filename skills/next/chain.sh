@@ -786,19 +786,23 @@ import subprocess
 import sys
 
 ledger_path, output_path, metadata_path = sys.argv[1:]
-# Required because `complete` reads them, and for no other reason. sessionId,
-# agentId and agentType find the ledger row; cwd locates the repository and the
-# worktree; timestamp closes the row. Everything else the runtime sends —
-# transcriptPath, agentName, agentDisplayName, response, stopReason, and
-# whatever a later release adds — is optional, because a field that is required
-# and never read rejects real payloads and silences the whole chain (#41).
+# Required because `complete` reads them on every path, and for no other reason.
+# sessionId scopes the match; cwd locates the repository and the worktree;
+# timestamp closes the row. Everything else the runtime sends — transcriptPath,
+# agentDisplayName, response, stopReason, and whatever a later release adds — is
+# optional, because a field that is required and never read rejects real
+# payloads and silences the whole chain (#41).
 required_fields = (
     "sessionId",
     "timestamp",
     "cwd",
-    "agentId",
-    "agentType",
 )
+# The identity of the run is itself conditional, so the fields carrying it are
+# required only on the path that reads them. 61% of real subagentStop payloads
+# carry neither agentId nor agentType — a payload has both or neither — and one
+# that names no agent is correlated by where the run worked instead, using the
+# agentName the runtime sets to the agent type (#70).
+identity_fields = ("agentId", "agentType")
 
 try:
     payload = json.load(sys.stdin)
@@ -809,6 +813,13 @@ except json.JSONDecodeError as error:
 if not isinstance(payload, dict):
     print("error: subagent-stop payload must be a JSON object", file=sys.stderr)
     raise SystemExit(2)
+
+# A payload carrying either identity field is held to both: half an identity is
+# a shape no runtime has been observed to send, and downgrading it to the
+# weaker correlation would ignore the very field it did carry.
+has_identity = any(field in payload for field in identity_fields)
+correlation_field = "agentId" if has_identity else "agentName"
+required_fields += identity_fields if has_identity else ("agentName",)
 
 missing = [field for field in required_fields if field not in payload]
 if missing:
@@ -836,9 +847,12 @@ if isinstance(payload["timestamp"], bool) or not isinstance(
     print("error: subagent-stop payload has non-string timestamp", file=sys.stderr)
     raise SystemExit(2)
 
-agent_id = payload["agentId"]
-if not agent_id:
-    print("error: subagent-stop payload has an empty agentId", file=sys.stderr)
+correlation_value = payload[correlation_field]
+if not correlation_value:
+    print(
+        f"error: subagent-stop payload has an empty {correlation_field}",
+        file=sys.stderr,
+    )
     raise SystemExit(2)
 
 rows = []
@@ -850,24 +864,56 @@ if os.path.exists(ledger_path):
         print(f"error: invalid spawn ledger: {error}", file=sys.stderr)
         raise SystemExit(2)
 
-# agentId identifies the run on its own; sessionId and agentType stop a payload
-# from another session or another agent type reaching this row. The bound
-# agent_name is deliberately not read: the runtime sets agentName to the agent
-# type and sends no field carrying the descriptive name a caller binds, so
-# matching on it left every descriptively named row open forever (#67).
-matches = [
-    index
-    for index, row in enumerate(rows)
-    if (
-        row.get("session_id") == payload["sessionId"]
-        and row.get("agent_id") == agent_id
-        and row.get("agent_type") == payload["agentType"]
-        and not row.get("finish_time")
-    )
-]
+# Real paths, not the strings as recorded: on macOS a directory reported under
+# /var resolves under /private/var, so `reserve`, `bind` and this match all
+# compare what a path resolves to rather than how it was spelled.
+payload_worktree = os.path.realpath(os.path.abspath(payload["cwd"]))
+
+if has_identity:
+    # agentId identifies the run on its own; sessionId and agentType stop a
+    # payload from another session or another agent type reaching this row. The
+    # bound agent_name is deliberately not read: the runtime sets agentName to
+    # the agent type and sends no field carrying the descriptive name a caller
+    # binds, so matching on it left every descriptively named row open forever
+    # (#67).
+    matches = [
+        index
+        for index, row in enumerate(rows)
+        if (
+            row.get("session_id") == payload["sessionId"]
+            and row.get("agent_id") == payload["agentId"]
+            and row.get("agent_type") == payload["agentType"]
+            and not row.get("finish_time")
+        )
+    ]
+    declined = {"agent_id": correlation_value}
+else:
+    # Nothing in this payload names the run, so the row is found by where the
+    # run happened: the session that launched it, the worktree it was given, and
+    # its agent type, which the runtime sends as agentName. Each clause is
+    # load-bearing — session and agent type keep payloads from another session
+    # and another type out, and the worktree is what makes at most one row
+    # plausible, since a session runs several agents of one type but gives each
+    # of them its own directory (#70).
+    matches = [
+        index
+        for index, row in enumerate(rows)
+        if (
+            row.get("session_id") == payload["sessionId"]
+            and isinstance(row.get("worktree"), str)
+            and row["worktree"]
+            and os.path.realpath(os.path.abspath(row["worktree"])) == payload_worktree
+            and row.get("agent_type") == payload["agentName"]
+            and not row.get("finish_time")
+        )
+    ]
+    declined = {
+        "session_id": payload["sessionId"],
+        "agent_type": correlation_value,
+        "worktree": payload_worktree,
+    }
 
 if not matches:
-    payload_worktree = os.path.realpath(os.path.abspath(payload["cwd"]))
     unbound_matches = [
         index
         for index, row in enumerate(rows)
@@ -888,15 +934,17 @@ if not matches:
     print(json.dumps({
         "continue": False,
         "reason": "unmatched-payload",
-        "agent_id": agent_id,
+        **declined,
     }, separators=(",", ":")))
     raise SystemExit(0)
 
 if len(matches) > 1:
+    # Two rows the payload cannot tell apart close neither: guessing between
+    # them closes the wrong run, and the wrong run is then routed on.
     print(json.dumps({
         "continue": False,
         "reason": "ambiguous-payload",
-        "agent_id": agent_id,
+        **declined,
     }, separators=(",", ":")))
     raise SystemExit(0)
 

@@ -1076,6 +1076,207 @@ if [ -e "$captured_worktree" ]; then
   err "captured payload completion did not remove its worktree"
 fi
 
+# Identity is itself conditional. Of the 824 real `subagentStop` invocations
+# recorded on the machine that produced these fixtures, 502 carry neither
+# `agentId` nor `agentType`, and the two are perfectly correlated: a payload has
+# both or neither. Requiring either rejected 61% of live traffic at exit 2,
+# before any match ran, so those rows could never close (#70).
+#
+# The payload below is captured for the same reason the one above is: a test
+# that builds its own payload cannot observe a shape the runtime sends and the
+# code does not expect.
+no_identity_fixture="$REPO/scripts/fixtures/subagent-stop-hook-invocation-without-identity.json"
+no_identity_ledger="$tmp_dir/.git-loopy/no-identity-subagents.jsonl"
+no_identity_worktree="$tmp_dir/worktree-no-identity"
+# Bound descriptively, so this also fails if the fallback ever reads the bound
+# name instead of the agent type the runtime sends as `agentName` (#67).
+no_identity_bound_name="Review the tiered predicate"
+
+IFS=$'\t' read -r no_identity_session_id no_identity_agent_name no_identity_fields <<<"$(
+  python3 - "$no_identity_fixture" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as fixture:
+    event = json.load(fixture)
+assert event["data"]["hookType"] == "subagentStop", event["data"]["hookType"]
+payload = event["data"]["input"]
+print("\t".join([
+    payload["sessionId"],
+    payload["agentName"],
+    ",".join(sorted(payload)),
+]))
+PY
+)"
+
+# Without this the fixture could be quietly rewritten into the shape it exists
+# to rule out, and the fallback tier would go untested behind a passing suite.
+if [[ ",$no_identity_fields," == *,agentId,* || ",$no_identity_fields," == *,agentType,* ]]; then
+  err "the no-identity fixture carries an identity field, so it cannot exercise the fallback tier"
+fi
+if [ "$no_identity_agent_name" = "$no_identity_bound_name" ]; then
+  err "the no-identity fixture carries the bound name, so it cannot distinguish the two from each other"
+fi
+
+reserve_and_bind \
+  --ledger "$no_identity_ledger" \
+  --route implement \
+  --target issue-no-identity \
+  --session-id "$no_identity_session_id" \
+  --agent-id agent-no-identity \
+  --agent-type "$no_identity_agent_name" \
+  --agent-name "$no_identity_bound_name" \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$no_identity_worktree" \
+  --chain-depth 1
+
+# Every captured field the fallback reads reaches `complete` exactly as the
+# runtime sent it, except `cwd`: the recorded absolute path belongs to the
+# machine that produced the capture. It is repointed at the row's worktree
+# because that is the clause under test — the fallback correlates by the
+# directory the payload reports. The with-identity capture above is deliberately
+# repointed somewhere else, so it can only ever match by identity.
+#
+# The optional arguments rewrite exactly one clause of the fallback at a time,
+# so each negative case below differs from the bound row in one field and no
+# other.
+no_identity_payload() {
+  python3 - "$no_identity_fixture" "$1" "${2:-}" "${3:-}" <<'PY'
+import json
+import sys
+
+fixture_path, cwd, session_id, agent_name = sys.argv[1:]
+with open(fixture_path, encoding="utf-8") as fixture:
+    payload = json.load(fixture)["data"]["input"]
+payload["cwd"] = cwd
+if session_id:
+    payload["sessionId"] = session_id
+if agent_name:
+    payload["agentName"] = agent_name
+print(json.dumps(payload, separators=(",", ":")))
+PY
+}
+
+cp "$no_identity_ledger" "$no_identity_ledger.before-unmatched"
+
+# A payload with no identity still has to be declined at exit 0, not rejected at
+# exit 2: exit 2 is the failure that silenced the chain in #41.
+no_identity_other_session_status=0
+no_identity_other_session_output="$(
+  PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete --ledger "$no_identity_ledger" \
+    <<< "$(no_identity_payload "$no_identity_worktree" session-from-another-run)"
+)" || no_identity_other_session_status=$?
+if [ "$no_identity_other_session_status" -ne 0 ]; then
+  err "a no-identity payload from another session exited $no_identity_other_session_status instead of declining"
+fi
+assert_plan "no-identity completion from another session" "$no_identity_other_session_output" \
+  '{"continue":false,"reason":"unmatched-payload","session_id":"session-from-another-run","agent_type":"'"$no_identity_agent_name"'","worktree":"'"$no_identity_worktree"'"}'
+
+no_identity_other_type_output="$(
+  PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete --ledger "$no_identity_ledger" \
+    <<< "$(no_identity_payload "$no_identity_worktree" "" some-other-agent-type)"
+)"
+assert_plan "no-identity completion from another agent type" "$no_identity_other_type_output" \
+  '{"continue":false,"reason":"unmatched-payload","session_id":"'"$no_identity_session_id"'","agent_type":"some-other-agent-type","worktree":"'"$no_identity_worktree"'"}'
+
+no_identity_other_worktree="$tmp_dir/worktree-no-identity-elsewhere"
+# A directory that exists, so that a predicate which stopped reading the
+# worktree would get as far as closing the row and fail this case by name,
+# rather than crashing on a `cwd` that was never there.
+mkdir -p "$no_identity_other_worktree"
+no_identity_other_worktree_output="$(
+  PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete --ledger "$no_identity_ledger" \
+    <<< "$(no_identity_payload "$no_identity_other_worktree")"
+)"
+assert_plan "no-identity completion from another worktree" "$no_identity_other_worktree_output" \
+  '{"continue":false,"reason":"unmatched-payload","session_id":"'"$no_identity_session_id"'","agent_type":"'"$no_identity_agent_name"'","worktree":"'"$no_identity_other_worktree"'"}'
+
+if ! cmp -s "$no_identity_ledger.before-unmatched" "$no_identity_ledger"; then
+  err "a declined no-identity completion modified the ledger"
+fi
+
+no_identity_output="$(
+  PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete --ledger "$no_identity_ledger" \
+    <<< "$(no_identity_payload "$no_identity_worktree")"
+)"
+assert_plan "no-identity completion" "$no_identity_output" \
+  '{"continue":true,"outcome":"published","target":"issue-no-identity"}'
+
+if ! python3 - "$no_identity_ledger" "$no_identity_bound_name" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger if line.strip()]
+
+assert len(rows) == 1, rows
+# The captured timestamp is epoch milliseconds, exactly as the runtime sent it.
+assert rows[0]["finish_time"] == "2026-08-24T00:35:36Z", rows
+assert rows[0]["outcome"] == "published", rows
+assert rows[0]["agent_name"] == sys.argv[2], rows
+PY
+then
+  err "a captured payload carrying no agentId or agentType did not close its bound ledger row"
+fi
+
+if [ -e "$no_identity_worktree" ]; then
+  err "no-identity completion did not remove its worktree"
+fi
+
+# Two open rows a no-identity payload cannot tell apart must close neither.
+# `reserve` refuses a second open reservation on a worktree, so the colliding
+# row is written straight to the ledger: the guard exists for the ledgers that
+# hold one anyway — written by an older release, repaired by hand, or shared by
+# two chains — where guessing between them would close the wrong run.
+ambiguous_ledger="$tmp_dir/.git-loopy/ambiguous-subagents.jsonl"
+ambiguous_worktree="$tmp_dir/worktree-ambiguous"
+reserve_and_bind \
+  --ledger "$ambiguous_ledger" \
+  --route implement \
+  --target issue-ambiguous-first \
+  --session-id "$no_identity_session_id" \
+  --agent-id agent-ambiguous-first \
+  --agent-type "$no_identity_agent_name" \
+  --agent-name "$no_identity_bound_name" \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$ambiguous_worktree" \
+  --chain-depth 1
+
+python3 - "$ambiguous_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger if line.strip()]
+assert len(rows) == 1, rows
+collision = dict(rows[0])
+collision["target"] = "issue-ambiguous-second"
+collision["agent_id"] = "agent-ambiguous-second"
+rows.append(collision)
+with open(sys.argv[1], "w", encoding="utf-8") as ledger:
+    for row in rows:
+        ledger.write(json.dumps(row, separators=(",", ":")) + "\n")
+PY
+cp "$ambiguous_ledger" "$ambiguous_ledger.before-ambiguous"
+
+ambiguous_status=0
+ambiguous_output="$(
+  PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete --ledger "$ambiguous_ledger" \
+    <<< "$(no_identity_payload "$ambiguous_worktree")"
+)" || ambiguous_status=$?
+if [ "$ambiguous_status" -ne 0 ]; then
+  err "an ambiguous no-identity payload exited $ambiguous_status instead of declining"
+fi
+assert_plan "ambiguous no-identity completion" "$ambiguous_output" \
+  '{"continue":false,"reason":"ambiguous-payload","session_id":"'"$no_identity_session_id"'","agent_type":"'"$no_identity_agent_name"'","worktree":"'"$ambiguous_worktree"'"}'
+
+if ! cmp -s "$ambiguous_ledger.before-ambiguous" "$ambiguous_ledger"; then
+  err "an ambiguous no-identity completion modified the ledger"
+fi
+if [ ! -e "$ambiguous_worktree" ]; then
+  err "an ambiguous no-identity completion removed a worktree it did not close"
+fi
+
 # Real payloads from built-in agent types carry only what the runtime chooses to
 # send. `complete` must require nothing beyond the fields it reads: requiring an
 # unread one rejected every live completion, and the chain went silent (#41).
@@ -1185,6 +1386,34 @@ for required_field in sessionId timestamp cwd agentId agentType; do
     err "complete did not name the missing $required_field"
   fi
 done
+
+# Validation is tiered because the match is. A payload that names an agent is
+# still held to both identity fields, and one that names none is held to the
+# `agentName` the fallback correlates by instead — each named when it is absent,
+# because the chain cannot close a row without the field the path it took reads.
+identity_error="$tmp_dir/missing-identity-half.err"
+if PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete \
+  --ledger "$required_ledger" \
+  <<< "$(payload_without "$required_payload" agentId)" \
+  >/dev/null 2>"$identity_error"
+then
+  err "complete accepted a payload carrying half an identity"
+fi
+if ! grep -q "subagent-stop payload is missing agentId" "$identity_error"; then
+  err "complete did not name the missing half of the payload identity"
+fi
+
+fallback_error="$tmp_dir/missing-agent-name.err"
+if PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete \
+  --ledger "$required_ledger" \
+  <<< '{"sessionId":"session-required","timestamp":"2026-08-22T00:11:00Z","cwd":"'"$tmp_dir"'"}' \
+  >/dev/null 2>"$fallback_error"
+then
+  err "complete accepted a payload carrying neither an identity nor an agentName"
+fi
+if ! grep -q "subagent-stop payload is missing agentName" "$fallback_error"; then
+  err "complete did not name the agentName the fallback reads"
+fi
 
 if ! cmp -s "$required_ledger.before-missing" "$required_ledger"; then
   err "a payload missing a required field modified the ledger"
