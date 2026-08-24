@@ -250,7 +250,31 @@ if [ -e "$claim_ledger.pending" ]; then
   err "recovery left the pending record of a committed claim behind"
 fi
 
-if "$CHAIN" claim --worktree "$tmp_dir/worktree-absent" --owner-pid "$$" 2>/dev/null; then
+# A bystander that won the race between the guard and the creation is not this
+# transaction's to remove: the proof of ownership is the branch, not the path.
+race_worktree="$tmp_dir/worktree-race-loser"
+git -C "$tmp_dir" worktree add --quiet -b race-winner "$race_worktree" >/dev/null
+printf '{"worktree":"%s","branch":"race-loser","commit":"marker"}\n' "$race_worktree" \
+  > "$claim_ledger.pending"
+if "$CHAIN" recover --ledger "$claim_ledger" --stale-after-seconds 999999999 \
+  --now 2026-08-22T00:00:00Z >/dev/null 2>&1
+then
+  err "recovery reported success after refusing to remove a bystander worktree"
+fi
+if [ ! -d "$race_worktree" ]; then
+  err "rollback removed a worktree created by somebody else at its recorded path"
+fi
+if ! git -C "$tmp_dir" rev-parse --verify --quiet race-winner >/dev/null; then
+  err "rollback deleted the branch of a worktree it did not create"
+fi
+if [ ! -f "$claim_ledger.pending" ]; then
+  err "rollback dropped the record of a worktree it refused to remove"
+fi
+rm -f "$claim_ledger.pending"
+git -C "$tmp_dir" worktree remove --force "$race_worktree"
+git -C "$tmp_dir" branch -D race-winner >/dev/null
+
+if "$CHAIN" claim --ledger "$claim_ledger" --worktree "$tmp_dir/worktree-absent" --owner-pid "$$" 2>/dev/null; then
   err "claim marked a worktree that does not exist"
 fi
 if "$CHAIN" claim --worktree "$prompt_worktree" --owner-pid 999999999 2>/dev/null; then
@@ -1664,6 +1688,11 @@ for unreadable in \
   '{"worktree":"/tmp/x","commit":"row"}' \
   '{"worktree":"/tmp/x","commit":"nonsense"}' \
   '{"worktree":"/tmp/x","branch":5,"commit":"marker"}' \
+  '{"worktree":"/tmp/x","branch":0,"commit":"marker"}' \
+  '{"worktree":"/tmp/x","branch":false,"commit":"marker"}' \
+  '{"worktree":"/tmp/x","branch":[],"commit":"marker"}' \
+  '{"worktree":"/tmp/x","branch":null,"commit":"marker"}' \
+  '{"worktree":"/tmp/x","branch":"","commit":"row","reservation_id":7}' \
   '{"commit":"marker"}'
 do
   printf '%s\n' "$unreadable" > "$lock_crash_ledger.pending"
@@ -1683,17 +1712,19 @@ rm -f "$lock_crash_ledger.pending"
 
 # A ledger the sweep cannot read is unreadable state too, not proof of a commit.
 unreadable_ledger="$tmp_dir/.git-loopy/unreadable.jsonl"
-printf '["not","a","row"]\n' > "$unreadable_ledger"
-printf '{"worktree":"/tmp/x","branch":"","commit":"row","reservation_id":"%s"}\n' "$(printf 'a%.0s' $(seq 32))" \
-  > "$unreadable_ledger.pending"
-if "$CHAIN" recover --ledger "$unreadable_ledger" --stale-after-seconds 999999999 \
-  --now 2026-08-22T12:00:00Z >/dev/null 2>&1
-then
-  err "recovery reported success while the ledger it swept could not be read"
-fi
-if [ ! -f "$unreadable_ledger.pending" ]; then
-  err "an unreadable ledger caused its pending worktree record to be deleted"
-fi
+for bad_row in '["not","a","row"]' '{"reservation_id":7}' 'not json'; do
+  printf '%s\n' "$bad_row" > "$unreadable_ledger"
+  printf '{"worktree":"/tmp/x","branch":"","commit":"row","reservation_id":"%s"}\n' "$(printf 'a%.0s' $(seq 32))" \
+    > "$unreadable_ledger.pending"
+  if "$CHAIN" recover --ledger "$unreadable_ledger" --stale-after-seconds 999999999 \
+    --now 2026-08-22T12:00:00Z >/dev/null 2>&1
+  then
+    err "recovery reported success while the ledger it swept could not be read"
+  fi
+  if [ ! -f "$unreadable_ledger.pending" ]; then
+    err "an unreadable ledger caused its pending worktree record to be deleted"
+  fi
+done
 rm -f "$unreadable_ledger" "$unreadable_ledger.pending"
 
 pidless_lock_ledger="$tmp_dir/.git-loopy/pidless-lock.jsonl"

@@ -185,7 +185,7 @@ try:
     if not isinstance(record, dict):
         unreadable()
     worktree = record.get("worktree")
-    branch = record.get("branch") or ""
+    branch = record.get("branch", "")
     commit = record.get("commit")
     if not isinstance(worktree, str) or not worktree:
         unreadable()
@@ -207,7 +207,10 @@ try:
                     row = json.loads(line)
                     if not isinstance(row, dict):
                         unreadable()
-                    if row.get("reservation_id") == reservation_id:
+                    recorded = row.get("reservation_id")
+                    if recorded is not None and not isinstance(recorded, str):
+                        unreadable()
+                    if recorded == reservation_id:
                         raise SystemExit(1)
     else:
         unreadable()
@@ -220,6 +223,42 @@ print(worktree + "\t" + branch)
 PY
 }
 
+# Prove this transaction made the worktree before removing it. Its branch did not
+# exist when the transaction started, so a worktree git has registered at this
+# path on that branch can only be the one this transaction created. Anything else
+# occupying the path — a bystander that won the race between the check and the
+# creation, or a directory that was never a worktree — belongs to somebody whose
+# work must not be deleted, and any failure to establish this answers "not ours".
+worktree_registered_on_branch() {
+  local path="$1" branch="$2"
+
+  [ -n "$branch" ] || return 1
+  python3 - "$(repository_root)" "$path" "$branch" <<'PY'
+import os
+import subprocess
+import sys
+
+repo_root, path, branch = sys.argv[1:]
+path = os.path.realpath(os.path.abspath(path))
+listing = subprocess.run(
+    ["git", "-C", repo_root, "worktree", "list", "--porcelain"],
+    capture_output=True,
+    text=True,
+)
+if listing.returncode != 0:
+    raise SystemExit(1)
+
+current = None
+for line in listing.stdout.splitlines():
+    if line.startswith("worktree "):
+        current = os.path.realpath(os.path.abspath(line[len("worktree "):]))
+    elif line.startswith("branch ") and current == path:
+        if line[len("branch "):] == "refs/heads/" + branch:
+            raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
 # Roll a half-finished worktree forward or back. The pending record names the
 # worktree before it exists and survives a SIGKILL that the EXIT trap cannot.
 # Every command that takes the ledger lock runs this first. A rollback that cannot
@@ -229,16 +268,23 @@ PY
 # and carry on, because an unrelated directory git cannot remove must not stop a
 # finished run from being bound or closed.
 rollback_pending_worktree() {
-  local pending_path="$1" record verdict pending_worktree pending_branch
+  local pending_path="$1" record verdict pending_worktree pending_branch removed=0
 
   [ -f "$pending_path" ] || return 0
   if record="$(unfinished_worktree "$pending_path")"; then
     IFS=$'\t' read -r pending_worktree pending_branch <<< "$record"
+    if [ -e "$pending_worktree" ] || [ -L "$pending_worktree" ]; then
+      if ! worktree_registered_on_branch "$pending_worktree" "$pending_branch"; then
+        echo "error: refusing to remove a worktree this transaction did not create: $pending_worktree" >&2
+        return 1
+      fi
+      removed=1
+    fi
     if ! remove_worktree "$pending_worktree"; then
       echo "error: could not remove unrecorded worktree: $pending_worktree" >&2
       return 1
     fi
-    if [ -n "$pending_branch" ] &&
+    if [ "$removed" -eq 1 ] && [ -n "$pending_branch" ] &&
       git -C "$(repository_root)" rev-parse --verify --quiet "refs/heads/$pending_branch" >/dev/null
     then
       git -C "$(repository_root)" branch -D "$pending_branch" >/dev/null 2>&1 ||
@@ -708,11 +754,15 @@ PY
   # One reservation, one transaction. The pending record holds the row this
   # reserve is about to commit and names its worktree before that worktree
   # exists, so a hard kill anywhere below is undone by whoever takes this lock
-  # next; appending the row to the ledger commits it. Refuse a path that already
-  # exists first: rollback tells what this transaction made only by what was
-  # absent when it started.
-  if [ -e "$worktree" ]; then
+  # next; appending the row to the ledger commits it. Refuse a path or branch that
+  # already exists first: rollback proves what this transaction made from the
+  # branch it created, which only means anything if that branch was free.
+  if [ -e "$worktree" ] || [ -L "$worktree" ]; then
     echo "error: worktree path already exists: $worktree" >&2
+    exit 1
+  fi
+  if git -C "$repo_root" rev-parse --verify --quiet "refs/heads/$worktree_branch" >/dev/null; then
+    echo "error: branch already exists: $worktree_branch" >&2
     exit 1
   fi
   reservation="$(python3 - "$route" "$target" "$spawn_time" "$worktree" "$chain_depth" "$parent_pid" "$parent_start" "$worktree_branch" <<'PY'
@@ -1356,10 +1406,9 @@ claim() {
   rollback_pending_worktree "$ledger.pending"
 
   # Refuse a path or branch that already exists, before anything claims the right
-  # to undo them. Rollback tells what this transaction made only by what was
-  # absent when it started, so publishing over a collision would licence deleting
-  # someone else's worktree or branch.
-  if [ -e "$worktree" ]; then
+  # to undo them. Rollback proves what this transaction made from the branch it
+  # created, which only means anything if that branch was free to begin with.
+  if [ -e "$worktree" ] || [ -L "$worktree" ]; then
     echo "error: worktree path already exists: $worktree" >&2
     exit 1
   fi
