@@ -16,7 +16,7 @@ usage:
   chain.sh complete [--ledger PATH] < subagent-stop-payload.json
   chain.sh recover --stale-after-seconds N [--now TIMESTAMP] [--ledger PATH]
   chain.sh owner --worktree PATH
-  chain.sh claim --worktree PATH --owner-pid PID
+  chain.sh claim --worktree PATH --owner-pid PID [--create-branch BRANCH] [--ledger PATH]
 
 A PID-less ledger lock is recoverable after CHAIN_LOCK_STALE_SECONDS (default: 300).
 --parent-pid names the running process whose death orphans the reservation, which
@@ -27,7 +27,8 @@ start time is that pid's `ps -o lstart=` output read under TZ=UTC, with runs of
 whitespace collapsed to single spaces. Liveness compares the two strings, so a
 marker recorded from local-time `ps` reports a live owner dead: every writer must
 produce the value in UTC. Use `claim` to mark a worktree this script did not
-create, rather than writing the file by hand.
+create, rather than writing the file by hand; `claim --create-branch` makes the
+worktree too, so creating and marking it cannot come apart.
 Route repetition and chain depth count bound rows only. Reservations claim
 capacity and a worktree, but do not represent a spawned hop.
 The two --no-ready and --all-collide forms end a fan-out fill; they are mutually
@@ -155,10 +156,15 @@ write_marker() {
   fi
 }
 
-# Print "<worktree>\t<branch>" and succeed when a pending reservation record still
-# needs undoing. The match is on the reservation's own id, so neither a retry that
-# reuses every argument, nor an older row for a reused worktree path, nor a bind
-# that has since rewritten this row can be mistaken for the commit.
+# Decide the fate of a pending record: exit 0 and print "<worktree>\t<branch>"
+# when it still needs undoing, exit 1 when its transaction committed, exit 2 when
+# the record or the ledger cannot be read. The three are distinct because only a
+# committed record is safe to delete — dropping one we could not read would
+# discard the last thing naming its worktree. What counts as the commit differs by
+# producer and the record says which: a reservation commits when its own id
+# reaches the ledger, so no retry reusing every argument and no later rewrite of
+# that row can be mistaken for it; a claimed worktree commits when its marker
+# lands, because a claim has no ledger row.
 uncommitted_reservation() {
   python3 - "$1" "$ledger" <<'PY'
 import json
@@ -169,25 +175,33 @@ pending_path, ledger_path = sys.argv[1:]
 try:
     with open(pending_path, encoding="utf-8") as pending:
         record = json.load(pending)
+    worktree = record["worktree"]
     branch = record.get("branch") or ""
-    worktree = record["row"]["worktree"]
-    reservation_id = record["row"]["reservation_id"]
+    commit = record["commit"]
 except (OSError, ValueError, KeyError, TypeError):
-    raise SystemExit(1)
-if not isinstance(reservation_id, str) or not reservation_id:
-    raise SystemExit(1)
+    raise SystemExit(2)
+if not isinstance(worktree, str) or not worktree:
+    raise SystemExit(2)
 
-if os.path.exists(ledger_path):
-    with open(ledger_path, encoding="utf-8") as ledger:
-        for line in ledger:
-            if not line.strip():
-                continue
-            try:
-                row = json.loads(line)
-            except json.JSONDecodeError:
-                raise SystemExit(1)
-            if row.get("reservation_id") == reservation_id:
-                raise SystemExit(1)
+if commit == "marker":
+    if os.path.exists(os.path.join(worktree, ".git-loopy", "worktree-owner")):
+        raise SystemExit(1)
+elif commit == "row":
+    reservation_id = record.get("reservation_id")
+    if not isinstance(reservation_id, str) or not reservation_id:
+        raise SystemExit(2)
+    if os.path.exists(ledger_path):
+        try:
+            with open(ledger_path, encoding="utf-8") as ledger:
+                for line in ledger:
+                    if not line.strip():
+                        continue
+                    if json.loads(line).get("reservation_id") == reservation_id:
+                        raise SystemExit(1)
+        except (OSError, json.JSONDecodeError):
+            raise SystemExit(2)
+else:
+    raise SystemExit(2)
 
 print(worktree + "\t" + branch)
 PY
@@ -196,11 +210,12 @@ PY
 # Roll a half-finished reservation forward or back. The pending record names the
 # worktree before it exists and survives a SIGKILL that the EXIT trap cannot; the
 # ledger row is the commit. Every command that takes the ledger lock runs this
-# first, so no observer holding the lock can see a marker without its row.
-# A physical rollback that fails keeps its record rather than dropping it, because
-# deleting the record would leave nothing naming the worktree it could not remove.
+# first. A rollback that cannot finish keeps its record and fails rather than
+# dropping it, because the record is the last thing naming the worktree it left.
+# Callers that own recovery — reserve and recover — refuse to continue on that
+# failure; the rest sweep opportunistically and carry on.
 rollback_pending_reservation() {
-  local pending_path="$1" record pending_worktree pending_branch
+  local pending_path="$1" record verdict pending_worktree pending_branch
 
   [ -f "$pending_path" ] || return 0
   if record="$(uncommitted_reservation "$pending_path")"; then
@@ -211,6 +226,12 @@ rollback_pending_reservation() {
     fi
     if [ -n "$pending_branch" ]; then
       git -C "$(repository_root)" branch -D "$pending_branch" >/dev/null 2>&1 || true
+    fi
+  else
+    verdict=$?
+    if [ "$verdict" -ne 1 ]; then
+      echo "error: unreadable pending reservation record: $pending_path" >&2
+      return 1
     fi
   fi
   rm -f "$pending_path"
@@ -692,7 +713,12 @@ row = {
     "outcome": "",
 }
 print(json.dumps(row, separators=(",", ":")))
-print(json.dumps({"branch": branch, "row": row}, separators=(",", ":")))
+print(json.dumps({
+    "worktree": worktree,
+    "branch": branch,
+    "commit": "row",
+    "reservation_id": row["reservation_id"],
+}, separators=(",", ":")))
 PY
 )"
   row="${reservation%%$'\n'*}"
@@ -1256,14 +1282,18 @@ PY
 
 # The second producer of an ownership marker: a worktree an agent made for itself
 # on a /next prompt, which never passes through reserve and would otherwise be
-# indistinguishable from abandoned clutter.
+# indistinguishable from abandoned clutter. With --create-branch the worktree is
+# made here rather than by the caller, so creating and marking it is one journaled
+# transaction and no interruption can leave a worktree nothing vouches for.
 claim() {
-  local worktree="" owner_pid="" owner_start
+  local worktree="" owner_pid="" create_branch="" owner_start ledger_dir
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --worktree) worktree="${2:?missing value for --worktree}"; shift 2 ;;
       --owner-pid) owner_pid="${2:?missing value for --owner-pid}"; shift 2 ;;
+      --create-branch) create_branch="${2:?missing value for --create-branch}"; shift 2 ;;
+      --ledger) ledger="${2:?missing value for --ledger}"; shift 2 ;;
       *) usage ;;
     esac
   done
@@ -1272,19 +1302,57 @@ claim() {
     echo "error: --owner-pid must be a process id" >&2
     exit 2
   }
-  [ -d "$worktree" ] || {
-    echo "error: worktree does not exist: $worktree" >&2
-    exit 2
-  }
   owner_start="$(process_start "$owner_pid")"
   [ -n "$owner_start" ] || {
     echo "error: claiming owner is not running: $owner_pid" >&2
     exit 2
   }
+
+  if [ -z "$create_branch" ]; then
+    [ -d "$worktree" ] || {
+      echo "error: worktree does not exist: $worktree" >&2
+      exit 2
+    }
+    write_marker "$worktree" "$owner_pid" "$owner_start" || {
+      echo "error: could not write ownership marker: $worktree" >&2
+      exit 1
+    }
+    return
+  fi
+
+  repo_root="$(repository_root)"
+  worktree="$(python3 -c 'import os; import sys; print(os.path.realpath(os.path.abspath(sys.argv[1])))' "$worktree")"
+  if [ -z "$ledger" ]; then
+    ledger="$repo_root/.git-loopy/subagents.jsonl"
+  fi
+  ledger_dir="$(dirname "$ledger")"
+  lock_dir="$ledger.lock"
+  mkdir -p "$ledger_dir"
+  acquire_lock
+  rollback_pending_reservation "$ledger.pending"
+
+  pending="$ledger.pending"
+  python3 - "$worktree" "$create_branch" > "$pending.$$" <<'PY'
+import json
+import sys
+
+worktree, branch = sys.argv[1:]
+print(json.dumps({
+    "worktree": worktree,
+    "branch": branch,
+    "commit": "marker",
+}, separators=(",", ":")))
+PY
+  mv "$pending.$$" "$pending"
+
+  git -C "$repo_root" worktree add -b "$create_branch" "$worktree" "$(git -C "$repo_root" rev-parse HEAD)" || exit 1
   write_marker "$worktree" "$owner_pid" "$owner_start" || {
     echo "error: could not write ownership marker: $worktree" >&2
     exit 1
   }
+  rm -f "$pending"
+  pending=""
+  release_lock
 }
 
 [ "$#" -gt 0 ] || usage

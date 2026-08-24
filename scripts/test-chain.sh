@@ -144,18 +144,70 @@ if [ "$("$CHAIN" owner --worktree "$tmp_dir/worktree-1")" != '{"alive":true}' ];
   err "owner did not read a live owner from the marker reserve wrote"
 fi
 
-# The second producer: a worktree an agent made for itself on a /next prompt.
+# The second producer: a worktree an agent makes for itself on a /next prompt.
+claim_ledger="$tmp_dir/.git-loopy/claim.jsonl"
 prompt_worktree="$tmp_dir/worktree-prompt-made"
-git -C "$tmp_dir" worktree add --quiet -b prompt-made "$prompt_worktree" >/dev/null
-"$CHAIN" claim --worktree "$prompt_worktree" --owner-pid "$$"
+"$CHAIN" claim --ledger "$claim_ledger" --worktree "$prompt_worktree" \
+  --create-branch prompt-made --owner-pid "$$"
+if [ ! -d "$prompt_worktree/.git" ] && [ ! -f "$prompt_worktree/.git" ]; then
+  err "claim --create-branch did not create the worktree"
+fi
 if [ ! -f "$prompt_worktree/.git-loopy/worktree-owner" ]; then
-  err "claim did not mark a prompt-created worktree"
+  err "claim --create-branch did not mark the worktree it made"
 elif [ "$(cat "$prompt_worktree/.git-loopy/worktree-owner")" != "$(cat "$tmp_dir/worktree-1/.git-loopy/worktree-owner")" ]; then
   err "claim and reserve wrote different markers for the same owner"
 fi
 if [ "$("$CHAIN" owner --worktree "$prompt_worktree")" != '{"alive":true}' ]; then
   err "owner did not read a live owner from a claimed worktree"
 fi
+if [ -e "$claim_ledger.pending" ] || [ -e "$claim_ledger.lock" ]; then
+  err "claim --create-branch left its journal or lock behind"
+fi
+if "$CHAIN" claim --ledger "$claim_ledger" --worktree "$prompt_worktree" \
+  --create-branch prompt-made-again --owner-pid "$$" 2>/dev/null
+then
+  err "claim --create-branch overwrote an existing worktree"
+fi
+if [ ! -f "$prompt_worktree/.git-loopy/worktree-owner" ]; then
+  err "a failed claim --create-branch destroyed the worktree already there"
+fi
+if [ -e "$claim_ledger.pending" ]; then
+  err "a failed claim --create-branch left its journal behind"
+fi
+
+# An interrupted claim leaves an unmarked worktree; the marker is its commit, so
+# recovery must undo it exactly as it undoes an uncommitted reservation.
+unmarked_worktree="$tmp_dir/worktree-claim-crash"
+git -C "$tmp_dir" worktree add --quiet -b claim-crash "$unmarked_worktree" >/dev/null
+python3 - "$unmarked_worktree" > "$claim_ledger.pending" <<'PY'
+import json
+import sys
+
+print(json.dumps({
+    "worktree": sys.argv[1],
+    "branch": "claim-crash",
+    "commit": "marker",
+}, separators=(",", ":")))
+PY
+"$CHAIN" recover --ledger "$claim_ledger" --stale-after-seconds 999999999 \
+  --now 2026-08-22T00:00:00Z >/dev/null
+if [ -e "$unmarked_worktree" ]; then
+  err "recovery kept the unmarked worktree of an interrupted claim"
+fi
+if git -C "$tmp_dir" rev-parse --verify --quiet claim-crash >/dev/null; then
+  err "rolling back an interrupted claim left its branch behind"
+fi
+printf '{"worktree":"%s","branch":"prompt-made","commit":"marker"}\n' "$prompt_worktree" \
+  > "$claim_ledger.pending"
+"$CHAIN" recover --ledger "$claim_ledger" --stale-after-seconds 999999999 \
+  --now 2026-08-22T00:00:00Z >/dev/null
+if [ ! -f "$prompt_worktree/.git-loopy/worktree-owner" ]; then
+  err "recovery rolled back a claim whose marker had already landed"
+fi
+if [ -e "$claim_ledger.pending" ]; then
+  err "recovery left the pending record of a committed claim behind"
+fi
+
 if "$CHAIN" claim --worktree "$tmp_dir/worktree-absent" --owner-pid "$$" 2>/dev/null; then
   err "claim marked a worktree that does not exist"
 fi
@@ -164,6 +216,7 @@ if "$CHAIN" claim --worktree "$prompt_worktree" --owner-pid 999999999 2>/dev/nul
 fi
 git -C "$tmp_dir" worktree remove --force "$prompt_worktree"
 git -C "$tmp_dir" branch -D prompt-made >/dev/null
+rm -f "$claim_ledger" "$claim_ledger.pending"
 
 "$CHAIN" bind \
   --ledger "$ledger" \
@@ -1486,11 +1539,10 @@ with open(ledger_path, encoding="utf-8") as ledger:
     rows = [json.loads(line) for line in ledger if line.strip()]
 committed = next(row for row in rows if row["worktree"] == worktree)
 print(json.dumps({
+    "worktree": worktree,
     "branch": "no-such-branch",
-    "row": {
-        "worktree": worktree,
-        "reservation_id": committed["reservation_id"],
-    },
+    "commit": "row",
+    "reservation_id": committed["reservation_id"],
 }, separators=(",", ":")))
 PY
 "$CHAIN" recover --ledger "$lock_crash_ledger" --stale-after-seconds 999999999 \
@@ -1518,13 +1570,10 @@ with open(ledger_path, encoding="utf-8") as ledger:
     rows = [json.loads(line) for line in ledger if line.strip()]
 committed = next(row for row in rows if row["worktree"] == worktree)
 print(json.dumps({
+    "worktree": worktree,
     "branch": "reused-path",
-    "row": {
-        "worktree": worktree,
-        "spawn_time": committed["spawn_time"],
-        "parent_pid": committed["parent_pid"],
-        "reservation_id": "0" * 32,
-    },
+    "commit": "row",
+    "reservation_id": "0" * 32,
 }, separators=(",", ":")))
 PY
 "$CHAIN" recover --ledger "$lock_crash_ledger" --stale-after-seconds 999999999 \
@@ -1545,8 +1594,10 @@ import json
 import sys
 
 print(json.dumps({
+    "worktree": sys.argv[1],
     "branch": "",
-    "row": {"worktree": sys.argv[1], "reservation_id": "f" * 32},
+    "commit": "row",
+    "reservation_id": "f" * 32,
 }, separators=(",", ":")))
 PY
 if "$CHAIN" recover --ledger "$lock_crash_ledger" --stale-after-seconds 999999999 \
@@ -1562,6 +1613,24 @@ if [ -e "$lock_crash_ledger.lock" ]; then
 fi
 rm -f "$lock_crash_ledger.pending"
 rmdir "$stuck_dir"
+
+# An unreadable record is not a committed one. Keep it and fail, rather than
+# dropping the last thing naming whatever worktree it described.
+for unreadable in 'not json' '{"worktree":"/tmp/x","commit":"row"}' '{"worktree":"/tmp/x","commit":"nonsense"}'; do
+  printf '%s\n' "$unreadable" > "$lock_crash_ledger.pending"
+  if "$CHAIN" recover --ledger "$lock_crash_ledger" --stale-after-seconds 999999999 \
+    --now 2026-08-22T11:00:00Z >/dev/null 2>&1
+  then
+    err "recovery reported success on an unreadable pending reservation record"
+  fi
+  if [ ! -f "$lock_crash_ledger.pending" ]; then
+    err "an unreadable pending reservation record was deleted as though it had committed"
+  fi
+  if [ -e "$lock_crash_ledger.lock" ]; then
+    err "an unreadable pending reservation record stranded the ledger lock"
+  fi
+done
+rm -f "$lock_crash_ledger.pending"
 
 pidless_lock_ledger="$tmp_dir/.git-loopy/pidless-lock.jsonl"
 mkdir -p "$pidless_lock_ledger.lock"
