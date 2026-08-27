@@ -17,6 +17,10 @@ usage:
   chain.sh recover --stale-after-seconds N [--now TIMESTAMP] [--ledger PATH]
 
 A PID-less ledger lock is recoverable after CHAIN_LOCK_STALE_SECONDS (default: 300).
+ROUTE is a slash-command name and carries its leading slash. The allowlist is
+/implement, /code-review, /research, /push, and /resolving-merge-conflicts; a bare
+name such as "implement" is not a route and plan declines it as
+route-not-allowlisted.
 --parent-pid names the running process whose death orphans the reservation, which
 is the session that will bind the run and never the shell that invokes this script.
 Route repetition and chain depth count bound rows only. Reservations claim
@@ -61,8 +65,30 @@ release_lock() {
 }
 
 repository_root() {
-  git worktree list --porcelain |
-    awk '/^worktree / { sub(/^worktree /, ""); print; exit }'
+  local main_worktree common_dir
+
+  main_worktree="$(
+    git worktree list --porcelain |
+      awk '/^worktree / { sub(/^worktree /, ""); print; exit }'
+  )"
+
+  # When .git is a pointer file to an out-of-tree gitdir, git cannot name the
+  # main worktree and `git worktree list` reports the gitdir itself. Running
+  # `git -C` against that path re-discovers it as a bare repository, which
+  # safe.bareRepository=explicit refuses. Fall back to the working tree git
+  # resolved from the pointer file.
+  common_dir="$(git rev-parse --git-common-dir)"
+  common_dir="$(cd "$common_dir" 2>/dev/null && pwd -P)" || common_dir=""
+  if [ -n "$main_worktree" ] && [ -n "$common_dir" ] &&
+    [ "$(cd "$main_worktree" 2>/dev/null && pwd -P)" = "$common_dir" ]; then
+    main_worktree=""
+  fi
+
+  if [ -n "$main_worktree" ]; then
+    printf '%s\n' "$main_worktree"
+    return
+  fi
+  git rev-parse --show-toplevel
 }
 
 process_start() {
