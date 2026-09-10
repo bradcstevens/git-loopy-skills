@@ -278,6 +278,7 @@ equivalent_targets = set(target_context["equivalent_targets"])
 requested_depth = int(requested_depth) if requested_depth else 0
 if not os.path.exists(ledger_path):
     print(json.dumps({
+        "failed": False,
         "reason": None,
         "target": target,
         "next_chain_depth": max(1, requested_depth),
@@ -291,10 +292,19 @@ except json.JSONDecodeError as error:
     print(f"error: invalid spawn ledger: {error}", file=sys.stderr)
     raise SystemExit(2)
 
-bound_rows = [
+target_rows = [
     (index, row)
     for index, row in enumerate(rows)
-    if row.get("target") in equivalent_targets and row.get("agent_id")
+    if row.get("target") in equivalent_targets
+]
+target_failed = any(
+    row.get("outcome") in {"failed", "no-evidence"}
+    for _, row in target_rows
+)
+bound_rows = [
+    (index, row)
+    for index, row in target_rows
+    if row.get("agent_id")
 ]
 recorded_depth = max(
     (
@@ -308,6 +318,7 @@ next_chain_depth = max(recorded_depth + 1, requested_depth, 1)
 
 if not bound_rows:
     print(json.dumps({
+        "failed": target_failed,
         "reason": None,
         "target": target,
         "next_chain_depth": next_chain_depth,
@@ -339,6 +350,7 @@ elif halt_reason is None:
 
 if halt_reason is None:
     print(json.dumps({
+        "failed": target_failed,
         "reason": None,
         "target": target,
         "next_chain_depth": next_chain_depth,
@@ -366,6 +378,7 @@ if halt_row.get("halt_reason") != halt_reason:
         raise
 
 print(json.dumps({
+    "failed": target_failed,
     "reason": halt_reason,
     "target": target,
     "next_chain_depth": next_chain_depth,
@@ -480,7 +493,6 @@ elif target_context["error"]:
 else:
     equivalent_targets = set(target_context["equivalent_targets"])
     in_flight = False
-    target_failed = False
     open_reservations = 0
     if os.path.exists(ledger):
         with open(ledger, encoding="utf-8") as ledger_file:
@@ -494,8 +506,6 @@ else:
                 if row.get("target") in equivalent_targets and not row.get("finish_time"):
                     in_flight = True
                     break
-                if row.get("target") in equivalent_targets and row.get("outcome") in {"failed", "no-evidence"}:
-                    target_failed = True
 
     if in_flight:
         decision = {
@@ -512,7 +522,7 @@ else:
             "route": route,
             "target": target,
         }
-    elif target_failed:
+    elif guard and guard["failed"]:
         decision = {
             "decision": "decline",
             "reason": "target-failed",
@@ -628,6 +638,10 @@ reserve() {
   guard="$(evaluate_and_record_target_guard "$route" "$target_context" "$chain_depth")"
   if [ "$(python3 -c 'import json; import sys; print(json.load(sys.stdin)["reason"] or "")' <<< "$guard")" ]; then
     echo "error: target-halted: $(python3 -c 'import json; import sys; print(json.load(sys.stdin)["reason"])' <<< "$guard")" >&2
+    exit 1
+  fi
+  if [ "$(python3 -c 'import json; import sys; print("true" if json.load(sys.stdin)["failed"] else "false")' <<< "$guard")" = "true" ]; then
+    echo "error: target-failed: $target" >&2
     exit 1
   fi
   chain_depth="$(python3 -c 'import json; import sys; print(json.load(sys.stdin)["next_chain_depth"])' <<< "$guard")"
@@ -811,7 +825,7 @@ import re
 import subprocess
 import sys
 
-ledger_path, output_path, metadata_path = sys.argv[1:]
+ledger_path, output_path, metadata_path, target_identity = sys.argv[1:]
 # Required because `complete` reads them, and for no other reason. sessionId,
 # agentId, agentType and agentName find the ledger row; cwd locates the
 # repository and the worktree; timestamp closes the row. Everything else the
@@ -958,10 +972,33 @@ if finish_at.tzinfo is None:
     print("error: subagent-stop payload timestamp must include a timezone", file=sys.stderr)
     raise SystemExit(2)
 
+resolution = subprocess.run(
+    [sys.executable, target_identity, ledger_path, target],
+    capture_output=True,
+    cwd=payload["cwd"],
+    text=True,
+)
+if resolution.returncode:
+    sys.stderr.write(resolution.stderr)
+    raise SystemExit(resolution.returncode)
+try:
+    canonical_target = json.loads(resolution.stdout)
+except json.JSONDecodeError as error:
+    print(f"error: target resolver returned invalid data: {error}", file=sys.stderr)
+    raise SystemExit(2)
+resolution_error = canonical_target.get("error")
+if resolution_error:
+    print(f"error: {resolution_error}: {target}", file=sys.stderr)
+    raise SystemExit(1)
+canonical_target = canonical_target.get("canonical_target")
+if not isinstance(canonical_target, str) or not canonical_target:
+    print("error: target resolver returned no canonical target", file=sys.stderr)
+    raise SystemExit(2)
+
 tracker_target = (
-    target.removeprefix("issue-")
-    if re.fullmatch(r"issue-\d+", target)
-    else target
+    canonical_target.removeprefix("issue-")
+    if re.fullmatch(r"issue-\d+", canonical_target)
+    else canonical_target
 )
 tracker = subprocess.run(
     ["gh", "issue", "view", tracker_target, "--json", "comments"],
@@ -1022,7 +1059,7 @@ print(json.dumps({
     "outcome": outcome,
     "target": target,
 }, separators=(",", ":")))
-' "$ledger" "$tmp" "$metadata"
+' "$ledger" "$tmp" "$metadata" "$target_identity"
   )"
 
   if python3 -c '

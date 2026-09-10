@@ -735,6 +735,25 @@ canonical_failed="$(
 assert_plan "canonical failed target" "$canonical_failed" \
   '{"decision":"decline","reason":"target-failed","route":"/implement","target":"issue-15"}'
 
+if PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+  "$CHAIN" reserve --parent-pid "$$" \
+    --ledger "$canonical_failed_ledger" \
+    --route implement \
+    --target 15 \
+    --spawn-time 2026-08-22T00:11:00Z \
+    --worktree "$tmp_dir/worktree-canonical-failed" \
+    --chain-depth 2 \
+    2>"$tmp_dir/canonical-failed.err"
+then
+  err "reserve accepted an equivalent target that had failed"
+fi
+if ! grep -q "target-failed: 15" "$tmp_dir/canonical-failed.err"; then
+  err "reserve did not report the equivalent failed target"
+fi
+if [ -e "$tmp_dir/worktree-canonical-failed" ]; then
+  err "failed target reservation created a worktree"
+fi
+
 canonical_guard_ledger="$tmp_dir/.git-loopy/canonical-guard-subagents.jsonl"
 python3 - "$canonical_guard_ledger" <<'PY'
 import json
@@ -861,6 +880,54 @@ canonical_completion="$(
 )"
 assert_plan "canonical target completion" "$canonical_completion" \
   '{"continue":true,"outcome":"published","target":"issue-15"}'
+
+legacy_completion_ledger="$tmp_dir/.git-loopy/legacy-completion-subagents.jsonl"
+"$CHAIN" reserve --parent-pid "$$" \
+  --ledger "$legacy_completion_ledger" \
+  --route implement \
+  --target issue-15 \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$tmp_dir/worktree-legacy-completion" \
+  --chain-depth 1
+"$CHAIN" bind \
+  --ledger "$legacy_completion_ledger" \
+  --worktree "$tmp_dir/worktree-legacy-completion" \
+  --session-id session-legacy-completion \
+  --agent-id agent-legacy-completion \
+  --agent-type implement-agent \
+  --agent-name implement-agent
+python3 - "$legacy_completion_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger if line.strip()]
+rows[0]["target"] = "60"
+with open(sys.argv[1], "w", encoding="utf-8") as ledger:
+    for row in rows:
+        ledger.write(json.dumps(row, separators=(",", ":")) + "\n")
+PY
+
+legacy_completion="$(
+  PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+    CHAIN_EVIDENCE=published CHAIN_EXPECT_ISSUE=15 \
+    "$CHAIN" complete --ledger "$legacy_completion_ledger" \
+      <<< '{"sessionId":"session-legacy-completion","timestamp":"2026-08-22T00:11:00Z","cwd":"'"$tmp_dir"'","agentId":"agent-legacy-completion","agentType":"implement-agent","agentName":"implement-agent"}'
+)"
+assert_plan "legacy target completion" "$legacy_completion" \
+  '{"continue":true,"outcome":"published","target":"60"}'
+if ! python3 - "$legacy_completion_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    row = json.loads(ledger.readline())
+assert row["target"] == "60", row
+assert row["outcome"] == "published", row
+PY
+then
+  err "legacy target completion rewrote or failed the existing row"
+fi
 
 plan_ledger="$tmp_dir/.git-loopy/canonical-resolution-failure.jsonl"
 for resolution_failure in rate-limited unavailable; do
