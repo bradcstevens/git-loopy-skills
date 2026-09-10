@@ -247,9 +247,14 @@ co -n "<descriptive name>" --model "<model>" --effort "<level>" --context "<defa
 
 Write the prompt **paste-safe**: one physical line of plain ASCII that opens with
 the exact skill invocation and names its target in bare words, so the shell
-receives a single argument whether the prompt reaches it through the heredoc
-below or a hand-typed `-p "..."`. Keep every label and explanation outside the
-code fence. For `/compact`, pass the instruction the phase-boundary procedure requires. Match
+receives a single argument on every path it travels — the heredoc below, a
+hand-typed `-p "..."`, or a background launcher that re-quotes the whole command
+in single quotes. That last path makes paste-safe also mean apostrophe-free:
+write *the meaning of every ticket* rather than *every ticket's meaning*, and
+spell contractions out. An apostrophe closes the launcher's own quoting and the
+session dies before it starts, leaving no log and no process to explain why.
+Keep every label and explanation outside the code fence. For `/compact`, pass
+the instruction the phase-boundary procedure requires. Match
 `Context` to the phase-boundary procedure. When another agent holds the primary
 worktree, carry that constraint into the prompt and do not direct work into it.
 If the procedure selects `Fresh session in a new worktree`, open the prompt with
@@ -262,8 +267,8 @@ target; what this session learned travels only in the prompt.
 
 The `Command` block is the whole recommendation as one selection the user can
 copy and run. Repeat the prompt inside it byte for byte between the quoted
-heredoc markers, which carry its apostrophes and `#` through to `-p "$PROMPT"`
-as one argument, and splice the same three runtime flags in verbatim. Name the
+heredoc markers, which carry its `#` and spacing through to `-p "$PROMPT"` as
+one argument, and splice the same three runtime flags in verbatim. Name the
 session with `-n` in a few words drawn from the action, because a launched
 session has no terminal to identify it and that name is how the user returns to
 it with `copilot --yolo --resume="<descriptive name>"`. The command

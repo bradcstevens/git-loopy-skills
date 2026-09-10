@@ -81,4 +81,5 @@ fi
 scripts/test-chain.sh || fail=1
 bash scripts/test-chain-hook.sh || fail=1
 bash scripts/test-hook-log.sh || fail=1
+bash scripts/test-handoff.sh || fail=1
 exit "$fail"
