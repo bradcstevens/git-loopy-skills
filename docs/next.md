@@ -12,9 +12,9 @@ npx skills update next
 
 ## What it does
 
-`next` is the router over the skills in this repo. It reads the live state of your work and returns a single recommendation: the one action to take now, the skill that performs it, the exact invocation to paste, and the runtime to run it on — model, reasoning effort, and context tier.
+`next` is the router over the skills in this repo. It reads the live state of your work and returns a single recommendation: the one action to take now, the skill that performs it, the exact invocation to paste, and the runtime to run it on — model, reasoning effort, and context tier. For a narrowly defined set of **AFK-safe** delivery routes, it can also spawn that recommendation as an in-session subagent.
 
-It **does no work itself**. It doesn't grill, write a spec, or fix anything — it leaves the repository and the issue tracker exactly as it found them and only orients. What separates it from a checklist is where it looks: not at what you told it in conversation, but at `docs/agents/issue-tracker.md`, the tracker itself, and your branch and diff. Concurrent sessions move that state underneath you, so the recommendation is drawn from live records rather than from a session summary.
+It does not itself grill, write a spec, or fix anything. It either orients at a checkpoint boundary or, when the chain gate approves, records and launches work owned by the spawned route. What separates it from a checklist is where it looks: not at what you told it in conversation, but at `docs/agents/issue-tracker.md`, the tracker itself, and your branch and diff. Concurrent sessions move that state underneath you, so the recommendation is drawn from live records rather than from a session summary.
 
 ## When to reach for it
 
@@ -30,13 +30,13 @@ Every recommendation is labelled **HITL** or **AFK-safe** — whether the next a
 
 ## The runtime it sizes
 
-A recommendation also names the **runtime** to run it on: `--model`, `--effort`, and `--context`, sized to the demand of the route it picked. Open judgement — grilling, wayfinding, spec writing, hard diagnosis — draws the strongest reasoning model at `xhigh`; ordinary build and review work draws a strong general model at `high`; mechanical, fully specified work draws a fast model at `medium`. An **AFK-safe** action gets one level more effort, because no human is mid-flight to catch a thin pass, and `long_context` is reserved for runs that must hold more at once than one default window holds. The flags come out verbatim, so [handoff](./handoff.md) can splice them straight into the background agent it launches.
+A recommendation also names the **runtime** to run it on: `--model`, `--effort`, and `--context`, sized to the demand of the route it picked. Open judgement — grilling, wayfinding, spec writing, hard diagnosis — draws the strongest reasoning model at `xhigh`; ordinary build and review work draws a strong general model at `high`; mechanical, fully specified work draws a fast model at `medium`. An **AFK-safe** action gets one level more effort only when its runtime pair came from the fallback table, because no human is mid-flight to catch a thin pass; configured pairs are already calibrated for AFK-safe runs. `long_context` is reserved for runs that must hold more at once than one default window holds. The flags come out verbatim, so [handoff](./handoff.md) can splice them straight into the background agent it launches.
 
-When the route calls for a fresh session, the recommendation also comes with the whole thing already assembled: a `Command` block holding the prompt in a quoted heredoc and the sized flags spliced into a `copilot --yolo -n "..." --model ... --effort ... --context ... -p "$PROMPT"` invocation. Select it, paste it, and the next session starts — named, so `copilot --yolo --resume="<name>"` finds it again. It's the same launch [handoff](./handoff.md) performs for you in the background, offered here as one copyable selection instead.
+When the route calls for a fresh session, the recommendation also comes with the whole thing already assembled: a `Command` block holding the prompt in a quoted heredoc and the sized flags spliced into a `copilot --yolo -n "..." --model ... --effort ... --context ... -p "$PROMPT"` invocation. Select it, paste it, and the next session starts — named, so `copilot --yolo --resume="<name>"` finds it again. It carries the same prompt and runtime that [handoff](./handoff.md) launches detached in the background, while this copyable command remains in your terminal.
 
 ## The chain it can spawn
 
-An ordinary `/next` invocation still returns exactly one recommendation. The chain is the separate
+For an **AFK-safe** action, `next` may spawn exactly five routes. An ordinary `/next` invocation still returns exactly one recommendation. The chain is the separate
 AFK-safe path: after the phase-boundary procedure selects a subagent, the spawn gate requires both an
 AFK-safe target and one of its five allowlisted routes — `/implement`, `/code-review`, `/research`,
 `/push`, or `/resolving-merge-conflicts`. It reserves a worktree and a concurrency slot in the spawn
@@ -50,10 +50,18 @@ parent is gone, or after `CHAIN_RESERVATION_STALE_SECONDS` (300 seconds by defau
 `reclaimed` rather than as a completed run. Bound and in-flight runs are never candidates for that
 recovery. Every `plan` runs recovery before
 checking capacity, so reclaimed slots immediately become available to the next candidate. It stops at a checkpoint
-boundary rather than spawning when the route is HITL or not allowlisted, a route repeats four times
+boundary rather than spawning when the route is HITL or not allowlisted, a route would take its fourth repeat
 for a target, or a target would take its ninth hop. `subagentStop` closes the completed ledger row;
 `agentStop` re-enters `/next` for the batch of completed, unrouted runs, allowing one fill to replace
 every slot that batch freed.
+AFK-safe and allowlisted are the two eligibility conditions for consulting `chain.sh plan`, not a
+guarantee of a spawn. The planner is authoritative and may decline an otherwise eligible action when
+its target or worktree is already in flight, the target is halted or failed, or the concurrency limit
+is reached. A completed run without an issue comment timestamped between its spawn and completion
+halts its target with `no-evidence`; the
+repetition and depth guards likewise decline a fourth repeat for one route and target or a ninth
+lineage hop. Every decline remains at the checkpoint boundary for a human rather than launching a
+subagent.
 
 ## It's working if
 
@@ -61,9 +69,12 @@ every slot that batch freed.
 - Fan-out never turns that into a menu either: the chain reaches its ten concurrent worktrees by asking for one recommendation at a time, and names which of the three limits stopped it — the ceiling of ten, no ready action left, or every remaining candidate waiting on a worktree another agent holds.
 - Once the ten are running, the chain keeps itself full: each finished run frees its slot, and the batch of runs that finished since the last turn comes back as one re-entry that refills every one of them while ready work remains.
 - A recommendation that opens a fresh session arrives as a runnable `copilot` command, not as flags you assemble yourself.
-- A chain-approved recommendation starts one in-session agent in its reserved worktree; an ordinary
-  `/next` recommendation remains one action and does not start work automatically.
-- The recommendation names whether to continue in this context or start a fresh session, matching the flow's own rules: grill → spec → tickets stays in one context, each `/implement` ticket starts in a new one.
+- An AFK-safe recommendation for one of the five allowlisted routes arrives with its in-session
+  subagent already running only when `chain.sh plan` returns `spawn`; on `decline`, it remains at
+  the checkpoint boundary as a prompt or a copyable fresh-session command.
+- The recommendation names whether to continue in this context, start a fresh session, or run as a
+  subagent, matching the flow's own rules: grill → spec → tickets stays in one context, while the
+  chain starts only approved delivery work.
 - In a repo missing either its tracker configuration or
   `.github/hooks/git-loopy-chain.json`, it routes to
   [setup-git-loopy-skills](./setup-git-loopy-skills.md) and nothing else.
@@ -71,4 +82,11 @@ every slot that batch freed.
 
 ## Where it fits
 
-`next` is the **router** — the standalone map that sits over the whole set. It is the node every other docs page links back to, so it never sits *in* a chain; it points *into* every chain. From here you'll most often land on [grill-with-docs](./grill-with-docs.md), the head of the main flow, or [triage](./triage.md), the on-ramp for work you didn't create. Its one hard prerequisite is [setup-git-loopy-skills](./setup-git-loopy-skills.md), because the tracker config and chain hook that skill writes are the state `next` reads. When even the router's own picture is stale, its [Source](https://github.com/bradcstevens/git-loopy-skills/tree/main/skills/next) is the map of record.
+`next` is the **router** — the standalone map that sits over the whole set. It points into every
+flow and carries the bounded chain when its gate approves. From here you'll most often land on
+[grill-with-docs](./grill-with-docs.md), the head of the main flow, or [triage](./triage.md), the
+on-ramp for work you didn't create. Its one hard prerequisite is
+[setup-git-loopy-skills](./setup-git-loopy-skills.md), because the tracker config and chain hook
+that skill writes are the state `next` reads. When even the router's own picture is stale, its
+[Source](https://github.com/bradcstevens/git-loopy-skills/tree/main/skills/next) is the map of
+record.
