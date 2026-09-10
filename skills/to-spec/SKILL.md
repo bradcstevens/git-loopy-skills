@@ -4,13 +4,22 @@ description: Turn the current conversation into a spec and publish it to the pro
 disable-model-invocation: false
 ---
 
-This skill takes the current conversation context and codebase understanding and produces a spec. Do NOT interview the user — just synthesize what you already know.
+`/to-spec [<source-issue>]`
+
+This skill takes the current conversation context and codebase understanding and produces a spec.
+When given a source issue, it instead loads the completed wayfinder map or concluded `idea`
+anchor and its native descendants as the source context. Do NOT interview the user — just
+synthesize the settled material.
 
 The issue tracker and triage label vocabulary should have been provided to you — run `/setup-git-loopy-skills` if not.
 
 ## Process
 
-1. Explore the repo to understand the current state of the codebase, if you haven't already. Use the project's domain glossary vocabulary throughout the spec, and respect any ADRs in the area you're touching.
+1. Explore the repo to understand the current state of the codebase, if you haven't already. If a
+   source issue was supplied, verify it is a `wayfinder:map` or `idea` anchor, load its native
+   descendants, and use its destination, recorded decisions, and comments as the settled source
+   material. Use the project's domain glossary vocabulary throughout the spec, and respect any
+   ADRs in the area you're touching.
 
 2. Sketch out the seams at which you're going to test the feature. Existing seams should be preferred to new ones. Use the highest seam possible. If new seams are needed, propose them at the highest point you can. The fewer seams across the codebase, the better - the ideal number is one.
 
@@ -74,7 +83,9 @@ Any further notes about the feature.
 
 </spec-template>
 
-4. Publish the spec issue, then record it (see below).
+4. Publish the spec issue, then record it (see below). When sourced from a map or anchor, create
+   the spec as that source issue's native sub-issue so its completed planning has a durable
+   successor.
 
 ## Record the specification
 
