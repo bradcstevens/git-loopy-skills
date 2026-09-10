@@ -94,7 +94,7 @@ if tracker.returncode:
         "resolved": False,
         "error": error,
     }, separators=(",", ":")))
-    raise SystemExit
+    raise SystemExit(1)
 
 try:
     response = json.loads(tracker.stdout)
@@ -103,7 +103,7 @@ except json.JSONDecodeError as error:
         "resolved": False,
         "error": f"tracker returned invalid target data: {error}",
     }, separators=(",", ":")))
-    raise SystemExit
+    raise SystemExit(1)
 
 number = response.get("number") if isinstance(response, dict) else None
 if (
@@ -115,7 +115,7 @@ if (
         "resolved": False,
         "error": "tracker returned target data without a number",
     }, separators=(",", ":")))
-    raise SystemExit
+    raise SystemExit(1)
 
 print('{"resolved":true}')
 PY
@@ -467,14 +467,7 @@ plan() {
     route_allowed=1
   fi
   if [ "$safety" = "AFK-safe" ] && [ "$route_allowed" -eq 1 ]; then
-    target_state="$(target_resolution "$target" "$repo_root")"
-    if python3 -c '
-import json
-import sys
-
-raise SystemExit(0 if json.load(sys.stdin)["resolved"] else 1)
-' <<< "$target_state"
-    then
+    if target_state="$(target_resolution "$target" "$repo_root")"; then
       target_resolved=1
     fi
   fi
@@ -646,14 +639,7 @@ reserve() {
     echo "error: reserving parent is not running: $parent_pid" >&2
     exit 2
   }
-  target_state="$(target_resolution "$target" "$repo_root")"
-  if ! python3 -c '
-import json
-import sys
-
-raise SystemExit(0 if json.load(sys.stdin)["resolved"] else 1)
-' <<< "$target_state"
-  then
+  if ! target_state="$(target_resolution "$target" "$repo_root")"; then
     target_error="$(python3 -c '
 import json
 import sys
