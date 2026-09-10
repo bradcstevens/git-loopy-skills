@@ -1,6 +1,6 @@
 ---
 name: handoff
-description: Launch a `/next` recommendation — its prompt and its sized runtime — as a background agent. Use when `/next` routes to `/implement`, or work moves to a fresh session that runs on its own.
+description: Launch a `/next` recommendation — its prompt and its sized runtime — as a background agent, then watch it to its exit and route on. Use when `/next` routes to `/implement`, when work moves to a fresh session that runs on its own, or when a detached run needs watching to completion.
 ---
 
 A `/next` recommendation is the seed: its prompt and its `Runtime` line are what this skill launches. If that output isn't the last part of this conversation, run `/next` before anything else.
@@ -44,4 +44,27 @@ The launcher returns one JSON object naming the outcome:
 
 Give the user the `log` path that follows the run and the `resume` command that rejoins it, both returned by the launcher.
 
-At the conclusion of a `/handoff` session, run `/next`.
+## 4. Watch the session to its exit
+
+The launcher returns while the session is still working, so its exit is the only signal that the workstream has moved. Watch for that exit whenever `/next` is this skill's successor — the ordinary case, where the detached session carries the very workstream this conversation is routing.
+
+Two launches route elsewhere and take no watch: one the user asked for on its own, because they will pick the result up themselves, and one that bridges into another harness or directory, where that session's own conclusion routes what follows. Name where the successor went, and finish at step 3.
+
+Otherwise arm the watch on the `pid` and `log` the launcher returned:
+
+```bash
+while ps -p <pid> >/dev/null 2>&1; do sleep 20; done
+tail -40 "<log>"
+```
+
+Write the pid into the loop as a bare number tested by `ps -p`: a `kill -0 "$PID"` liveness check is the reflex form of this wait, and the harness refuses it. Run the loop in the background, in async mode, so this turn can end while it keeps waiting. Keep it attached to this conversation, since waking this conversation is the whole job and a detached watcher wakes nobody.
+
+End the turn once the watch is running. The runtime wakes this session when the loop exits. Tell the user that `/next` follows that exit on its own, and that closing the conversation ends the watch while the session keeps going.
+
+**Done when:** the watch is running in the background against the launched pid and the turn has ended, or the successor was named as living elsewhere.
+
+## 5. Route from the exited session
+
+A wake means the session is over, not that it worked. Read the tail the watch printed, reaching into the log when the tail is thin, and say in a sentence how the run ended: the work finished, abandoned mid-flight, or the process killed.
+
+At the conclusion of a `/handoff` session, run `/next` on the state the exited session left, rather than the state it was launched to reach.
