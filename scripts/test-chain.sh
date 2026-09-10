@@ -530,8 +530,58 @@ cat > "$fake_bin/gh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [ "$1" = "api" ] && [ "$2" = "graphql" ]; then
+  if [ "${CHAIN_TARGET_LOOKUP:-}" = "rate-limited" ]; then
+    echo "API rate limit exceeded" >&2
+    exit 1
+  fi
+  if [ "${CHAIN_TARGET_LOOKUP:-}" = "unavailable" ]; then
+    echo "gh unavailable" >&2
+    exit 127
+  fi
+
+  query=""
+  for argument in "$@"; do
+    case "$argument" in
+      query=*) query="${argument#query=}" ;;
+    esac
+  done
+  if [ -n "${CHAIN_GH_LOG:-}" ]; then
+    printf '%s\n' "$query" >> "$CHAIN_GH_LOG"
+  fi
+
+  python3 - "$query" <<'PY'
+import json
+import re
+import sys
+
+repository = {}
+for alias, number_text in re.findall(
+    r"(target\d+):issueOrPullRequest\(number:(\d+)\)",
+    sys.argv[1],
+):
+    number = int(number_text)
+    if number in {15, 16}:
+        repository[alias] = {"__typename": "Issue", "number": number}
+    elif number == 60:
+        repository[alias] = {
+            "__typename": "PullRequest",
+            "closingIssuesReferences": {"nodes": [{"number": 15}]},
+        }
+    else:
+        repository[alias] = None
+
+print(json.dumps({"data": {"repository": repository}}, separators=(",", ":")))
+PY
+  exit
+fi
+
 if [ "$1" != "issue" ] || [ "$2" != "view" ] || [ "$4" != "--json" ] || [ "$5" != "comments" ]; then
   echo "unexpected gh invocation: $*" >&2
+  exit 1
+fi
+if [ -n "${CHAIN_EXPECT_ISSUE:-}" ] && [ "$3" != "$CHAIN_EXPECT_ISSUE" ]; then
+  echo "expected issue $CHAIN_EXPECT_ISSUE, got $3" >&2
   exit 1
 fi
 
@@ -542,6 +592,287 @@ else
 fi
 SH
 chmod +x "$fake_bin/gh"
+
+canonical_open_ledger="$tmp_dir/.git-loopy/canonical-open-subagents.jsonl"
+python3 - "$canonical_open_ledger" <<'PY'
+import json
+import os
+import sys
+
+ledger_path = sys.argv[1]
+os.makedirs(os.path.dirname(ledger_path), exist_ok=True)
+row = {
+    "route": "resolving-merge-conflicts",
+    "target": "60",
+    "session_id": "session-canonical-open",
+    "agent_id": "agent-canonical-open",
+    "agent_type": "resolving-merge-conflicts-agent",
+    "agent_name": "resolving-merge-conflicts-agent",
+    "spawn_time": "2026-08-22T00:00:00Z",
+    "worktree": "/tmp/canonical-open",
+    "chain_depth": 1,
+    "finish_time": "",
+    "outcome": "",
+}
+with open(ledger_path, "w", encoding="utf-8") as ledger:
+    ledger.write(json.dumps(row, separators=(",", ":")) + "\n")
+PY
+cp "$canonical_open_ledger" "$canonical_open_ledger.before"
+canonical_lookup_log="$tmp_dir/canonical-lookups.log"
+
+plan_ledger="$canonical_open_ledger"
+for equivalent_target in 15 issue-15 60; do
+  canonical_in_flight="$(
+    PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+      CHAIN_GH_LOG="$canonical_lookup_log" \
+      plan /code-review "$equivalent_target" AFK-safe code-review-agent \
+        gpt-5.6-sol high default "$tmp_dir/plan-canonical-$equivalent_target"
+  )"
+  assert_plan "canonical in-flight target $equivalent_target" "$canonical_in_flight" \
+    '{"decision":"decline","reason":"target-in-flight","route":"/code-review","target":"'"$equivalent_target"'"}'
+done
+if [ "$(wc -l < "$canonical_lookup_log" | tr -d ' ')" -ne 3 ]; then
+  err "canonical target checks repeated GitHub lookups within one plan"
+fi
+
+canonical_unrelated="$(
+  PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+    plan /code-review 16 AFK-safe code-review-agent gpt-5.6-sol high default \
+      "$tmp_dir/plan-canonical-unrelated"
+)"
+assert_plan "unrelated canonical target" "$canonical_unrelated" \
+  '{"decision":"spawn","route":"/code-review","target":"16","agent":"code-review-agent","model":"gpt-5.6-sol","effort":"high","context_tier":"default","worktree":"'"$tmp_dir"'/plan-canonical-unrelated"}'
+
+if PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+  "$CHAIN" reserve --parent-pid "$$" \
+    --ledger "$canonical_open_ledger" \
+    --route code-review \
+    --target issue-15 \
+    --spawn-time 2026-08-22T00:01:00Z \
+    --worktree "$tmp_dir/worktree-canonical-duplicate" \
+    --chain-depth 2 \
+    2>"$tmp_dir/canonical-duplicate.err"
+then
+  err "reserve accepted an equivalent target that was already in flight"
+fi
+if ! grep -q "target-in-flight: issue-15" "$tmp_dir/canonical-duplicate.err"; then
+  err "reserve did not report the equivalent in-flight target"
+fi
+if [ -e "$tmp_dir/worktree-canonical-duplicate" ]; then
+  err "equivalent target reservation created a worktree"
+fi
+if ! cmp -s "$canonical_open_ledger.before" "$canonical_open_ledger"; then
+  err "matching an existing target spelling rewrote the legacy ledger row"
+fi
+
+canonical_halt_ledger="$tmp_dir/.git-loopy/canonical-halt-subagents.jsonl"
+python3 - "$canonical_halt_ledger" <<'PY'
+import json
+import os
+import sys
+
+ledger_path = sys.argv[1]
+os.makedirs(os.path.dirname(ledger_path), exist_ok=True)
+row = {
+    "route": "code-review",
+    "target": "60",
+    "session_id": "session-canonical-halt",
+    "agent_id": "agent-canonical-halt",
+    "agent_type": "code-review-agent",
+    "agent_name": "code-review-agent",
+    "spawn_time": "2026-08-22T00:00:00Z",
+    "worktree": "/tmp/canonical-halt",
+    "chain_depth": 1,
+    "finish_time": "2026-08-22T00:10:00Z",
+    "outcome": "no-evidence",
+    "halt_reason": "no-evidence",
+    "halted_at": "2026-08-22T00:10:00Z",
+}
+with open(ledger_path, "w", encoding="utf-8") as ledger:
+    ledger.write(json.dumps(row, separators=(",", ":")) + "\n")
+PY
+
+plan_ledger="$canonical_halt_ledger"
+canonical_halted="$(
+  PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+    plan /implement 15 AFK-safe implement-agent gpt-5.6-terra high default \
+      "$tmp_dir/plan-canonical-halted"
+)"
+assert_plan "canonical halted target" "$canonical_halted" \
+  '{"decision":"decline","reason":"target-halted","halt_reason":"no-evidence","route":"/implement","target":"15"}'
+
+canonical_failed_ledger="$tmp_dir/.git-loopy/canonical-failed-subagents.jsonl"
+python3 - "$canonical_failed_ledger" <<'PY'
+import json
+import os
+import sys
+
+ledger_path = sys.argv[1]
+os.makedirs(os.path.dirname(ledger_path), exist_ok=True)
+row = {
+    "route": "implement",
+    "target": "60",
+    "session_id": "session-canonical-failed",
+    "agent_id": "agent-canonical-failed",
+    "agent_type": "implement-agent",
+    "agent_name": "implement-agent",
+    "spawn_time": "2026-08-22T00:00:00Z",
+    "worktree": "/tmp/canonical-failed",
+    "chain_depth": 1,
+    "finish_time": "2026-08-22T00:10:00Z",
+    "outcome": "failed",
+}
+with open(ledger_path, "w", encoding="utf-8") as ledger:
+    ledger.write(json.dumps(row, separators=(",", ":")) + "\n")
+PY
+
+plan_ledger="$canonical_failed_ledger"
+canonical_failed="$(
+  PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+    plan /implement issue-15 AFK-safe implement-agent gpt-5.6-terra high default \
+      "$tmp_dir/plan-canonical-failed"
+)"
+assert_plan "canonical failed target" "$canonical_failed" \
+  '{"decision":"decline","reason":"target-failed","route":"/implement","target":"issue-15"}'
+
+canonical_guard_ledger="$tmp_dir/.git-loopy/canonical-guard-subagents.jsonl"
+python3 - "$canonical_guard_ledger" <<'PY'
+import json
+import os
+import sys
+
+ledger_path = sys.argv[1]
+os.makedirs(os.path.dirname(ledger_path), exist_ok=True)
+
+def bound(target, route, depth, identifier):
+    return {
+        "route": route,
+        "target": target,
+        "session_id": f"session-{identifier}",
+        "agent_id": f"agent-{identifier}",
+        "agent_type": f"{route}-agent",
+        "agent_name": f"{route}-agent",
+        "spawn_time": "2026-08-22T00:00:00Z",
+        "worktree": f"/tmp/{identifier}",
+        "chain_depth": depth,
+        "finish_time": "2026-08-22T00:10:00Z",
+        "outcome": "published",
+    }
+
+rows = [
+    bound("60", "code-review", 1, "canonical-repeat-pr"),
+    bound("15", "code-review", 2, "canonical-repeat-bare"),
+    bound("issue-15", "code-review", 3, "canonical-repeat-prefixed"),
+]
+with open(ledger_path, "w", encoding="utf-8") as ledger:
+    for row in rows:
+        ledger.write(json.dumps(row, separators=(",", ":")) + "\n")
+PY
+
+plan_ledger="$canonical_guard_ledger"
+canonical_repetition="$(
+  PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+    plan /code-review issue-15 AFK-safe code-review-agent gpt-5.6-sol high default \
+      "$tmp_dir/plan-canonical-repetition"
+)"
+assert_plan "canonical route repetition budget" "$canonical_repetition" \
+  '{"decision":"decline","reason":"target-halted","halt_reason":"route-repetition-limit","route":"/code-review","target":"issue-15"}'
+
+canonical_depth_ledger="$tmp_dir/.git-loopy/canonical-depth-subagents.jsonl"
+python3 - "$canonical_depth_ledger" <<'PY'
+import json
+import os
+import sys
+
+ledger_path = sys.argv[1]
+os.makedirs(os.path.dirname(ledger_path), exist_ok=True)
+rows = []
+for depth in range(1, 9):
+    route = (
+        "implement",
+        "code-review",
+        "research",
+        "push",
+        "resolving-merge-conflicts",
+    )[(depth - 1) % 5]
+    rows.append({
+        "route": route,
+        "target": ("60", "15", "issue-15")[(depth - 1) % 3],
+        "session_id": f"session-canonical-depth-{depth}",
+        "agent_id": f"agent-canonical-depth-{depth}",
+        "agent_type": f"{route}-agent",
+        "agent_name": f"{route}-agent",
+        "spawn_time": "2026-08-22T00:00:00Z",
+        "worktree": f"/tmp/canonical-depth-{depth}",
+        "chain_depth": depth,
+        "finish_time": "2026-08-22T00:10:00Z",
+        "outcome": "published",
+    })
+
+with open(ledger_path, "w", encoding="utf-8") as ledger:
+    for row in rows:
+        ledger.write(json.dumps(row, separators=(",", ":")) + "\n")
+PY
+
+plan_ledger="$canonical_depth_ledger"
+canonical_depth="$(
+  PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+    plan /research 15 AFK-safe research-agent claude-opus-5 high default \
+      "$tmp_dir/plan-canonical-depth"
+)"
+assert_plan "canonical lineage depth budget" "$canonical_depth" \
+  '{"decision":"decline","reason":"target-halted","halt_reason":"chain-depth-limit","route":"/research","target":"15"}'
+
+canonical_reserve_ledger="$tmp_dir/.git-loopy/canonical-reserve-subagents.jsonl"
+PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+  "$CHAIN" reserve --parent-pid "$$" \
+    --ledger "$canonical_reserve_ledger" \
+    --route implement \
+    --target 60 \
+    --spawn-time 2026-08-22T00:00:00Z \
+    --worktree "$tmp_dir/worktree-canonical-reserve" \
+    --chain-depth 1
+
+if ! python3 - "$canonical_reserve_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger if line.strip()]
+
+assert len(rows) == 1, rows
+assert rows[0]["target"] == "issue-15", rows
+PY
+then
+  err "reserve did not write the canonical target identity"
+fi
+
+"$CHAIN" bind \
+  --ledger "$canonical_reserve_ledger" \
+  --worktree "$tmp_dir/worktree-canonical-reserve" \
+  --session-id session-canonical-reserve \
+  --agent-id agent-canonical-reserve \
+  --agent-type implement-agent \
+  --agent-name implement-agent
+canonical_completion="$(
+  PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published CHAIN_EXPECT_ISSUE=15 \
+    "$CHAIN" complete --ledger "$canonical_reserve_ledger" \
+      <<< '{"sessionId":"session-canonical-reserve","timestamp":"2026-08-22T00:11:00Z","cwd":"'"$tmp_dir"'","agentId":"agent-canonical-reserve","agentType":"implement-agent","agentName":"implement-agent"}'
+)"
+assert_plan "canonical target completion" "$canonical_completion" \
+  '{"continue":true,"outcome":"published","target":"issue-15"}'
+
+plan_ledger="$tmp_dir/.git-loopy/canonical-resolution-failure.jsonl"
+for resolution_failure in rate-limited unavailable; do
+  canonical_resolution_failure="$(
+    PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+      CHAIN_TARGET_LOOKUP="$resolution_failure" \
+      plan /implement 60 AFK-safe implement-agent gpt-5.6-terra high default \
+        "$tmp_dir/plan-canonical-resolution-$resolution_failure"
+  )"
+  assert_plan "target resolution $resolution_failure" "$canonical_resolution_failure" \
+    '{"decision":"decline","reason":"target-resolution-failed","route":"/implement","target":"60"}'
+done
 
 complete_ledger="$tmp_dir/.git-loopy/complete-subagents.jsonl"
 reserve_and_bind \
@@ -1333,7 +1664,7 @@ CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE=1 "$CHAIN" reserve --parent-pid "$$" \
   --worktree "$tmp_dir/worktree-reservation-crash" \
   --chain-depth 1 &
 reservation_crash_pid=$!
-for _ in $(seq 1 100); do
+for _ in $(seq 1 300); do
   grep -q reservation-crash "$reservation_ledger" 2>/dev/null && break
   sleep 0.01
 done
