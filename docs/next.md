@@ -43,9 +43,11 @@ AFK-safe target and one of its five allowlisted routes — `/implement`, `/code-
 ledger before starting the in-session subagent, then binds the run to that reservation.
 
 The ledger records each reservation, binding, worktree, completion, and per-target chain depth so the
-chain neither duplicates in-flight work nor exceeds ten concurrent runs. A reservation also names the
-process identity of its reserving parent — the routing session itself, never the shell that runs the
-command, which exits with it: recovery reclaims an unbound orphan immediately when that
+chain neither duplicates in-flight work nor exceeds ten concurrent runs. Numeric issue targets and
+their `issue-N` spelling share one identity; a pull request number uses the issue it closes, including
+when older ledger rows retain a previous spelling. A reservation also names the process identity of
+its reserving parent — the routing session itself, never the shell that runs the command, which exits
+with it: recovery reclaims an unbound orphan immediately when that
 parent is gone, or after `CHAIN_RESERVATION_STALE_SECONDS` (300 seconds by default), marking it
 `reclaimed` rather than as a completed run. Bound and in-flight runs are never candidates for that
 recovery. Every `plan` runs recovery before

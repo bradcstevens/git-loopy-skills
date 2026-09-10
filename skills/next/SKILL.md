@@ -207,8 +207,9 @@ round again.
 
 The chain stops and asks a human before an unexplained runaway: it permits a route at most **three**
 times for one target and a target lineage at most **eight** hops deep. A fourth repeat or ninth hop
-is declined. `subagentStop` closes the finished run's ledger row; `agentStop`, not `subagentStop`,
-carries re-entry into `/next`.
+is declined. Bare issue numbers, `issue-N`, and pull request numbers that close that issue share
+those guards, including ledger rows written with an older spelling. `subagentStop` closes the
+finished run's ledger row; `agentStop`, not `subagentStop`, carries re-entry into `/next`.
 
 The chain and `/handoff` have different lifetimes. The chain runs an in-session subagent alongside
 this session and ends with it. `/handoff` launches detached work that outlives this session. Keep

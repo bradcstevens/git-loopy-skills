@@ -30,6 +30,7 @@ EOF
 ledger="${CHAIN_LEDGER:-}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 claim_recovery="$script_dir/claim-recovery.py"
+target_identity="$script_dir/target-identity.py"
 lock_dir=""
 tmp=""
 metadata=""
@@ -63,6 +64,10 @@ release_lock() {
 repository_root() {
   git worktree list --porcelain |
     awk '/^worktree / { sub(/^worktree /, ""); print; exit }'
+}
+
+resolve_target_context() {
+  python3 "$target_identity" "$ledger" "$1"
 }
 
 process_start() {
@@ -174,7 +179,8 @@ import json
 import os
 import sys
 
-ledger, target = sys.argv[1:]
+ledger, target_context = sys.argv[1:]
+equivalent_targets = set(json.loads(target_context)["equivalent_targets"])
 if not os.path.exists(ledger):
     raise SystemExit(1)
 
@@ -188,7 +194,7 @@ with open(ledger, encoding="utf-8") as ledger_file:
         except json.JSONDecodeError as error:
             print(f"error: invalid spawn ledger: {error}", file=sys.stderr)
             raise SystemExit(2)
-        if row.get("target") == target and not row.get("finish_time"):
+        if row.get("target") in equivalent_targets and not row.get("finish_time"):
             raise SystemExit(0)
 
 raise SystemExit(1)
@@ -256,19 +262,23 @@ allowlisted_route() {
 }
 
 evaluate_and_record_target_guard() {
-  local route="$1" target="$2" requested_depth="${3:-}"
+  local route="$1" target_context="$2" requested_depth="${3:-}"
 
-  python3 - "$ledger" "$route" "$target" "$requested_depth" <<'PY'
+  python3 - "$ledger" "$route" "$target_context" "$requested_depth" <<'PY'
 import datetime
 import json
 import os
 import sys
 import tempfile
 
-ledger_path, route, target, requested_depth = sys.argv[1:]
+ledger_path, route, target_context, requested_depth = sys.argv[1:]
+target_context = json.loads(target_context)
+target = target_context["canonical_target"]
+equivalent_targets = set(target_context["equivalent_targets"])
 requested_depth = int(requested_depth) if requested_depth else 0
 if not os.path.exists(ledger_path):
     print(json.dumps({
+        "failed": False,
         "reason": None,
         "target": target,
         "next_chain_depth": max(1, requested_depth),
@@ -282,10 +292,19 @@ except json.JSONDecodeError as error:
     print(f"error: invalid spawn ledger: {error}", file=sys.stderr)
     raise SystemExit(2)
 
-bound_rows = [
+target_rows = [
     (index, row)
     for index, row in enumerate(rows)
-    if row.get("target") == target and row.get("agent_id")
+    if row.get("target") in equivalent_targets
+]
+target_failed = any(
+    row.get("outcome") in {"failed", "no-evidence"}
+    for _, row in target_rows
+)
+bound_rows = [
+    (index, row)
+    for index, row in target_rows
+    if row.get("agent_id")
 ]
 recorded_depth = max(
     (
@@ -299,6 +318,7 @@ next_chain_depth = max(recorded_depth + 1, requested_depth, 1)
 
 if not bound_rows:
     print(json.dumps({
+        "failed": target_failed,
         "reason": None,
         "target": target,
         "next_chain_depth": next_chain_depth,
@@ -330,6 +350,7 @@ elif halt_reason is None:
 
 if halt_reason is None:
     print(json.dumps({
+        "failed": target_failed,
         "reason": None,
         "target": target,
         "next_chain_depth": next_chain_depth,
@@ -357,6 +378,7 @@ if halt_row.get("halt_reason") != halt_reason:
         raise
 
 print(json.dumps({
+    "failed": target_failed,
     "reason": halt_reason,
     "target": target,
     "next_chain_depth": next_chain_depth,
@@ -409,6 +431,7 @@ plan() {
     --stale-after-seconds "${CHAIN_RESERVATION_STALE_SECONDS:-300}" >/dev/null
 
   local worktree_held=0 collision_status max_concurrency guard="" route_allowed=0
+  local target_context=""
   max_concurrency="$(concurrency_limit)" || return $?
   if allowlisted_route "$route"; then
     route_allowed=1
@@ -423,24 +446,28 @@ plan() {
   fi
 
   if [ "$safety" = "AFK-safe" ] && [ "$route_allowed" -eq 1 ]; then
-    mkdir -p "$(dirname "$ledger")"
-    lock_dir="$ledger.lock"
-    acquire_lock
-    guard="$(evaluate_and_record_target_guard "$route" "$target")"
-    release_lock
+    target_context="$(resolve_target_context "$target")" || return $?
+    if [ "$(python3 -c 'import json, sys; print(json.load(sys.stdin)["error"] or "")' <<< "$target_context")" = "" ]; then
+      mkdir -p "$(dirname "$ledger")"
+      lock_dir="$ledger.lock"
+      acquire_lock
+      guard="$(evaluate_and_record_target_guard "$route" "$target_context")"
+      release_lock
+    fi
   fi
 
-  python3 - "$ledger" "$route" "$target" "$safety" "$agent" "$model" "$effort" "$context_tier" "$worktree" "$worktree_held" "$max_concurrency" "$route_allowed" "$guard" <<'PY'
+  python3 - "$ledger" "$route" "$target" "$safety" "$agent" "$model" "$effort" "$context_tier" "$worktree" "$worktree_held" "$max_concurrency" "$route_allowed" "$guard" "$target_context" <<'PY'
 import json
 import os
 import sys
 
-ledger, route, target, safety, agent, model, effort, context_tier, worktree, worktree_held, max_concurrency, route_allowed, guard = sys.argv[1:]
+ledger, route, target, safety, agent, model, effort, context_tier, worktree, worktree_held, max_concurrency, route_allowed, guard, target_context = sys.argv[1:]
 worktree = os.path.realpath(os.path.abspath(worktree))
 worktree_held = worktree_held == "1"
 max_concurrency = int(max_concurrency)
 route_allowed = route_allowed == "1"
 guard = json.loads(guard) if guard else None
+target_context = json.loads(target_context) if target_context else None
 
 if not route_allowed:
     decision = {
@@ -456,9 +483,16 @@ elif safety != "AFK-safe":
         "route": route,
         "target": target,
     }
+elif target_context["error"]:
+    decision = {
+        "decision": "decline",
+        "reason": target_context["error"],
+        "route": route,
+        "target": target,
+    }
 else:
+    equivalent_targets = set(target_context["equivalent_targets"])
     in_flight = False
-    target_failed = False
     open_reservations = 0
     if os.path.exists(ledger):
         with open(ledger, encoding="utf-8") as ledger_file:
@@ -469,11 +503,9 @@ else:
                 row = json.loads(line)
                 if not row.get("finish_time"):
                     open_reservations += 1
-                if row["target"] == target and not row.get("finish_time"):
+                if row.get("target") in equivalent_targets and not row.get("finish_time"):
                     in_flight = True
                     break
-                if row["target"] == target and row.get("outcome") in {"failed", "no-evidence"}:
-                    target_failed = True
 
     if in_flight:
         decision = {
@@ -490,7 +522,7 @@ else:
             "route": route,
             "target": target,
         }
-    elif target_failed:
+    elif guard and guard["failed"]:
         decision = {
             "decision": "decline",
             "reason": "target-failed",
@@ -551,7 +583,7 @@ reserve() {
     exit 2
   }
   local ledger_dir row spawn_commit worktree_branch max_concurrency open_reservations
-  local parent_start
+  local parent_start target_context canonical_target target_error
   if [ -z "$ledger" ]; then
     ledger="$(repository_root)/.git-loopy/subagents.jsonl"
   fi
@@ -572,6 +604,13 @@ reserve() {
   }
   mkdir -p "$ledger_dir"
   max_concurrency="$(concurrency_limit)" || return $?
+  target_context="$(resolve_target_context "$target")" || return $?
+  target_error="$(python3 -c 'import json, sys; print(json.load(sys.stdin)["error"] or "")' <<< "$target_context")"
+  if [ -n "$target_error" ]; then
+    echo "error: $target_error: $target" >&2
+    return 1
+  fi
+  canonical_target="$(python3 -c 'import json, sys; print(json.load(sys.stdin)["canonical_target"])' <<< "$target_context")"
 
   acquire_lock
 
@@ -586,7 +625,7 @@ reserve() {
     fi
   fi
 
-  if ledger_has_open_target "$target"; then
+  if ledger_has_open_target "$target_context"; then
     echo "error: target-in-flight: $target" >&2
     exit 1
   else
@@ -596,9 +635,13 @@ reserve() {
     fi
   fi
 
-  guard="$(evaluate_and_record_target_guard "$route" "$target" "$chain_depth")"
+  guard="$(evaluate_and_record_target_guard "$route" "$target_context" "$chain_depth")"
   if [ "$(python3 -c 'import json; import sys; print(json.load(sys.stdin)["reason"] or "")' <<< "$guard")" ]; then
     echo "error: target-halted: $(python3 -c 'import json; import sys; print(json.load(sys.stdin)["reason"])' <<< "$guard")" >&2
+    exit 1
+  fi
+  if [ "$(python3 -c 'import json; import sys; print("true" if json.load(sys.stdin)["failed"] else "false")' <<< "$guard")" = "true" ]; then
+    echo "error: target-failed: $target" >&2
     exit 1
   fi
   chain_depth="$(python3 -c 'import json; import sys; print(json.load(sys.stdin)["next_chain_depth"])' <<< "$guard")"
@@ -627,7 +670,7 @@ PY
   fi
 
   tmp="$(mktemp "$ledger_dir/.subagents.XXXXXX")"
-  row="$(python3 - "$route" "$target" "$spawn_time" "$worktree" "$chain_depth" "$parent_pid" "$parent_start" <<'PY'
+  row="$(python3 - "$route" "$canonical_target" "$spawn_time" "$worktree" "$chain_depth" "$parent_pid" "$parent_start" <<'PY'
 import json
 import sys
 
@@ -778,10 +821,11 @@ complete() {
 import datetime
 import json
 import os
+import re
 import subprocess
 import sys
 
-ledger_path, output_path, metadata_path = sys.argv[1:]
+ledger_path, output_path, metadata_path, target_identity = sys.argv[1:]
 # Required because `complete` reads them, and for no other reason. sessionId,
 # agentId, agentType and agentName find the ledger row; cwd locates the
 # repository and the worktree; timestamp closes the row. Everything else the
@@ -928,8 +972,36 @@ if finish_at.tzinfo is None:
     print("error: subagent-stop payload timestamp must include a timezone", file=sys.stderr)
     raise SystemExit(2)
 
+resolution = subprocess.run(
+    [sys.executable, target_identity, ledger_path, target],
+    capture_output=True,
+    cwd=payload["cwd"],
+    text=True,
+)
+if resolution.returncode:
+    sys.stderr.write(resolution.stderr)
+    raise SystemExit(resolution.returncode)
+try:
+    canonical_target = json.loads(resolution.stdout)
+except json.JSONDecodeError as error:
+    print(f"error: target resolver returned invalid data: {error}", file=sys.stderr)
+    raise SystemExit(2)
+resolution_error = canonical_target.get("error")
+if resolution_error:
+    print(f"error: {resolution_error}: {target}", file=sys.stderr)
+    raise SystemExit(1)
+canonical_target = canonical_target.get("canonical_target")
+if not isinstance(canonical_target, str) or not canonical_target:
+    print("error: target resolver returned no canonical target", file=sys.stderr)
+    raise SystemExit(2)
+
+tracker_target = (
+    canonical_target.removeprefix("issue-")
+    if re.fullmatch(r"issue-\d+", canonical_target)
+    else canonical_target
+)
 tracker = subprocess.run(
-    ["gh", "issue", "view", target, "--json", "comments"],
+    ["gh", "issue", "view", tracker_target, "--json", "comments"],
     capture_output=True,
     cwd=payload["cwd"],
     text=True,
@@ -987,7 +1059,7 @@ print(json.dumps({
     "outcome": outcome,
     "target": target,
 }, separators=(",", ":")))
-' "$ledger" "$tmp" "$metadata"
+' "$ledger" "$tmp" "$metadata" "$target_identity"
   )"
 
   if python3 -c '
