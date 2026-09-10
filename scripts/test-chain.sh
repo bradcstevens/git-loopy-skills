@@ -23,6 +23,53 @@ git -C "$tmp_dir" -c user.name=test -c user.email=test@example.com commit --quie
 ledger="$tmp_dir/.git-loopy/subagents.jsonl"
 export CHAIN_RESERVATION_STALE_SECONDS=999999999
 
+fake_bin="$tmp_dir/bin"
+mkdir -p "$fake_bin"
+cat > "$fake_bin/gh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "$1" != "issue" ] || [ "$2" != "view" ] || [ "$4" != "--json" ]; then
+  echo "unexpected gh invocation: $*" >&2
+  exit 1
+fi
+
+case "${CHAIN_TRACKER_MODE:-resolved}" in
+  resolved) ;;
+  unresolvable)
+    echo "target $3 does not resolve" >&2
+    exit 1
+    ;;
+  transport-failure)
+    echo "tracker transport failed for $3" >&2
+    exit 23
+    ;;
+  *)
+    echo "unexpected tracker mode: $CHAIN_TRACKER_MODE" >&2
+    exit 1
+    ;;
+esac
+
+case "$5" in
+  number)
+    printf '{"number":"%s"}\n' "$3"
+    ;;
+  comments)
+    if [ "${CHAIN_EVIDENCE:-}" = "published" ]; then
+      printf '%s\n' '{"comments":[{"createdAt":"2026-08-22T00:10:00Z","body":"Evidence comment"}]}'
+    else
+      printf '%s\n' '{"comments":[]}'
+    fi
+    ;;
+  *)
+    echo "unexpected gh invocation: $*" >&2
+    exit 1
+    ;;
+esac
+SH
+chmod +x "$fake_bin/gh"
+export PATH="$fake_bin:$PATH"
+
 timezone_stable_start="$(TZ=UTC ps -o lstart= -p "$$" | xargs)"
 if [ "$(TZ=America/Denver python3 "$REPO/skills/next/claim-recovery.py" owner-gone "$$" "$timezone_stable_start")" != "false" ]; then
   err "claim recovery treated a live parent as gone after a timezone change"
@@ -66,6 +113,36 @@ reserve_and_bind() {
 
 if [ -e "$ledger" ]; then
   err "ledger exists before the first record"
+fi
+
+unresolvable_reserve_ledger="$tmp_dir/.git-loopy/unresolvable-reserve.jsonl"
+unresolvable_reserve_worktree="$tmp_dir/worktree-unresolvable-reserve"
+unresolvable_reserve_error="$tmp_dir/unresolvable-reserve.err"
+if (
+  cd "$tmp_dir"
+  CHAIN_TRACKER_MODE=unresolvable "$CHAIN" reserve --parent-pid "$$" \
+    --ledger "$unresolvable_reserve_ledger" \
+    --route implement \
+    --target issue-unresolvable-reserve \
+    --spawn-time 2026-08-22T00:00:00Z \
+    --worktree "$unresolvable_reserve_worktree" \
+    --chain-depth 1 \
+    2>"$unresolvable_reserve_error"
+)
+then
+  err "reserve accepted an unresolvable target"
+fi
+if ! grep -q \
+  "target-unresolvable: issue-unresolvable-reserve: target issue-unresolvable-reserve does not resolve" \
+  "$unresolvable_reserve_error"
+then
+  err "reserve did not report the rejected target and cause"
+fi
+if [ -e "$unresolvable_reserve_ledger" ]; then
+  err "reserve wrote a ledger row for an unresolvable target"
+fi
+if [ -e "$unresolvable_reserve_worktree" ]; then
+  err "reserve created a worktree for an unresolvable target"
 fi
 
 (
@@ -275,6 +352,28 @@ assert_plan "no ready action" "$exhausted_output" \
   '{"decision":"exhausted","reason":"no-ready-action"}'
 if [ -e "$exhausted_ledger" ]; then
   err "no ready action created a ledger or retried a route"
+fi
+
+unresolvable_plan_worktree="$tmp_dir/worktree-unresolvable-plan"
+unresolvable_plan="$(
+  CHAIN_TRACKER_MODE=unresolvable "$CHAIN" plan \
+    --ledger "$plan_ledger" \
+    --route /implement \
+    --target issue-unresolvable-plan \
+    --safety AFK-safe \
+    --agent implement-agent \
+    --model gpt-5.6-terra \
+    --effort high \
+    --context-tier default \
+    --worktree "$unresolvable_plan_worktree"
+)"
+assert_plan "unresolvable target" "$unresolvable_plan" \
+  '{"decision":"decline","reason":"target-unresolvable","route":"/implement","target":"issue-unresolvable-plan","error":"target issue-unresolvable-plan does not resolve"}'
+if [ -e "$plan_ledger" ]; then
+  err "plan wrote a ledger row for an unresolvable target"
+fi
+if [ -e "$unresolvable_plan_worktree" ]; then
+  err "plan created a worktree for an unresolvable target"
 fi
 
 collision_ledger="$tmp_dir/.git-loopy/collision-subagents.jsonl"
@@ -524,25 +623,6 @@ other_candidate="$(plan /code-review issue-7 AFK-safe code-review-agent gpt-5.6-
 assert_plan "other candidate after collision" "$other_candidate" \
   '{"decision":"spawn","route":"/code-review","target":"issue-7","agent":"code-review-agent","model":"gpt-5.6-sol","effort":"xhigh","context_tier":"default","worktree":"'"$tmp_dir"'/plan-other-candidate"}'
 
-fake_bin="$tmp_dir/bin"
-mkdir -p "$fake_bin"
-cat > "$fake_bin/gh" <<'SH'
-#!/usr/bin/env bash
-set -euo pipefail
-
-if [ "$1" != "issue" ] || [ "$2" != "view" ] || [ "$4" != "--json" ] || [ "$5" != "comments" ]; then
-  echo "unexpected gh invocation: $*" >&2
-  exit 1
-fi
-
-if [ "${CHAIN_EVIDENCE:-}" = "published" ]; then
-  printf '%s\n' '{"comments":[{"createdAt":"2026-08-22T00:10:00Z","body":"Evidence comment"}]}'
-else
-  printf '%s\n' '{"comments":[]}'
-fi
-SH
-chmod +x "$fake_bin/gh"
-
 complete_ledger="$tmp_dir/.git-loopy/complete-subagents.jsonl"
 reserve_and_bind \
   --ledger "$complete_ledger" \
@@ -728,6 +808,63 @@ plan_ledger="$complete_ledger"
 no_evidence_target="$(plan /implement issue-no-evidence AFK-safe implement-agent gpt-5.6-terra high default "$tmp_dir/plan-no-evidence")"
 assert_plan "no-evidence target" "$no_evidence_target" \
   '{"decision":"decline","reason":"target-halted","halt_reason":"no-evidence","route":"/implement","target":"issue-no-evidence"}'
+
+reserve_and_bind \
+  --ledger "$complete_ledger" \
+  --route push \
+  --target issue-tracker-failure \
+  --session-id session-tracker-failure \
+  --agent-id agent-tracker-failure \
+  --agent-type push-agent \
+  --agent-name push-agent \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$tmp_dir/worktree-tracker-failure" \
+  --chain-depth 3
+
+tracker_failure_error="$tmp_dir/tracker-failure.err"
+tracker_failure_status=0
+if tracker_failure_output="$(
+  CHAIN_TRACKER_MODE=transport-failure "$CHAIN" complete --ledger "$complete_ledger" \
+    <<< "$(completion_payload agent-tracker-failure 2026-08-22T00:11:00Z push-agent push-agent session-tracker-failure)" \
+    2>"$tracker_failure_error"
+)"
+then
+  err "tracker transport failure returned success"
+else
+  tracker_failure_status=$?
+fi
+if [ "$tracker_failure_status" -ne 23 ]; then
+  err "tracker transport failure did not preserve its exit status"
+fi
+assert_plan "tracker transport failure" "$tracker_failure_output" \
+  '{"continue":false,"outcome":"tracker-failed","target":"issue-tracker-failure","error":"tracker transport failed for issue-tracker-failure","exit_status":23}'
+if ! grep -q \
+  "tracker lookup failed for issue-tracker-failure: tracker transport failed for issue-tracker-failure" \
+  "$tracker_failure_error"
+then
+  err "tracker transport failure did not report its target and cause"
+fi
+if ! python3 - "$complete_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger]
+
+row = next(row for row in rows if row["session_id"] == "session-tracker-failure")
+assert row["finish_time"] == "2026-08-22T00:11:00Z"
+assert row["outcome"] == "tracker-failed"
+assert row["tracker_error"] == "tracker transport failed for issue-tracker-failure"
+assert row["halt_reason"] == "tracker-failed"
+assert row["halted_at"] == "2026-08-22T00:11:00Z"
+PY
+then
+  err "tracker transport failure did not close the row distinctly"
+fi
+if [ -e "$tmp_dir/worktree-tracker-failure" ]; then
+  err "tracker transport failure left its worktree behind"
+  git -C "$tmp_dir" worktree remove --force "$tmp_dir/worktree-tracker-failure"
+fi
 
 reserve_and_bind \
   --ledger "$complete_ledger" \
@@ -1370,7 +1507,7 @@ CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE=1 "$CHAIN" reserve --parent-pid "$$" \
   --worktree "$tmp_dir/worktree-reservation-crash" \
   --chain-depth 1 &
 reservation_crash_pid=$!
-for _ in $(seq 1 100); do
+for _ in $(seq 1 500); do
   grep -q reservation-crash "$reservation_ledger" 2>/dev/null && break
   sleep 0.01
 done

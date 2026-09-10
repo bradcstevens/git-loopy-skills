@@ -69,6 +69,58 @@ process_start() {
   TZ=UTC ps -o lstart= -p "$1" | xargs
 }
 
+target_resolution() {
+  local target="$1" workdir="$2"
+
+  python3 - "$target" "$workdir" <<'PY'
+import json
+import subprocess
+import sys
+
+target, workdir = sys.argv[1:]
+tracker = subprocess.run(
+    ["gh", "issue", "view", target, "--json", "number"],
+    capture_output=True,
+    cwd=workdir,
+    text=True,
+)
+if tracker.returncode:
+    error = (
+        tracker.stderr.strip()
+        or tracker.stdout.strip()
+        or f"tracker exited with status {tracker.returncode}"
+    )
+    print(json.dumps({
+        "resolved": False,
+        "error": error,
+    }, separators=(",", ":")))
+    raise SystemExit
+
+try:
+    response = json.loads(tracker.stdout)
+except json.JSONDecodeError as error:
+    print(json.dumps({
+        "resolved": False,
+        "error": f"tracker returned invalid target data: {error}",
+    }, separators=(",", ":")))
+    raise SystemExit
+
+number = response.get("number") if isinstance(response, dict) else None
+if (
+    isinstance(number, bool)
+    or not isinstance(number, (int, str))
+    or not str(number)
+):
+    print(json.dumps({
+        "resolved": False,
+        "error": "tracker returned target data without a number",
+    }, separators=(",", ":")))
+    raise SystemExit
+
+print('{"resolved":true}')
+PY
+}
+
 remove_stale_lock() {
   local stale claim_dir recovery_dir
   recovery_dir="$lock_dir.recovery"
@@ -366,7 +418,7 @@ PY
 
 plan() {
   local route="" target="" safety="" agent="" model="" effort="" context_tier="" worktree=""
-  local fill_terminal="" ledger_set=0
+  local fill_terminal="" ledger_set=0 target_state="" target_resolved=0
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -401,8 +453,9 @@ plan() {
     [ -n "$model" ] && [ -n "$effort" ] && [ -n "$context_tier" ] &&
     [ -n "$worktree" ] || usage
 
+  repo_root="$(repository_root)"
   if [ -z "$ledger" ]; then
-    ledger="$(repository_root)/.git-loopy/subagents.jsonl"
+    ledger="$repo_root/.git-loopy/subagents.jsonl"
   fi
 
   recover --ledger "$ledger" \
@@ -413,6 +466,18 @@ plan() {
   if allowlisted_route "$route"; then
     route_allowed=1
   fi
+  if [ "$safety" = "AFK-safe" ] && [ "$route_allowed" -eq 1 ]; then
+    target_state="$(target_resolution "$target" "$repo_root")"
+    if python3 -c '
+import json
+import sys
+
+raise SystemExit(0 if json.load(sys.stdin)["resolved"] else 1)
+' <<< "$target_state"
+    then
+      target_resolved=1
+    fi
+  fi
   if ledger_has_open_worktree "$worktree"; then
     worktree_held=1
   else
@@ -422,7 +487,9 @@ plan() {
     fi
   fi
 
-  if [ "$safety" = "AFK-safe" ] && [ "$route_allowed" -eq 1 ]; then
+  if [ "$safety" = "AFK-safe" ] && [ "$route_allowed" -eq 1 ] &&
+    [ "$target_resolved" -eq 1 ]
+  then
     mkdir -p "$(dirname "$ledger")"
     lock_dir="$ledger.lock"
     acquire_lock
@@ -430,17 +497,18 @@ plan() {
     release_lock
   fi
 
-  python3 - "$ledger" "$route" "$target" "$safety" "$agent" "$model" "$effort" "$context_tier" "$worktree" "$worktree_held" "$max_concurrency" "$route_allowed" "$guard" <<'PY'
+  python3 - "$ledger" "$route" "$target" "$safety" "$agent" "$model" "$effort" "$context_tier" "$worktree" "$worktree_held" "$max_concurrency" "$route_allowed" "$guard" "$target_state" <<'PY'
 import json
 import os
 import sys
 
-ledger, route, target, safety, agent, model, effort, context_tier, worktree, worktree_held, max_concurrency, route_allowed, guard = sys.argv[1:]
+ledger, route, target, safety, agent, model, effort, context_tier, worktree, worktree_held, max_concurrency, route_allowed, guard, target_state = sys.argv[1:]
 worktree = os.path.realpath(os.path.abspath(worktree))
 worktree_held = worktree_held == "1"
 max_concurrency = int(max_concurrency)
 route_allowed = route_allowed == "1"
 guard = json.loads(guard) if guard else None
+target_state = json.loads(target_state) if target_state else None
 
 if not route_allowed:
     decision = {
@@ -455,6 +523,14 @@ elif safety != "AFK-safe":
         "reason": "action-not-afk-safe",
         "route": route,
         "target": target,
+    }
+elif target_state and not target_state["resolved"]:
+    decision = {
+        "decision": "decline",
+        "reason": "target-unresolvable",
+        "route": route,
+        "target": target,
+        "error": target_state["error"],
     }
 else:
     in_flight = False
@@ -551,7 +627,7 @@ reserve() {
     exit 2
   }
   local ledger_dir row spawn_commit worktree_branch max_concurrency open_reservations
-  local parent_start
+  local parent_start target_state target_error
   if [ -z "$ledger" ]; then
     ledger="$(repository_root)/.git-loopy/subagents.jsonl"
   fi
@@ -570,6 +646,23 @@ reserve() {
     echo "error: reserving parent is not running: $parent_pid" >&2
     exit 2
   }
+  target_state="$(target_resolution "$target" "$repo_root")"
+  if ! python3 -c '
+import json
+import sys
+
+raise SystemExit(0 if json.load(sys.stdin)["resolved"] else 1)
+' <<< "$target_state"
+  then
+    target_error="$(python3 -c '
+import json
+import sys
+
+print(json.load(sys.stdin)["error"])
+' <<< "$target_state")"
+    echo "error: target-unresolvable: $target: $target_error" >&2
+    exit 1
+  fi
   mkdir -p "$ledger_dir"
   max_concurrency="$(concurrency_limit)" || return $?
 
@@ -764,7 +857,7 @@ complete() {
     ledger="$(repository_root)/.git-loopy/subagents.jsonl"
   fi
 
-  local ledger_dir result
+  local ledger_dir result exit_status tracker_error result_target
   ledger_dir="$(dirname "$ledger")"
   mkdir -p "$ledger_dir"
   lock_dir="$ledger.lock"
@@ -934,33 +1027,55 @@ tracker = subprocess.run(
     cwd=payload["cwd"],
     text=True,
 )
+tracker_error = None
+exit_status = 0
 if tracker.returncode:
-    sys.stderr.write(tracker.stderr)
-    raise SystemExit(tracker.returncode)
-
-try:
-    comments = json.loads(tracker.stdout).get("comments", [])
-except json.JSONDecodeError as error:
-    print(f"error: tracker returned invalid comment data: {error}", file=sys.stderr)
-    raise SystemExit(2)
-if not isinstance(comments, list):
-    print("error: tracker returned comments in an invalid format", file=sys.stderr)
-    raise SystemExit(2)
+    tracker_error = (
+        tracker.stderr.strip()
+        or tracker.stdout.strip()
+        or f"tracker exited with status {tracker.returncode}"
+    )
+    exit_status = tracker.returncode if 1 <= tracker.returncode <= 255 else 1
+    comments = []
+else:
+    try:
+        tracker_response = json.loads(tracker.stdout)
+    except json.JSONDecodeError as error:
+        tracker_error = f"tracker returned invalid comment data: {error}"
+        exit_status = 2
+        comments = []
+    else:
+        comments = (
+            tracker_response.get("comments")
+            if isinstance(tracker_response, dict)
+            else None
+        )
+        if not isinstance(comments, list):
+            tracker_error = "tracker returned comments in an invalid format"
+            exit_status = 2
+            comments = []
 
 has_evidence = False
-for comment in comments:
-    created_at = comment.get("createdAt") if isinstance(comment, dict) else None
-    if not isinstance(created_at, str):
-        continue
-    try:
-        comment_at = datetime.datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-    except ValueError:
-        continue
-    if spawn_at <= comment_at <= finish_at:
-        has_evidence = True
-        break
+if tracker_error is None:
+    for comment in comments:
+        created_at = comment.get("createdAt") if isinstance(comment, dict) else None
+        if not isinstance(created_at, str):
+            continue
+        try:
+            comment_at = datetime.datetime.fromisoformat(
+                created_at.replace("Z", "+00:00")
+            )
+        except ValueError:
+            continue
+        if spawn_at <= comment_at <= finish_at:
+            has_evidence = True
+            break
 
-outcome = "published" if has_evidence else "no-evidence"
+outcome = (
+    "tracker-failed"
+    if tracker_error is not None
+    else "published" if has_evidence else "no-evidence"
+)
 finish_time = (
     finish_at.astimezone(datetime.timezone.utc)
     .isoformat(timespec="seconds")
@@ -970,6 +1085,10 @@ row["finish_time"] = finish_time
 row["outcome"] = outcome
 if outcome == "no-evidence":
     row["halt_reason"] = "no-evidence"
+    row["halted_at"] = finish_time
+elif outcome == "tracker-failed":
+    row["tracker_error"] = tracker_error
+    row["halt_reason"] = "tracker-failed"
     row["halted_at"] = finish_time
 elif isinstance(row.get("chain_depth"), int) and row["chain_depth"] >= 8:
     # Record the next-hop stop before agentStop reaches its own eight-block limit.
@@ -982,13 +1101,35 @@ with open(output_path, "w", encoding="utf-8") as output:
 with open(metadata_path, "w", encoding="utf-8") as metadata:
     metadata.write(worktree + "\n")
 
-print(json.dumps({
+result = {
     "continue": has_evidence and "halt_reason" not in row,
     "outcome": outcome,
     "target": target,
-}, separators=(",", ":")))
+}
+if tracker_error is not None:
+    result["error"] = tracker_error
+    result["exit_status"] = exit_status
+print(json.dumps(result, separators=(",", ":")))
 ' "$ledger" "$tmp" "$metadata"
   )"
+  exit_status="$(python3 -c '
+import json
+import sys
+
+print(json.load(sys.stdin).get("exit_status", 0))
+' <<< "$result")"
+  tracker_error="$(python3 -c '
+import json
+import sys
+
+print(json.load(sys.stdin).get("error", ""))
+' <<< "$result")"
+  result_target="$(python3 -c '
+import json
+import sys
+
+print(json.load(sys.stdin).get("target", ""))
+' <<< "$result")"
 
   if python3 -c '
 import json
@@ -1006,6 +1147,10 @@ raise SystemExit(0 if json.load(sys.stdin).get("reason") is None else 1)
   metadata=""
   release_lock
   printf '%s\n' "$result"
+  if [ -n "$tracker_error" ]; then
+    echo "error: tracker lookup failed for $result_target: $tracker_error" >&2
+  fi
+  return "$exit_status"
 }
 
 recover() {

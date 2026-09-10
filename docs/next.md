@@ -39,8 +39,10 @@ When the route calls for a fresh session, the recommendation also comes with the
 An ordinary `/next` invocation still returns exactly one recommendation. The chain is the separate
 AFK-safe path: after the phase-boundary procedure selects a subagent, the spawn gate requires both an
 AFK-safe target and one of its five allowlisted routes — `/implement`, `/code-review`, `/research`,
-`/push`, or `/resolving-merge-conflicts`. It reserves a worktree and a concurrency slot in the spawn
-ledger before starting the in-session subagent, then binds the run to that reservation.
+`/push`, or `/resolving-merge-conflicts`. Planning declines a target the tracker cannot resolve, and
+reservation checks it again before writing the ledger row or creating the worktree. A valid target
+reserves a worktree and a concurrency slot in the spawn ledger before starting the in-session
+subagent, then binds the run to that reservation.
 
 The ledger records each reservation, binding, worktree, completion, and per-target chain depth so the
 chain neither duplicates in-flight work nor exceeds ten concurrent runs. A reservation also names the
@@ -53,6 +55,8 @@ runs recovery before
 checking capacity, so reclaimed slots immediately become available to the next candidate. It stops at a checkpoint
 boundary rather than spawning when the route is HITL or not allowlisted, a route repeats four times
 for a target, or a target would take its ninth hop. `subagentStop` closes the completed ledger row;
+if its tracker lookup fails, the row closes as `tracker-failed`, the worktree is removed, and the
+cause is returned instead of being mistaken for `no-evidence`.
 `agentStop` re-enters `/next` for the batch of completed, unrouted runs, allowing one fill to replace
 every slot that batch freed.
 
