@@ -1150,6 +1150,43 @@ recovered_target="$(plan /implement issue-stale AFK-safe implement-agent gpt-5.6
 assert_plan "target after recovery" "$recovered_target" \
   '{"decision":"decline","reason":"target-in-flight","route":"/implement","target":"issue-stale"}'
 
+dead_bound_ledger="$tmp_dir/.git-loopy/dead-bound-subagents.jsonl"
+dead_bound_worktree="$tmp_dir/worktree-dead-bound"
+bash -c '
+  "$1" reserve --ledger "$2" --route implement --target issue-dead-bound \
+    --spawn-time 2026-08-22T00:00:00Z --worktree "$3" --chain-depth 1 --parent-pid "$$"
+  "$1" bind --ledger "$2" --worktree "$3" --session-id session-dead-bound \
+    --agent-id agent-dead-bound --agent-type implement-agent --agent-name implement-agent
+' bash "$CHAIN" "$dead_bound_ledger" "$dead_bound_worktree"
+
+dead_bound_output="$("$CHAIN" recover --ledger "$dead_bound_ledger" \
+  --stale-after-seconds 86400 --now 2026-08-22T00:00:01Z)"
+assert_plan "dead parent bound recovery" "$dead_bound_output" \
+  '{"recovered":1,"targets":["issue-dead-bound"]}'
+if [ -e "$dead_bound_worktree" ]; then
+  err "recovery did not release a dead parent's bound worktree"
+fi
+if ! python3 - "$dead_bound_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    row = json.loads(ledger.readline())
+
+assert row["agent_id"] == "agent-dead-bound"
+assert row["finish_time"] == "2026-08-22T00:00:01Z"
+assert row["outcome"] == "reclaimed"
+assert row["reclaimed_at"] == "2026-08-22T00:00:01Z"
+PY
+then
+  err "dead parent bound recovery was not recorded as reclaimed"
+fi
+
+plan_ledger="$dead_bound_ledger"
+reclaimed_bound_target="$(plan /implement issue-dead-bound AFK-safe implement-agent gpt-5.6-terra high default "$tmp_dir/plan-dead-bound")"
+assert_plan "reclaimed bound target" "$reclaimed_bound_target" \
+  '{"decision":"spawn","route":"/implement","target":"issue-dead-bound","agent":"implement-agent","model":"gpt-5.6-terra","effort":"high","context_tier":"default","worktree":"'"$tmp_dir"'/plan-dead-bound"}'
+
 orphan_ledger="$tmp_dir/.git-loopy/orphan-subagents.jsonl"
 orphan_worktree="$tmp_dir/worktree-orphan"
 "$CHAIN" reserve --parent-pid "$$" \

@@ -1083,8 +1083,9 @@ if os.path.exists(ledger_path):
 recovered_worktrees = []
 recovered_targets = []
 for row in rows:
-    if row.get("finish_time") or row.get("agent_id"):
+    if row.get("finish_time"):
         continue
+    is_bound = bool(row.get("agent_id"))
     spawn_time = row.get("spawn_time")
     worktree = row.get("worktree")
     target = row.get("target")
@@ -1122,9 +1123,10 @@ for row in rows:
         )
         parent_is_gone = liveness.returncode == 0 and liveness.stdout.strip() == "true"
 
-    if parent_is_gone or (
+    timed_out = (
         recovered_at - spawned_at
-    ).total_seconds() >= stale_after_seconds:
+    ).total_seconds() >= stale_after_seconds
+    if parent_is_gone or (not is_bound and timed_out):
         row["finish_time"] = (
             recovered_at.astimezone(datetime.timezone.utc)
             .isoformat(timespec="seconds")
