@@ -145,6 +145,34 @@ if [ "$(TZ=America/Denver python3 "$REPO/skills/next/claim-recovery.py" owner-go
   err "claim recovery treated a live parent as gone after a timezone change"
 fi
 
+claim_ps_bin="$tmp_dir/claim-ps-bin"
+mkdir -p "$claim_ps_bin"
+cat > "$claim_ps_bin/ps" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+
+case "$CLAIM_PS_MODE" in
+  failure) exit 1 ;;
+  empty) exit 0 ;;
+  malformed) echo "not a valid process start" ;;
+  *)
+    echo "unexpected ps mode: $CLAIM_PS_MODE" >&2
+    exit 2
+    ;;
+esac
+SH
+chmod +x "$claim_ps_bin/ps"
+
+for claim_ps_mode in failure empty malformed; do
+  if [ "$(
+    PATH="$claim_ps_bin:$PATH" CLAIM_PS_MODE="$claim_ps_mode" \
+      python3 "$REPO/skills/next/claim-recovery.py" \
+        owner-gone "$$" "$timezone_stable_start"
+  )" != "false" ]; then
+    err "claim recovery treated a live parent as gone after a $claim_ps_mode ps result"
+  fi
+done
+
 reserve_and_bind() {
   local route="" target="" session_id="" agent_id="" agent_type="" agent_name=""
   local spawn_time="" worktree="" chain_depth="" ledger_path=""

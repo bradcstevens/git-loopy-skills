@@ -3,6 +3,7 @@
 
 import argparse
 import os
+import re
 import subprocess
 import sys
 import time
@@ -18,13 +19,20 @@ def owner_is_gone(pid: int, owner_start: str) -> bool:
     except PermissionError:
         return False
 
-    current_start = subprocess.run(
+    process = subprocess.run(
         ["ps", "-o", "lstart=", "-p", str(pid)],
         capture_output=True,
         text=True,
         env={**os.environ, "TZ": "UTC"},
-    ).stdout.split()
-    return " ".join(current_start) != owner_start
+    )
+    current_start = " ".join(process.stdout.split())
+    if process.returncode or not re.fullmatch(
+        r"[A-Z][a-z]{2} [A-Z][a-z]{2} [0-9]{1,2} "
+        r"[0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4}",
+        current_start,
+    ):
+        return False
+    return current_start != owner_start
 
 
 def claim_is_stale(claim_dir: str, stale_after_seconds: int) -> bool:
