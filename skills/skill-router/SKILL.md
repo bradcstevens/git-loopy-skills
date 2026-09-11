@@ -84,6 +84,7 @@ Off the main flow entirely.
 - **`/wait-what`** — the corrective for a message that didn't land. Use it mid-conversation, inside any other skill, and the agent re-pitches what it just said with the context you were missing, in plain English, using the `CONTEXT.md` vocabulary. It works after the fact; `/grill-with-docs` is the upfront cure, because a shared language agreed early is what stops the jargon arriving at all.
 - **`/teach`** — learn a concept over multiple sessions, using the current directory as a stateful workspace.
 - **`/writing-for-agents`** — reference for writing documents agents consume: skills, AGENTS.md, pointed-at docs.
+- **`/model-fit`** — research your licensed Copilot models, then synchronize model, effort, context, and required model enforcement across Copilot built-ins and git-loopy routing. Use `research-only` for recommendations without configuration changes.
 
 ## Precondition
 
