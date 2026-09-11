@@ -39,19 +39,28 @@ When the route calls for a fresh session, the recommendation also comes with the
 An ordinary `/next` invocation still returns exactly one recommendation. The chain is the separate
 AFK-safe path: after the phase-boundary procedure selects a subagent, the spawn gate requires both an
 AFK-safe target and one of its five allowlisted routes — `/implement`, `/code-review`, `/research`,
-`/push`, or `/resolving-merge-conflicts`. It reserves a worktree and a concurrency slot in the spawn
-ledger before starting the in-session subagent, then binds the run to that reservation.
+`/push`, or `/resolving-merge-conflicts`. Planning declines a target the tracker confirms is
+unresolvable, and reservation checks it again before writing the ledger row or creating the
+worktree. A transient tracker failure is reported as tracker unavailability rather than as a
+missing target. A valid target reserves a worktree and a concurrency slot in the spawn ledger
+before starting the in-session subagent, then binds the run to that reservation.
 
 The ledger records each reservation, binding, worktree, completion, and per-target chain depth so the
 chain neither duplicates in-flight work nor exceeds ten concurrent runs. A reservation also names the
 process identity of its reserving parent — the routing session itself, never the shell that runs the
 command, which exits with it: recovery reclaims an unbound orphan immediately when that
 parent is gone, or after `CHAIN_RESERVATION_STALE_SECONDS` (300 seconds by default), marking it
-`reclaimed` rather than as a completed run. Bound and in-flight runs are never candidates for that
-recovery. Every `plan` runs recovery before
-checking capacity, so reclaimed slots immediately become available to the next candidate. It stops at a checkpoint
+`reclaimed` rather than as a completed run. An abandoned run is reclaimed only when the same
+liveness check proves its reserving parent is gone; age alone never reclaims an in-flight run.
+Reclaiming releases the row's slot, but a worktree with tracked or untracked changes is retained and
+reported rather than force-removed. Every `plan` runs recovery before checking capacity, so
+reclaimed slots immediately become available to the next candidate. It stops at a checkpoint
 boundary rather than spawning when the route is HITL or not allowlisted, a route repeats four times
 for a target, or a target would take its ninth hop. `subagentStop` closes the completed ledger row;
+if its tracker lookup fails, the row closes as `tracker-failed` and records whether the failure was
+transient or permanent. A transient rate limit, server error, network failure, or timeout leaves the
+target retryable and retains the worktree. A permanent missing or malformed target halts the target,
+force-removes the worktree, and returns the cause instead of being mistaken for `no-evidence`.
 `agentStop` re-enters `/next` for the batch of completed, unrouted runs, allowing one fill to replace
 every slot that batch freed.
 
