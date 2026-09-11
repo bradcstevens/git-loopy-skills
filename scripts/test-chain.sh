@@ -94,6 +94,15 @@ SH
 chmod +x "$fake_bin/gh"
 export PATH="$fake_bin:$PATH"
 
+missing_tracker_bin="$tmp_dir/no-tracker-bin"
+mkdir -p "$missing_tracker_bin"
+for command_name in \
+  awk bash cat dirname git mkdir mktemp mv ps rm rmdir sleep xargs
+do
+  ln -s "$(command -v "$command_name")" "$missing_tracker_bin/$command_name"
+done
+ln -s "$(python3 -c 'import sys; print(sys.executable)')" "$missing_tracker_bin/python3"
+
 PYTHONPATH="$REPO/skills/next" python3 - <<'PY'
 from tracker_failure import classify_tracker_failure, run_tracker
 
@@ -232,7 +241,7 @@ missing_tracker_reserve_worktree="$tmp_dir/worktree-missing-tracker-reserve"
 missing_tracker_reserve_error="$tmp_dir/missing-tracker-reserve.err"
 if (
   cd "$tmp_dir"
-  PATH=/usr/bin:/bin "$CHAIN" reserve --parent-pid "$$" \
+  PATH="$missing_tracker_bin" "$CHAIN" reserve --parent-pid "$$" \
     --ledger "$missing_tracker_reserve_ledger" \
     --route implement \
     --target issue-missing-tracker-reserve \
@@ -512,7 +521,7 @@ fi
 
 missing_tracker_plan_worktree="$tmp_dir/worktree-missing-tracker-plan"
 missing_tracker_plan="$(
-  PATH=/usr/bin:/bin "$CHAIN" plan \
+  PATH="$missing_tracker_bin" "$CHAIN" plan \
     --ledger "$plan_ledger" \
     --route /implement \
     --target issue-missing-tracker-plan \
@@ -1061,7 +1070,7 @@ printf 'uncommitted launch failure work\n' > "$tmp_dir/worktree-missing-tracker-
 missing_tracker_complete_error="$tmp_dir/missing-tracker-complete.err"
 missing_tracker_complete_status=0
 if missing_tracker_complete_output="$(
-  PATH=/usr/bin:/bin "$CHAIN" complete --ledger "$complete_ledger" \
+  PATH="$missing_tracker_bin" "$CHAIN" complete --ledger "$complete_ledger" \
     <<< "$(completion_payload agent-missing-tracker-complete 2026-08-22T00:11:00Z push-agent push-agent session-missing-tracker-complete)" \
     2>"$missing_tracker_complete_error"
 )"
