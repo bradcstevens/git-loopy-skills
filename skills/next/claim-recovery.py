@@ -2,11 +2,22 @@
 """Shared liveness checks for ledger claims and their recovery locks."""
 
 import argparse
+import datetime
 import os
-import re
 import subprocess
 import sys
 import time
+from typing import Optional
+
+
+def parse_process_start(value: str) -> Optional[datetime.datetime]:
+    try:
+        return datetime.datetime.strptime(
+            " ".join(value.split()),
+            "%a %b %d %H:%M:%S %Y",
+        )
+    except ValueError:
+        return None
 
 
 def owner_is_gone(pid: int, owner_start: str) -> bool:
@@ -26,13 +37,13 @@ def owner_is_gone(pid: int, owner_start: str) -> bool:
         env={**os.environ, "TZ": "UTC"},
     )
     current_start = " ".join(process.stdout.split())
-    if process.returncode or not re.fullmatch(
-        r"[A-Z][a-z]{2} [A-Z][a-z]{2} [0-9]{1,2} "
-        r"[0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4}",
-        current_start,
-    ):
+    if process.returncode:
         return False
-    return current_start != owner_start
+    recorded_start_at = parse_process_start(owner_start)
+    current_start_at = parse_process_start(current_start)
+    if recorded_start_at is None or current_start_at is None:
+        return False
+    return current_start_at != recorded_start_at
 
 
 def claim_is_stale(claim_dir: str, stale_after_seconds: int) -> bool:
