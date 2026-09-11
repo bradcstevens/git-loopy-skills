@@ -30,6 +30,7 @@ EOF
 ledger="${CHAIN_LEDGER:-}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 claim_recovery="$script_dir/claim-recovery.py"
+tracker_failure="$script_dir/tracker_failure.py"
 lock_dir=""
 tmp=""
 metadata=""
@@ -72,12 +73,16 @@ process_start() {
 target_resolution() {
   local target="$1" workdir="$2"
 
-  python3 - "$target" "$workdir" <<'PY'
+  python3 - "$target" "$workdir" "$tracker_failure" <<'PY'
 import json
+import os
 import subprocess
 import sys
 
-target, workdir = sys.argv[1:]
+target, workdir, tracker_failure = sys.argv[1:]
+sys.path.insert(0, os.path.dirname(tracker_failure))
+from tracker_failure import classify_tracker_failure
+
 tracker = subprocess.run(
     ["gh", "issue", "view", target, "--json", "number"],
     capture_output=True,
@@ -92,6 +97,7 @@ if tracker.returncode:
     )
     print(json.dumps({
         "resolved": False,
+        "failure_kind": classify_tracker_failure(error),
         "error": error,
     }, separators=(",", ":")))
     raise SystemExit(1)
@@ -101,6 +107,7 @@ try:
 except json.JSONDecodeError as error:
     print(json.dumps({
         "resolved": False,
+        "failure_kind": "transient",
         "error": f"tracker returned invalid target data: {error}",
     }, separators=(",", ":")))
     raise SystemExit(1)
@@ -113,6 +120,7 @@ if (
 ):
     print(json.dumps({
         "resolved": False,
+        "failure_kind": "transient",
         "error": "tracker returned target data without a number",
     }, separators=(",", ":")))
     raise SystemExit(1)
@@ -184,6 +192,21 @@ remove_worktree() {
     ledger_root="$(repository_root)"
     git -C "$ledger_root" worktree prune
   fi
+}
+
+recovered_worktree_can_be_removed() {
+  local worktree="$1" status
+
+  [ -e "$worktree" ] || return 0
+  if ! status="$(git -C "$worktree" status --porcelain=v1 --untracked-files=all)"; then
+    echo "error: could not inspect reclaimed worktree: $worktree" >&2
+    return 1
+  fi
+  if [ -n "$status" ]; then
+    echo "warning: reclaimed worktree has uncommitted changes and was retained: $worktree" >&2
+    return 1
+  fi
+  return 0
 }
 
 ledger_has_open_worktree() {
@@ -520,7 +543,11 @@ elif safety != "AFK-safe":
 elif target_state and not target_state["resolved"]:
     decision = {
         "decision": "decline",
-        "reason": "target-unresolvable",
+        "reason": (
+            "target-unresolvable"
+            if target_state["failure_kind"] == "permanent"
+            else "tracker-unavailable"
+        ),
         "route": route,
         "target": target,
         "error": target_state["error"],
@@ -620,7 +647,7 @@ reserve() {
     exit 2
   }
   local ledger_dir row spawn_commit worktree_branch max_concurrency open_reservations
-  local parent_start target_state target_error
+  local parent_start target_state target_error target_failure_kind
   if [ -z "$ledger" ]; then
     ledger="$(repository_root)/.git-loopy/subagents.jsonl"
   fi
@@ -646,7 +673,17 @@ import sys
 
 print(json.load(sys.stdin)["error"])
 ' <<< "$target_state")"
-    echo "error: target-unresolvable: $target: $target_error" >&2
+    target_failure_kind="$(python3 -c '
+import json
+import sys
+
+print(json.load(sys.stdin)["failure_kind"])
+' <<< "$target_state")"
+    if [ "$target_failure_kind" = "permanent" ]; then
+      echo "error: target-unresolvable: $target: $target_error" >&2
+    else
+      echo "error: tracker-unavailable: $target: $target_error" >&2
+    fi
     exit 1
   fi
   mkdir -p "$ledger_dir"
@@ -843,7 +880,7 @@ complete() {
     ledger="$(repository_root)/.git-loopy/subagents.jsonl"
   fi
 
-  local ledger_dir result exit_status tracker_error result_target
+  local ledger_dir result exit_status tracker_failure_kind
   ledger_dir="$(dirname "$ledger")"
   mkdir -p "$ledger_dir"
   lock_dir="$ledger.lock"
@@ -860,7 +897,9 @@ import os
 import subprocess
 import sys
 
-ledger_path, output_path, metadata_path = sys.argv[1:]
+ledger_path, output_path, metadata_path, tracker_failure = sys.argv[1:]
+sys.path.insert(0, os.path.dirname(tracker_failure))
+from tracker_failure import classify_tracker_failure
 # Required because `complete` reads them, and for no other reason. sessionId,
 # agentId, agentType and agentName find the ledger row; cwd locates the
 # repository and the worktree; timestamp closes the row. Everything else the
@@ -1014,6 +1053,7 @@ tracker = subprocess.run(
     text=True,
 )
 tracker_error = None
+tracker_failure_kind = None
 exit_status = 0
 if tracker.returncode:
     tracker_error = (
@@ -1021,6 +1061,7 @@ if tracker.returncode:
         or tracker.stdout.strip()
         or f"tracker exited with status {tracker.returncode}"
     )
+    tracker_failure_kind = classify_tracker_failure(tracker_error)
     exit_status = tracker.returncode if 1 <= tracker.returncode <= 255 else 1
     comments = []
 else:
@@ -1028,6 +1069,7 @@ else:
         tracker_response = json.loads(tracker.stdout)
     except json.JSONDecodeError as error:
         tracker_error = f"tracker returned invalid comment data: {error}"
+        tracker_failure_kind = "transient"
         exit_status = 2
         comments = []
     else:
@@ -1038,6 +1080,7 @@ else:
         )
         if not isinstance(comments, list):
             tracker_error = "tracker returned comments in an invalid format"
+            tracker_failure_kind = "transient"
             exit_status = 2
             comments = []
 
@@ -1074,8 +1117,10 @@ if outcome == "no-evidence":
     row["halted_at"] = finish_time
 elif outcome == "tracker-failed":
     row["tracker_error"] = tracker_error
-    row["halt_reason"] = "tracker-failed"
-    row["halted_at"] = finish_time
+    row["tracker_failure_kind"] = tracker_failure_kind
+    if tracker_failure_kind == "permanent":
+        row["halt_reason"] = "tracker-failed"
+        row["halted_at"] = finish_time
 elif isinstance(row.get("chain_depth"), int) and row["chain_depth"] >= 8:
     # Record the next-hop stop before agentStop reaches its own eight-block limit.
     row["halt_reason"] = "chain-depth-limit"
@@ -1093,29 +1138,30 @@ result = {
     "target": target,
 }
 if tracker_error is not None:
+    result["failure_kind"] = tracker_failure_kind
     result["error"] = tracker_error
     result["exit_status"] = exit_status
+    if tracker_failure_kind == "transient":
+        result["retained_worktree"] = worktree
 print(json.dumps(result, separators=(",", ":")))
-' "$ledger" "$tmp" "$metadata"
+if tracker_error is not None:
+    print(
+        f"error: tracker lookup failed for {target}: {tracker_error}",
+        file=sys.stderr,
+    )
+' "$ledger" "$tmp" "$metadata" "$tracker_failure"
   )"
-  exit_status="$(python3 -c '
+  IFS=$'\t' read -r exit_status tracker_failure_kind < <(python3 -c '
 import json
 import sys
 
-print(json.load(sys.stdin).get("exit_status", 0))
-' <<< "$result")"
-  tracker_error="$(python3 -c '
-import json
-import sys
-
-print(json.load(sys.stdin).get("error", ""))
-' <<< "$result")"
-  result_target="$(python3 -c '
-import json
-import sys
-
-print(json.load(sys.stdin).get("target", ""))
-' <<< "$result")"
+result = json.load(sys.stdin)
+print(
+    result.get("exit_status", 0),
+    result.get("failure_kind", ""),
+    sep="\t",
+)
+' <<< "$result")
 
   if python3 -c '
 import json
@@ -1123,7 +1169,9 @@ import sys
 
 raise SystemExit(0 if json.load(sys.stdin).get("reason") is None else 1)
 ' <<< "$result"; then
-    remove_worktree "$(cat "$metadata")"
+    if [ "$tracker_failure_kind" != "transient" ]; then
+      remove_worktree "$(cat "$metadata")"
+    fi
     mv "$tmp" "$ledger"
   else
     rm -f "$tmp"
@@ -1133,9 +1181,6 @@ raise SystemExit(0 if json.load(sys.stdin).get("reason") is None else 1)
   metadata=""
   release_lock
   printf '%s\n' "$result"
-  if [ -n "$tracker_error" ]; then
-    echo "error: tracker lookup failed for $result_target: $tracker_error" >&2
-  fi
   return "$exit_status"
 }
 
@@ -1283,14 +1328,30 @@ print(json.dumps({
   )"
 
   local worktree
+  local -a retained_worktrees=()
   while IFS= read -r worktree; do
-    remove_worktree "$worktree"
+    if recovered_worktree_can_be_removed "$worktree"; then
+      remove_worktree "$worktree"
+    else
+      retained_worktrees+=("$worktree")
+    fi
   done < "$metadata"
   mv "$tmp" "$ledger"
   tmp=""
   rm -f "$metadata"
   metadata=""
   release_lock
+  if [ "${#retained_worktrees[@]}" -gt 0 ]; then
+    result="$(python3 - "$result" "${retained_worktrees[@]}" <<'PY'
+import json
+import sys
+
+result = json.loads(sys.argv[1])
+result["retained_worktrees"] = sys.argv[2:]
+print(json.dumps(result, separators=(",", ":")))
+PY
+)"
+  fi
   printf '%s\n' "$result"
 }
 

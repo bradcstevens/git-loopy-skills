@@ -78,12 +78,12 @@ _Avoid_: Stale row, dangling row
 A bound reservation whose reserving parent ended before the run completed. Chain runs live inside
 their reserving parent, so a run whose parent is gone is no longer active even though its binding
 remains recorded.
-_Avoid_: Orphaned reservation
 
 **In flight**:
 Describes a target currently held by an active bound run. An in-flight target is spoken for:
-routing a second agent at it would duplicate or corrupt the work. A recorded binding whose
-reserving parent is gone is an **abandoned run**, not in flight.
+routing a second agent at it would duplicate or corrupt the work. Reclaiming never disturbs a run
+whose reserving parent is alive; a binding whose parent is gone is an **abandoned run**, not in
+flight.
 
 ### Connection kinds
 
