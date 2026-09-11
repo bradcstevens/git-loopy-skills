@@ -258,7 +258,19 @@ the instruction the phase-boundary procedure requires. Match
 `Context` to the phase-boundary procedure. When another agent holds the primary
 worktree, carry that constraint into the prompt and do not direct work into it.
 If the procedure selects `Fresh session in a new worktree`, open the prompt with
-the `git worktree add` that clears the constraint before the agent writes.
+the command that makes that worktree and records its owner in one step, so the
+constraint is cleared before the agent writes:
+
+`chain.sh claim --worktree <path> --create-branch <branch> --owner-pid "$PPID"`
+
+Use this rather than a bare `git worktree add`. A prompt-created worktree is the
+second producer of an ownership marker and never passes through the chain's
+`reserve`, so nothing else vouches for it; `claim` writes the same marker
+`reserve` writes and journals the pair, so an interrupted prompt cannot leave a
+worktree a later reader mistakes for abandoned clutter. Give the prompt that one
+command, do not restate the marker format, and splice in this skill's own
+absolute path to `chain.sh`, because the fresh session starts somewhere that has
+not loaded `/next`.
 
 Carry into the prompt every constraint that came from live state and is absent
 from the target's own record: the worktree to work in, the files it shares with
@@ -281,7 +293,8 @@ has no session to launch, and a `Subagent` recommendation is launched by the
 chain gate in step 7, so a second copyable launcher would put two agents on one
 worktree. When the context is `Fresh session in a new worktree`, the
 command still runs from the current directory, because the prompt it carries
-opens with the `git worktree add` that moves the agent before it writes.
+opens with the `chain.sh claim` that makes the worktree and moves the agent
+before it writes.
 
 For `/handoff`, use `Continue here` and say that its output opens the fresh
 session. Give `Runtime` as the three flags verbatim, so a launcher such as

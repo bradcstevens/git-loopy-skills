@@ -8,6 +8,10 @@ import sys
 import time
 
 
+def normalize_start(value: str) -> str:
+    return " ".join(value.split())
+
+
 def owner_is_gone(pid: int, owner_start: str) -> bool:
     try:
         if pid <= 0:
@@ -23,8 +27,8 @@ def owner_is_gone(pid: int, owner_start: str) -> bool:
         capture_output=True,
         text=True,
         env={**os.environ, "TZ": "UTC"},
-    ).stdout.split()
-    return " ".join(current_start) != owner_start
+    ).stdout
+    return normalize_start(current_start) != normalize_start(owner_start)
 
 
 def claim_is_stale(claim_dir: str, stale_after_seconds: int) -> bool:
