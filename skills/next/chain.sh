@@ -31,6 +31,7 @@ ledger="${CHAIN_LEDGER:-}"
 script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 claim_recovery="$script_dir/claim-recovery.py"
 tracker_failure="$script_dir/tracker_failure.py"
+tracker_bin="${CHAIN_TRACKER_BIN:-gh}"
 lock_dir=""
 tmp=""
 metadata=""
@@ -73,17 +74,17 @@ process_start() {
 target_resolution() {
   local target="$1" workdir="$2"
 
-  python3 - "$target" "$workdir" "$tracker_failure" <<'PY'
+  python3 - "$target" "$workdir" "$tracker_failure" "$tracker_bin" <<'PY'
 import json
 import os
 import sys
 
-target, workdir, tracker_failure = sys.argv[1:]
+target, workdir, tracker_failure, tracker_bin = sys.argv[1:]
 sys.path.insert(0, os.path.dirname(tracker_failure))
 from tracker_failure import run_tracker
 
 tracker_output, error, _, failure_kind = run_tracker(
-    ["gh", "issue", "view", target, "--json", "number"],
+    [tracker_bin, "issue", "view", target, "--json", "number"],
     workdir,
 )
 if error is not None:
@@ -900,7 +901,7 @@ import json
 import os
 import sys
 
-ledger_path, output_path, metadata_path, tracker_failure = sys.argv[1:]
+ledger_path, output_path, metadata_path, tracker_failure, tracker_bin = sys.argv[1:]
 sys.path.insert(0, os.path.dirname(tracker_failure))
 from tracker_failure import run_tracker
 # Required because `complete` reads them, and for no other reason. sessionId,
@@ -1050,7 +1051,7 @@ if finish_at.tzinfo is None:
     raise SystemExit(2)
 
 tracker_output, tracker_error, exit_status, tracker_failure_kind = run_tracker(
-    ["gh", "issue", "view", target, "--json", "comments"],
+    [tracker_bin, "issue", "view", target, "--json", "comments"],
     payload["cwd"],
 )
 if tracker_error is not None:
@@ -1140,7 +1141,7 @@ if tracker_error is not None:
         f"error: tracker lookup failed for {target}: {tracker_error}",
         file=sys.stderr,
     )
-' "$ledger" "$tmp" "$metadata" "$tracker_failure"
+' "$ledger" "$tmp" "$metadata" "$tracker_failure" "$tracker_bin"
   )"
   IFS=$'\t' read -r exit_status tracker_failure_kind < <(python3 -c '
 import json
