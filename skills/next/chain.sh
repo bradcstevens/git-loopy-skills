@@ -106,15 +106,11 @@ except json.JSONDecodeError as error:
     raise SystemExit(1)
 
 number = response.get("number") if isinstance(response, dict) else None
-if (
-    isinstance(number, bool)
-    or not isinstance(number, (int, str))
-    or not str(number)
-):
+if isinstance(number, bool) or not isinstance(number, int) or number <= 0:
     print(json.dumps({
         "resolved": False,
         "failure_kind": "transient",
-        "error": "tracker returned target data without a number",
+        "error": "tracker returned target data without a positive integer number",
     }, separators=(",", ":")))
     raise SystemExit(1)
 
@@ -1078,19 +1074,41 @@ else:
 
 has_evidence = False
 if tracker_error is None:
-    for comment in comments:
-        created_at = comment.get("createdAt") if isinstance(comment, dict) else None
+    comment_times = []
+    for index, comment in enumerate(comments):
+        if not isinstance(comment, dict):
+            tracker_error = f"tracker returned invalid comment data at index {index}"
+            break
+        created_at = comment.get("createdAt")
         if not isinstance(created_at, str):
-            continue
+            tracker_error = (
+                f"tracker returned comment data without createdAt at index {index}"
+            )
+            break
         try:
             comment_at = datetime.datetime.fromisoformat(
                 created_at.replace("Z", "+00:00")
             )
-        except ValueError:
-            continue
-        if spawn_at <= comment_at <= finish_at:
-            has_evidence = True
+        except ValueError as error:
+            tracker_error = (
+                f"tracker returned invalid comment timestamp at index {index}: {error}"
+            )
             break
+        if comment_at.tzinfo is None:
+            tracker_error = (
+                f"tracker returned comment timestamp without timezone at index {index}"
+            )
+            break
+        comment_times.append(comment_at)
+
+    if tracker_error is not None:
+        tracker_failure_kind = "transient"
+        exit_status = 2
+    else:
+        has_evidence = any(
+            spawn_at <= comment_at <= finish_at
+            for comment_at in comment_times
+        )
 
 outcome = (
     "tracker-failed"

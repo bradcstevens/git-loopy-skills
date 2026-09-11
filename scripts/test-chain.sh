@@ -76,14 +76,32 @@ esac
 
 case "$5" in
   number)
-    printf '{"number":"%s"}\n' "$3"
+    case "${CHAIN_TARGET_RESPONSE:-valid}" in
+      valid) printf '{"number":1}\n' ;;
+      string-number) printf '{"number":"1"}\n' ;;
+      malformed-json) printf '{not-json}\n' ;;
+      *)
+        echo "unexpected target response: $CHAIN_TARGET_RESPONSE" >&2
+        exit 1
+        ;;
+    esac
     ;;
   comments)
-    if [ "${CHAIN_EVIDENCE:-}" = "published" ]; then
-      printf '%s\n' '{"comments":[{"createdAt":"2026-08-22T00:10:00Z","body":"Evidence comment"}]}'
-    else
-      printf '%s\n' '{"comments":[]}'
-    fi
+    case "${CHAIN_COMMENT_RESPONSE:-valid}" in
+      valid)
+        if [ "${CHAIN_EVIDENCE:-}" = "published" ]; then
+          printf '%s\n' '{"comments":[{"createdAt":"2026-08-22T00:10:00Z","body":"Evidence comment"}]}'
+        else
+          printf '%s\n' '{"comments":[]}'
+        fi
+        ;;
+      invalid-entry) printf '%s\n' '{"comments":["not-an-object"]}' ;;
+      invalid-timestamp) printf '%s\n' '{"comments":[{"createdAt":"not-a-time"}]}' ;;
+      *)
+        echo "unexpected comment response: $CHAIN_COMMENT_RESPONSE" >&2
+        exit 1
+        ;;
+    esac
     ;;
   *)
     echo "unexpected gh invocation: $*" >&2
@@ -256,6 +274,36 @@ if [ -e "$missing_tracker_reserve_ledger" ]; then
 fi
 if [ -e "$missing_tracker_reserve_worktree" ]; then
   err "reserve created a worktree when the tracker executable was missing"
+fi
+
+malformed_target_reserve_ledger="$tmp_dir/.git-loopy/malformed-target-reserve.jsonl"
+malformed_target_reserve_worktree="$tmp_dir/worktree-malformed-target-reserve"
+malformed_target_reserve_error="$tmp_dir/malformed-target-reserve.err"
+if (
+  cd "$tmp_dir"
+  CHAIN_TARGET_RESPONSE=string-number "$CHAIN" reserve --parent-pid "$$" \
+    --ledger "$malformed_target_reserve_ledger" \
+    --route implement \
+    --target issue-malformed-target-reserve \
+    --spawn-time 2026-08-22T00:00:00Z \
+    --worktree "$malformed_target_reserve_worktree" \
+    --chain-depth 1 \
+    2>"$malformed_target_reserve_error"
+)
+then
+  err "reserve accepted malformed successful target data"
+fi
+if ! grep -q \
+  "tracker-unavailable: issue-malformed-target-reserve: tracker returned target data without a positive integer number" \
+  "$malformed_target_reserve_error"
+then
+  err "reserve did not classify malformed successful target data as transient"
+fi
+if [ -e "$malformed_target_reserve_ledger" ]; then
+  err "reserve wrote a ledger row for malformed successful target data"
+fi
+if [ -e "$malformed_target_reserve_worktree" ]; then
+  err "reserve created a worktree for malformed successful target data"
 fi
 
 (
@@ -542,6 +590,39 @@ if [ -e "$plan_ledger" ]; then
 fi
 if [ -e "$missing_tracker_plan_worktree" ]; then
   err "plan created a worktree when the tracker executable was missing"
+fi
+
+malformed_target_plan_worktree="$tmp_dir/worktree-malformed-target-plan"
+malformed_target_plan="$(
+  CHAIN_TARGET_RESPONSE=malformed-json "$CHAIN" plan \
+    --ledger "$plan_ledger" \
+    --route /implement \
+    --target issue-malformed-target-plan \
+    --safety AFK-safe \
+    --agent implement-agent \
+    --model gpt-5.6-terra \
+    --effort high \
+    --context-tier default \
+    --worktree "$malformed_target_plan_worktree"
+)"
+if ! python3 - "$malformed_target_plan" <<'PY'
+import json
+import sys
+
+decision = json.loads(sys.argv[1])
+assert decision["decision"] == "decline"
+assert decision["reason"] == "tracker-unavailable"
+assert decision["target"] == "issue-malformed-target-plan"
+assert decision["error"].startswith("tracker returned invalid target data:")
+PY
+then
+  err "plan did not classify malformed successful target JSON as transient"
+fi
+if [ -e "$plan_ledger" ]; then
+  err "plan wrote a ledger row for malformed successful target JSON"
+fi
+if [ -e "$malformed_target_plan_worktree" ]; then
+  err "plan created a worktree for malformed successful target JSON"
 fi
 
 collision_ledger="$tmp_dir/.git-loopy/collision-subagents.jsonl"
@@ -1121,6 +1202,85 @@ then
 fi
 if [ ! -f "$tmp_dir/worktree-missing-tracker-complete/uncommitted.txt" ]; then
   err "missing tracker executable removed the completion worktree"
+fi
+
+reserve_and_bind \
+  --ledger "$complete_ledger" \
+  --route push \
+  --target issue-malformed-comment-complete \
+  --session-id session-malformed-comment-complete \
+  --agent-id agent-malformed-comment-complete \
+  --agent-type push-agent \
+  --agent-name push-agent \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$tmp_dir/worktree-malformed-comment-complete" \
+  --chain-depth 3
+
+printf 'uncommitted malformed response work\n' > "$tmp_dir/worktree-malformed-comment-complete/uncommitted.txt"
+malformed_comment_complete_error="$tmp_dir/malformed-comment-complete.err"
+malformed_comment_complete_status=0
+if malformed_comment_complete_output="$(
+  CHAIN_COMMENT_RESPONSE=invalid-timestamp \
+    "$CHAIN" complete --ledger "$complete_ledger" \
+    <<< "$(completion_payload agent-malformed-comment-complete 2026-08-22T00:11:00Z push-agent push-agent session-malformed-comment-complete)" \
+    2>"$malformed_comment_complete_error"
+)"
+then
+  err "malformed successful comment data during complete returned success"
+else
+  malformed_comment_complete_status=$?
+fi
+if [ "$malformed_comment_complete_status" -ne 2 ]; then
+  err "malformed successful comment data did not return protocol failure"
+fi
+if ! python3 - "$malformed_comment_complete_output" "$tmp_dir/worktree-malformed-comment-complete" <<'PY'
+import json
+import sys
+
+result = json.loads(sys.argv[1])
+assert result["continue"] is False
+assert result["outcome"] == "tracker-failed"
+assert result["target"] == "issue-malformed-comment-complete"
+assert result["failure_kind"] == "transient"
+assert result["error"].startswith("tracker returned invalid comment timestamp at index 0:")
+assert result["exit_status"] == 2
+assert result["retained_worktree"] == sys.argv[2]
+PY
+then
+  err "complete did not classify malformed successful comment data as transient"
+fi
+if ! grep -q \
+  "tracker lookup failed for issue-malformed-comment-complete: tracker returned invalid comment timestamp at index 0:" \
+  "$malformed_comment_complete_error"
+then
+  err "complete did not report malformed successful comment data"
+fi
+if ! python3 - "$complete_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger]
+
+row = next(
+    row
+    for row in rows
+    if row["session_id"] == "session-malformed-comment-complete"
+)
+assert row["finish_time"] == "2026-08-22T00:11:00Z"
+assert row["outcome"] == "tracker-failed"
+assert row["tracker_failure_kind"] == "transient"
+assert row["tracker_error"].startswith(
+    "tracker returned invalid comment timestamp at index 0:"
+)
+assert "halt_reason" not in row
+assert "halted_at" not in row
+PY
+then
+  err "malformed successful comment data left the row open or halted"
+fi
+if [ ! -f "$tmp_dir/worktree-malformed-comment-complete/uncommitted.txt" ]; then
+  err "malformed successful comment data removed the completion worktree"
 fi
 
 reserve_and_bind \
