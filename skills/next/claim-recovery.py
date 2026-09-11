@@ -11,13 +11,17 @@ from typing import Optional
 
 
 def parse_process_start(value: str) -> Optional[datetime.datetime]:
+    normalized = " ".join(value.split())
     try:
-        return datetime.datetime.strptime(
-            " ".join(value.split()),
+        parsed = datetime.datetime.strptime(
+            normalized,
             "%a %b %d %H:%M:%S %Y",
         )
     except ValueError:
         return None
+    if normalized.split()[0] != parsed.strftime("%a"):
+        return None
+    return parsed
 
 
 def owner_is_gone(pid: int, owner_start: str) -> bool:
