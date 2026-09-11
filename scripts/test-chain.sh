@@ -156,6 +156,7 @@ case "$CLAIM_PS_MODE" in
   empty) exit 0 ;;
   malformed) echo "not a valid process start" ;;
   impossible) echo "Foo Bar 99 99:99:99 9999" ;;
+  inconsistent) echo "Tue Jan 01 00:00:00 2001" ;;
   *)
     echo "unexpected ps mode: $CLAIM_PS_MODE" >&2
     exit 2
@@ -164,7 +165,7 @@ esac
 SH
 chmod +x "$claim_ps_bin/ps"
 
-for claim_ps_mode in failure empty malformed impossible; do
+for claim_ps_mode in failure empty malformed impossible inconsistent; do
   if [ "$(
     PATH="$claim_ps_bin:$PATH" CLAIM_PS_MODE="$claim_ps_mode" \
       python3 "$REPO/skills/next/claim-recovery.py" \
@@ -179,6 +180,13 @@ if [ "$(
     owner-gone "$$" "not a recorded process start"
 )" != "false" ]; then
   err "claim recovery treated a malformed recorded parent identity as pid reuse"
+fi
+
+if [ "$(
+  python3 "$REPO/skills/next/claim-recovery.py" \
+    owner-gone "$$" "Tue Jan 01 00:00:00 2001"
+)" != "false" ]; then
+  err "claim recovery treated an inconsistent recorded parent identity as pid reuse"
 fi
 
 reserve_and_bind() {
