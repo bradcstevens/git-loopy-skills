@@ -73,7 +73,7 @@ situation matches. The rest you invoke by name.
 | grill-me | `/grill-me` | A relentless interview to sharpen a plan or design. |
 | [grill-with-docs](docs/grill-with-docs.md) | `/grill-with-docs` | A relentless interview to sharpen a plan or design, which also creates docs (ADR's and glossary) as we go. |
 | [grilling](docs/grilling.md) | automatic | Grill the user relentlessly about a plan, decision, or idea. |
-| [handoff](docs/handoff.md) | automatic | Launch a `/next` recommendation — its prompt and its sized runtime — as a background agent. |
+| [handoff](docs/handoff.md) | automatic | Launch a `/next` recommendation — its prompt and its sized runtime — as a background agent, then watch it to its exit and route on. |
 | [implement](docs/implement.md) | automatic | Implement a piece of work based on a spec or set of tickets. |
 | [improve-codebase-architecture](docs/improve-codebase-architecture.md) | `/improve-codebase-architecture` | Scan a codebase for deepening opportunities, present them as a visual HTML report, then grill through whichever one you pick. |
 | [loop-me](docs/loop-me.md) | `/loop-me` | Grill me about specs for the workflows I want to build, within this workspace. |

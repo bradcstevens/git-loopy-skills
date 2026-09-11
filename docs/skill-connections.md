@@ -192,8 +192,10 @@ sequenceDiagram
     else Fresh session, agent drives
         U->>HO: /handoff
         HO->>NX: run /next first if it is not the last output
-        HO->>BG: nohup copilot --yolo --no-ask-user with the same flags
+        HO->>BG: handoff.sh launches a detached session with the same flags
         BG-->>U: resume by session name
+        BG-->>HO: the session exits
+        HO->>NX: /next on the state the run left
     end
 ```
 

@@ -7,13 +7,14 @@ set -euo pipefail
 #
 # Links all skills in the repository into the local skill directories used by
 # each agent harness:
-#   - ~/.copilot/skills  — GitHub Copilot Agent Skills-compatible harnesses
+#   - ~/.copilot/skills            — GitHub Copilot Agent Skills-compatible harnesses
+#   - ~/.config/git-loopy/skills   — git-loopy's own skill directory
 # Each entry is a symlink into this repo, so a `git pull` is all that's needed
 # to keep installed skills up to date.
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 SKILLS_ROOT="$REPO/skills"
-DESTS=("$HOME/.copilot/skills")
+DESTS=("$HOME/.copilot/skills" "$HOME/.config/git-loopy/skills")
 
 # Collect each top-level skill tree once so nested skills retain their paths.
 names=()
