@@ -50,16 +50,16 @@ chain neither duplicates in-flight work nor exceeds ten concurrent runs. A reser
 process identity of its reserving parent — the routing session itself, never the shell that runs the
 command, which exits with it: recovery reclaims an unbound orphan immediately when that
 parent is gone, or after `CHAIN_RESERVATION_STALE_SECONDS` (300 seconds by default), marking it
-`reclaimed` rather than as a completed run. A bound row is reclaimed only when the same liveness
-check proves its reserving parent is gone; age alone never reclaims an in-flight run. Reclaiming
-releases the row's slot, but a worktree with tracked or untracked changes is retained and reported
-rather than force-removed. Every `plan` runs recovery before checking capacity, so reclaimed slots
-immediately become available to the next candidate. It stops at a checkpoint boundary rather than
-spawning when the route is HITL or not allowlisted, a route repeats four times for a target, or a
-target would take its ninth hop. `subagentStop` closes the completed ledger row; if its tracker
-lookup fails, the row closes as `tracker-failed` and records whether the failure was transient or
-permanent. A transient rate limit, server error, network failure, or timeout leaves the target
-retryable and retains the worktree. A permanent missing or malformed target halts the target,
+`reclaimed` rather than as a completed run. An abandoned run is reclaimed only when the same
+liveness check proves its reserving parent is gone; age alone never reclaims an in-flight run.
+Reclaiming releases the row's slot, but a worktree with tracked or untracked changes is retained and
+reported rather than force-removed. Every `plan` runs recovery before checking capacity, so
+reclaimed slots immediately become available to the next candidate. It stops at a checkpoint
+boundary rather than spawning when the route is HITL or not allowlisted, a route repeats four times
+for a target, or a target would take its ninth hop. `subagentStop` closes the completed ledger row;
+if its tracker lookup fails, the row closes as `tracker-failed` and records whether the failure was
+transient or permanent. A transient rate limit, server error, network failure, or timeout leaves the
+target retryable and retains the worktree. A permanent missing or malformed target halts the target,
 force-removes the worktree, and returns the cause instead of being mistaken for `no-evidence`.
 `agentStop` re-enters `/next` for the batch of completed, unrouted runs, allowing one fill to replace
 every slot that batch freed.

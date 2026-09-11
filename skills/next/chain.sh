@@ -76,34 +76,26 @@ target_resolution() {
   python3 - "$target" "$workdir" "$tracker_failure" <<'PY'
 import json
 import os
-import subprocess
 import sys
 
 target, workdir, tracker_failure = sys.argv[1:]
 sys.path.insert(0, os.path.dirname(tracker_failure))
-from tracker_failure import classify_tracker_failure
+from tracker_failure import run_tracker
 
-tracker = subprocess.run(
+tracker_output, error, _, failure_kind = run_tracker(
     ["gh", "issue", "view", target, "--json", "number"],
-    capture_output=True,
-    cwd=workdir,
-    text=True,
+    workdir,
 )
-if tracker.returncode:
-    error = (
-        tracker.stderr.strip()
-        or tracker.stdout.strip()
-        or f"tracker exited with status {tracker.returncode}"
-    )
+if error is not None:
     print(json.dumps({
         "resolved": False,
-        "failure_kind": classify_tracker_failure(error),
+        "failure_kind": failure_kind,
         "error": error,
     }, separators=(",", ":")))
     raise SystemExit(1)
 
 try:
-    response = json.loads(tracker.stdout)
+    response = json.loads(tracker_output)
 except json.JSONDecodeError as error:
     print(json.dumps({
         "resolved": False,
@@ -540,6 +532,14 @@ elif safety != "AFK-safe":
         "route": route,
         "target": target,
     }
+elif target_state is None:
+    decision = {
+        "decision": "decline",
+        "reason": "tracker-unavailable",
+        "route": route,
+        "target": target,
+        "error": "tracker target resolution failed without a result",
+    }
 elif target_state and not target_state["resolved"]:
     decision = {
         "decision": "decline",
@@ -667,6 +667,10 @@ reserve() {
     exit 2
   }
   if ! target_state="$(target_resolution "$target" "$repo_root")"; then
+    if [ -z "$target_state" ]; then
+      echo "error: tracker-unavailable: $target: tracker target resolution failed without a result" >&2
+      exit 1
+    fi
     target_error="$(python3 -c '
 import json
 import sys
@@ -894,12 +898,11 @@ complete() {
 import datetime
 import json
 import os
-import subprocess
 import sys
 
 ledger_path, output_path, metadata_path, tracker_failure = sys.argv[1:]
 sys.path.insert(0, os.path.dirname(tracker_failure))
-from tracker_failure import classify_tracker_failure
+from tracker_failure import run_tracker
 # Required because `complete` reads them, and for no other reason. sessionId,
 # agentId, agentType and agentName find the ledger row; cwd locates the
 # repository and the worktree; timestamp closes the row. Everything else the
@@ -1046,27 +1049,15 @@ if finish_at.tzinfo is None:
     print("error: subagent-stop payload timestamp must include a timezone", file=sys.stderr)
     raise SystemExit(2)
 
-tracker = subprocess.run(
+tracker_output, tracker_error, exit_status, tracker_failure_kind = run_tracker(
     ["gh", "issue", "view", target, "--json", "comments"],
-    capture_output=True,
-    cwd=payload["cwd"],
-    text=True,
+    payload["cwd"],
 )
-tracker_error = None
-tracker_failure_kind = None
-exit_status = 0
-if tracker.returncode:
-    tracker_error = (
-        tracker.stderr.strip()
-        or tracker.stdout.strip()
-        or f"tracker exited with status {tracker.returncode}"
-    )
-    tracker_failure_kind = classify_tracker_failure(tracker_error)
-    exit_status = tracker.returncode if 1 <= tracker.returncode <= 255 else 1
+if tracker_error is not None:
     comments = []
 else:
     try:
-        tracker_response = json.loads(tracker.stdout)
+        tracker_response = json.loads(tracker_output)
     except json.JSONDecodeError as error:
         tracker_error = f"tracker returned invalid comment data: {error}"
         tracker_failure_kind = "transient"

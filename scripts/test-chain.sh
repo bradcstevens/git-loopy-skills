@@ -95,7 +95,7 @@ chmod +x "$fake_bin/gh"
 export PATH="$fake_bin:$PATH"
 
 PYTHONPATH="$REPO/skills/next" python3 - <<'PY'
-from tracker_failure import classify_tracker_failure
+from tracker_failure import classify_tracker_failure, run_tracker
 
 for message in (
     "HTTP 403: API rate limit exceeded for user.",
@@ -112,6 +112,14 @@ for message in (
     "malformed target: issue-?",
 ):
     assert classify_tracker_failure(message) == "permanent", message
+
+_, error, exit_status, failure_kind = run_tracker(
+    ["/definitely-missing-git-loopy-tracker"],
+    "/",
+)
+assert error and error.startswith("could not run tracker:")
+assert exit_status == 1
+assert failure_kind == "transient"
 PY
 
 timezone_stable_start="$(TZ=UTC ps -o lstart= -p "$$" | xargs)"
@@ -217,6 +225,36 @@ if [ -e "$rate_limit_reserve_ledger" ]; then
 fi
 if [ -e "$rate_limit_reserve_worktree" ]; then
   err "reserve created a worktree while the tracker was unavailable"
+fi
+
+missing_tracker_reserve_ledger="$tmp_dir/.git-loopy/missing-tracker-reserve.jsonl"
+missing_tracker_reserve_worktree="$tmp_dir/worktree-missing-tracker-reserve"
+missing_tracker_reserve_error="$tmp_dir/missing-tracker-reserve.err"
+if (
+  cd "$tmp_dir"
+  PATH=/usr/bin:/bin "$CHAIN" reserve --parent-pid "$$" \
+    --ledger "$missing_tracker_reserve_ledger" \
+    --route implement \
+    --target issue-missing-tracker-reserve \
+    --spawn-time 2026-08-22T00:00:00Z \
+    --worktree "$missing_tracker_reserve_worktree" \
+    --chain-depth 1 \
+    2>"$missing_tracker_reserve_error"
+)
+then
+  err "reserve accepted a target when the tracker executable was missing"
+fi
+if ! grep -q \
+  "tracker-unavailable: issue-missing-tracker-reserve: could not run tracker:" \
+  "$missing_tracker_reserve_error"
+then
+  err "reserve did not classify a missing tracker executable as transient"
+fi
+if [ -e "$missing_tracker_reserve_ledger" ]; then
+  err "reserve wrote a ledger row when the tracker executable was missing"
+fi
+if [ -e "$missing_tracker_reserve_worktree" ]; then
+  err "reserve created a worktree when the tracker executable was missing"
 fi
 
 (
@@ -470,6 +508,39 @@ if [ -e "$plan_ledger" ]; then
 fi
 if [ -e "$rate_limit_plan_worktree" ]; then
   err "plan created a worktree while the tracker was unavailable"
+fi
+
+missing_tracker_plan_worktree="$tmp_dir/worktree-missing-tracker-plan"
+missing_tracker_plan="$(
+  PATH=/usr/bin:/bin "$CHAIN" plan \
+    --ledger "$plan_ledger" \
+    --route /implement \
+    --target issue-missing-tracker-plan \
+    --safety AFK-safe \
+    --agent implement-agent \
+    --model gpt-5.6-terra \
+    --effort high \
+    --context-tier default \
+    --worktree "$missing_tracker_plan_worktree"
+)"
+if ! python3 - "$missing_tracker_plan" <<'PY'
+import json
+import sys
+
+decision = json.loads(sys.argv[1])
+assert decision["decision"] == "decline"
+assert decision["reason"] == "tracker-unavailable"
+assert decision["target"] == "issue-missing-tracker-plan"
+assert decision["error"].startswith("could not run tracker:")
+PY
+then
+  err "plan did not fail closed when the tracker executable was missing"
+fi
+if [ -e "$plan_ledger" ]; then
+  err "plan wrote a ledger row when the tracker executable was missing"
+fi
+if [ -e "$missing_tracker_plan_worktree" ]; then
+  err "plan created a worktree when the tracker executable was missing"
 fi
 
 collision_ledger="$tmp_dir/.git-loopy/collision-subagents.jsonl"
@@ -977,6 +1048,82 @@ assert_plan "transient tracker retry" "$transient_retry" \
 reserve_and_bind \
   --ledger "$complete_ledger" \
   --route push \
+  --target issue-missing-tracker-complete \
+  --session-id session-missing-tracker-complete \
+  --agent-id agent-missing-tracker-complete \
+  --agent-type push-agent \
+  --agent-name push-agent \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$tmp_dir/worktree-missing-tracker-complete" \
+  --chain-depth 3
+
+printf 'uncommitted launch failure work\n' > "$tmp_dir/worktree-missing-tracker-complete/uncommitted.txt"
+missing_tracker_complete_error="$tmp_dir/missing-tracker-complete.err"
+missing_tracker_complete_status=0
+if missing_tracker_complete_output="$(
+  PATH=/usr/bin:/bin "$CHAIN" complete --ledger "$complete_ledger" \
+    <<< "$(completion_payload agent-missing-tracker-complete 2026-08-22T00:11:00Z push-agent push-agent session-missing-tracker-complete)" \
+    2>"$missing_tracker_complete_error"
+)"
+then
+  err "missing tracker executable during complete returned success"
+else
+  missing_tracker_complete_status=$?
+fi
+if [ "$missing_tracker_complete_status" -ne 1 ]; then
+  err "missing tracker executable during complete did not return failure"
+fi
+if ! python3 - "$missing_tracker_complete_output" "$tmp_dir/worktree-missing-tracker-complete" <<'PY'
+import json
+import sys
+
+result = json.loads(sys.argv[1])
+assert result["continue"] is False
+assert result["outcome"] == "tracker-failed"
+assert result["target"] == "issue-missing-tracker-complete"
+assert result["failure_kind"] == "transient"
+assert result["error"].startswith("could not run tracker:")
+assert result["exit_status"] == 1
+assert result["retained_worktree"] == sys.argv[2]
+PY
+then
+  err "complete did not record a missing tracker executable as transient"
+fi
+if ! grep -q \
+  "tracker lookup failed for issue-missing-tracker-complete: could not run tracker:" \
+  "$missing_tracker_complete_error"
+then
+  err "complete did not report the missing tracker executable"
+fi
+if ! python3 - "$complete_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger]
+
+row = next(
+    row
+    for row in rows
+    if row["session_id"] == "session-missing-tracker-complete"
+)
+assert row["finish_time"] == "2026-08-22T00:11:00Z"
+assert row["outcome"] == "tracker-failed"
+assert row["tracker_failure_kind"] == "transient"
+assert row["tracker_error"].startswith("could not run tracker:")
+assert "halt_reason" not in row
+assert "halted_at" not in row
+PY
+then
+  err "missing tracker executable left the completion row open or halted"
+fi
+if [ ! -f "$tmp_dir/worktree-missing-tracker-complete/uncommitted.txt" ]; then
+  err "missing tracker executable removed the completion worktree"
+fi
+
+reserve_and_bind \
+  --ledger "$complete_ledger" \
+  --route push \
   --target issue-permanent-tracker-failure \
   --session-id session-permanent-tracker-failure \
   --agent-id agent-permanent-tracker-failure \
@@ -1437,15 +1584,15 @@ assert_plan "stale target before recovery" "$stale_target" \
   '{"decision":"decline","reason":"target-in-flight","route":"/implement","target":"issue-stale"}'
 
 recovery_output="$("$CHAIN" recover --ledger "$recovery_ledger" --stale-after-seconds 1 --now 2026-08-22T00:05:00Z)"
-assert_plan "old live-parent bound run recovery" "$recovery_output" \
+assert_plan "old in-flight run recovery" "$recovery_output" \
   '{"recovered":0,"targets":[]}'
 
 aggressive_recovery_output="$("$CHAIN" recover --ledger "$recovery_ledger" --stale-after-seconds 0 --now 2026-08-22T00:05:00Z)"
-assert_plan "zero-threshold live-parent bound run recovery" "$aggressive_recovery_output" \
+assert_plan "zero-threshold in-flight run recovery" "$aggressive_recovery_output" \
   '{"recovered":0,"targets":[]}'
 
 if [ ! -e "$stale_worktree" ]; then
-  err "recovery disturbed a bound run whose parent is alive"
+  err "recovery disturbed an in-flight run whose parent is alive"
 fi
 
 if ! python3 - "$recovery_ledger" <<'PY'
@@ -1461,59 +1608,59 @@ assert row["outcome"] == ""
 assert "reclaimed_at" not in row
 PY
 then
-  err "recovery modified a bound run whose parent is alive"
+  err "recovery modified an in-flight run whose parent is alive"
 fi
 
 recovered_target="$(plan /implement issue-stale AFK-safe implement-agent gpt-5.6-terra high default "$tmp_dir/plan-recovered")"
 assert_plan "target after recovery" "$recovered_target" \
   '{"decision":"decline","reason":"target-in-flight","route":"/implement","target":"issue-stale"}'
 
-dead_bound_ledger="$tmp_dir/.git-loopy/dead-bound-subagents.jsonl"
-dead_bound_worktree="$tmp_dir/worktree-dead-bound"
+abandoned_run_ledger="$tmp_dir/.git-loopy/abandoned-run-subagents.jsonl"
+abandoned_run_worktree="$tmp_dir/worktree-abandoned-run"
 bash -c '
-  "$1" reserve --ledger "$2" --route implement --target issue-dead-bound \
+  "$1" reserve --ledger "$2" --route implement --target issue-abandoned-run \
     --spawn-time 2026-08-22T00:00:00Z --worktree "$3" --chain-depth 1 --parent-pid "$$"
-  "$1" bind --ledger "$2" --worktree "$3" --session-id session-dead-bound \
-    --agent-id agent-dead-bound --agent-type implement-agent --agent-name implement-agent
-' bash "$CHAIN" "$dead_bound_ledger" "$dead_bound_worktree"
+  "$1" bind --ledger "$2" --worktree "$3" --session-id session-abandoned-run \
+    --agent-id agent-abandoned-run --agent-type implement-agent --agent-name implement-agent
+' bash "$CHAIN" "$abandoned_run_ledger" "$abandoned_run_worktree"
 
-dead_bound_output="$("$CHAIN" recover --ledger "$dead_bound_ledger" \
+abandoned_run_output="$("$CHAIN" recover --ledger "$abandoned_run_ledger" \
   --stale-after-seconds 86400 --now 2026-08-22T00:00:01Z)"
-assert_plan "dead parent bound recovery" "$dead_bound_output" \
-  '{"recovered":1,"targets":["issue-dead-bound"]}'
-if [ -e "$dead_bound_worktree" ]; then
-  err "recovery did not release a dead parent's bound worktree"
+assert_plan "abandoned run recovery" "$abandoned_run_output" \
+  '{"recovered":1,"targets":["issue-abandoned-run"]}'
+if [ -e "$abandoned_run_worktree" ]; then
+  err "recovery did not release an abandoned run's worktree"
 fi
-if ! python3 - "$dead_bound_ledger" <<'PY'
+if ! python3 - "$abandoned_run_ledger" <<'PY'
 import json
 import sys
 
 with open(sys.argv[1], encoding="utf-8") as ledger:
     row = json.loads(ledger.readline())
 
-assert row["agent_id"] == "agent-dead-bound"
+assert row["agent_id"] == "agent-abandoned-run"
 assert row["finish_time"] == "2026-08-22T00:00:01Z"
 assert row["outcome"] == "reclaimed"
 assert row["reclaimed_at"] == "2026-08-22T00:00:01Z"
 PY
 then
-  err "dead parent bound recovery was not recorded as reclaimed"
+  err "abandoned run recovery was not recorded as reclaimed"
 fi
 
-reused_pid_ledger="$tmp_dir/.git-loopy/reused-pid-bound-subagents.jsonl"
-reused_pid_worktree="$tmp_dir/worktree-reused-pid-bound"
+reused_pid_run_ledger="$tmp_dir/.git-loopy/reused-pid-run-subagents.jsonl"
+reused_pid_run_worktree="$tmp_dir/worktree-reused-pid-run"
 reserve_and_bind \
-  --ledger "$reused_pid_ledger" \
+  --ledger "$reused_pid_run_ledger" \
   --route implement \
-  --target issue-reused-pid-bound \
-  --session-id session-reused-pid-bound \
-  --agent-id agent-reused-pid-bound \
+  --target issue-reused-pid-run \
+  --session-id session-reused-pid-run \
+  --agent-id agent-reused-pid-run \
   --agent-type implement-agent \
   --agent-name implement-agent \
   --spawn-time 2026-08-22T00:00:00Z \
-  --worktree "$reused_pid_worktree" \
+  --worktree "$reused_pid_run_worktree" \
   --chain-depth 1
-python3 - "$reused_pid_ledger" <<'PY'
+python3 - "$reused_pid_run_ledger" <<'PY'
 import json
 import sys
 
@@ -1524,28 +1671,28 @@ with open(sys.argv[1], "w", encoding="utf-8") as ledger:
     ledger.write(json.dumps(row, separators=(",", ":")) + "\n")
 PY
 
-reused_pid_output="$("$CHAIN" recover --ledger "$reused_pid_ledger" \
+reused_pid_output="$("$CHAIN" recover --ledger "$reused_pid_run_ledger" \
   --stale-after-seconds 999999999 --now 2026-08-22T00:00:01Z)"
-assert_plan "reused parent pid recovery" "$reused_pid_output" \
-  '{"recovered":1,"targets":["issue-reused-pid-bound"]}'
-if [ -e "$reused_pid_worktree" ]; then
-  err "recovery did not reclaim a bound run after parent pid reuse"
+assert_plan "reused parent pid abandoned run recovery" "$reused_pid_output" \
+  '{"recovered":1,"targets":["issue-reused-pid-run"]}'
+if [ -e "$reused_pid_run_worktree" ]; then
+  err "recovery did not reclaim an abandoned run after parent pid reuse"
 fi
 
-unknown_parent_ledger="$tmp_dir/.git-loopy/unknown-parent-bound-subagents.jsonl"
-unknown_parent_worktree="$tmp_dir/worktree-unknown-parent-bound"
+unknown_parent_run_ledger="$tmp_dir/.git-loopy/unknown-parent-run-subagents.jsonl"
+unknown_parent_run_worktree="$tmp_dir/worktree-unknown-parent-run"
 reserve_and_bind \
-  --ledger "$unknown_parent_ledger" \
+  --ledger "$unknown_parent_run_ledger" \
   --route implement \
-  --target issue-unknown-parent-bound \
-  --session-id session-unknown-parent-bound \
-  --agent-id agent-unknown-parent-bound \
+  --target issue-unknown-parent-run \
+  --session-id session-unknown-parent-run \
+  --agent-id agent-unknown-parent-run \
   --agent-type implement-agent \
   --agent-name implement-agent \
   --spawn-time 2015-01-01T00:00:00Z \
-  --worktree "$unknown_parent_worktree" \
+  --worktree "$unknown_parent_run_worktree" \
   --chain-depth 1
-python3 - "$unknown_parent_ledger" <<'PY'
+python3 - "$unknown_parent_run_ledger" <<'PY'
 import json
 import sys
 
@@ -1557,40 +1704,40 @@ with open(sys.argv[1], "w", encoding="utf-8") as ledger:
     ledger.write(json.dumps(row, separators=(",", ":")) + "\n")
 PY
 
-unknown_parent_output="$("$CHAIN" recover --ledger "$unknown_parent_ledger" \
+unknown_parent_output="$("$CHAIN" recover --ledger "$unknown_parent_run_ledger" \
   --stale-after-seconds 0 --now 2026-08-22T00:00:01Z)"
-assert_plan "unknown-parent bound recovery" "$unknown_parent_output" \
+assert_plan "unknown-parent run recovery" "$unknown_parent_output" \
   '{"recovered":0,"targets":[]}'
-if [ ! -e "$unknown_parent_worktree" ]; then
-  err "recovery reclaimed a bound run without proof its parent was gone"
+if [ ! -e "$unknown_parent_run_worktree" ]; then
+  err "recovery reclaimed a run without proof its parent was gone"
 fi
 
-dirty_bound_ledger="$tmp_dir/.git-loopy/dirty-bound-subagents.jsonl"
-dirty_bound_worktree="$tmp_dir/worktree-dirty-bound"
+dirty_abandoned_run_ledger="$tmp_dir/.git-loopy/dirty-abandoned-run-subagents.jsonl"
+dirty_abandoned_run_worktree="$tmp_dir/worktree-dirty-abandoned-run"
 bash -c '
-  "$1" reserve --ledger "$2" --route implement --target issue-dirty-bound \
+  "$1" reserve --ledger "$2" --route implement --target issue-dirty-abandoned-run \
     --spawn-time 2026-08-22T00:00:00Z --worktree "$3" --chain-depth 1 --parent-pid "$$"
-  "$1" bind --ledger "$2" --worktree "$3" --session-id session-dirty-bound \
-    --agent-id agent-dirty-bound --agent-type implement-agent --agent-name implement-agent
-' bash "$CHAIN" "$dirty_bound_ledger" "$dirty_bound_worktree"
-printf 'uncommitted recovery work\n' > "$dirty_bound_worktree/uncommitted.txt"
+  "$1" bind --ledger "$2" --worktree "$3" --session-id session-dirty-abandoned-run \
+    --agent-id agent-dirty-abandoned-run --agent-type implement-agent --agent-name implement-agent
+' bash "$CHAIN" "$dirty_abandoned_run_ledger" "$dirty_abandoned_run_worktree"
+printf 'uncommitted recovery work\n' > "$dirty_abandoned_run_worktree/uncommitted.txt"
 
-dirty_bound_error="$tmp_dir/dirty-bound.err"
-dirty_bound_output="$("$CHAIN" recover --ledger "$dirty_bound_ledger" \
+dirty_abandoned_run_error="$tmp_dir/dirty-abandoned-run.err"
+dirty_abandoned_run_output="$("$CHAIN" recover --ledger "$dirty_abandoned_run_ledger" \
   --stale-after-seconds 999999999 --now 2026-08-22T00:00:01Z \
-  2>"$dirty_bound_error")"
-assert_plan "dirty dead-parent bound recovery" "$dirty_bound_output" \
-  '{"recovered":1,"targets":["issue-dirty-bound"],"retained_worktrees":["'"$dirty_bound_worktree"'"]}'
-if [ ! -f "$dirty_bound_worktree/uncommitted.txt" ]; then
+  2>"$dirty_abandoned_run_error")"
+assert_plan "dirty abandoned run recovery" "$dirty_abandoned_run_output" \
+  '{"recovered":1,"targets":["issue-dirty-abandoned-run"],"retained_worktrees":["'"$dirty_abandoned_run_worktree"'"]}'
+if [ ! -f "$dirty_abandoned_run_worktree/uncommitted.txt" ]; then
   err "recovery destroyed an uncommitted file in a reclaimed worktree"
 fi
 if ! grep -q \
-  "reclaimed worktree has uncommitted changes and was retained: $dirty_bound_worktree" \
-  "$dirty_bound_error"
+  "reclaimed worktree has uncommitted changes and was retained: $dirty_abandoned_run_worktree" \
+  "$dirty_abandoned_run_error"
 then
   err "recovery did not report the retained dirty worktree"
 fi
-if ! python3 - "$dirty_bound_ledger" <<'PY'
+if ! python3 - "$dirty_abandoned_run_ledger" <<'PY'
 import json
 import sys
 
@@ -1605,10 +1752,10 @@ then
   err "dirty worktree recovery did not release the ledger slot"
 fi
 
-plan_ledger="$dead_bound_ledger"
-reclaimed_bound_target="$(plan /implement issue-dead-bound AFK-safe implement-agent gpt-5.6-terra high default "$tmp_dir/plan-dead-bound")"
-assert_plan "reclaimed bound target" "$reclaimed_bound_target" \
-  '{"decision":"spawn","route":"/implement","target":"issue-dead-bound","agent":"implement-agent","model":"gpt-5.6-terra","effort":"high","context_tier":"default","worktree":"'"$tmp_dir"'/plan-dead-bound"}'
+plan_ledger="$abandoned_run_ledger"
+reclaimed_abandoned_target="$(plan /implement issue-abandoned-run AFK-safe implement-agent gpt-5.6-terra high default "$tmp_dir/plan-abandoned-run")"
+assert_plan "reclaimed abandoned run target" "$reclaimed_abandoned_target" \
+  '{"decision":"spawn","route":"/implement","target":"issue-abandoned-run","agent":"implement-agent","model":"gpt-5.6-terra","effort":"high","context_tier":"default","worktree":"'"$tmp_dir"'/plan-abandoned-run"}'
 
 orphan_ledger="$tmp_dir/.git-loopy/orphan-subagents.jsonl"
 orphan_worktree="$tmp_dir/worktree-orphan"

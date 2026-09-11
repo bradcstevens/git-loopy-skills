@@ -80,10 +80,9 @@ their reserving parent, so a run whose parent is gone is no longer active even t
 remains recorded.
 
 **In flight**:
-Describes a target currently held by an active bound run. An in-flight target is spoken for:
-routing a second agent at it would duplicate or corrupt the work. Reclaiming never disturbs a run
-whose reserving parent is alive; a binding whose parent is gone is an **abandoned run**, not in
-flight.
+A target held by an active bound run, where routing a second agent would duplicate or corrupt the
+work. Reclaiming never disturbs a run whose reserving parent is alive; a binding whose parent is
+gone is an **abandoned run**, not in flight.
 
 ### Connection kinds
 
