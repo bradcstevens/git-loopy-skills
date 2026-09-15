@@ -116,6 +116,176 @@ fi
 if [[ "$(git -C "$tmp_dir/worktree-1" branch --show-current)" != git-loopy/reservation-* ]]; then
   err "reserve did not create a branch for the reserved worktree"
 fi
+if [ ! -f "$tmp_dir/worktree-1/.git-loopy/worktree-owner" ]; then
+  err "reserve did not create a worktree ownership marker"
+else
+  python3 - "$tmp_dir/worktree-1/.git-loopy/worktree-owner" <<'PY' || exit 1
+import subprocess
+import sys
+import os
+
+pid_text, start_time = open(sys.argv[1], encoding="utf-8").read().rstrip("\n").split("\t", 1)
+assert int(pid_text) > 0
+assert int(pid_text) == os.getppid()
+assert start_time
+assert " ".join(
+    subprocess.run(
+        ["ps", "-o", "lstart=", "-p", pid_text],
+        capture_output=True,
+        text=True,
+        check=True,
+        env={**os.environ, "TZ": "UTC"},
+    ).stdout.split()
+) == start_time
+PY
+fi
+
+if [ "$("$CHAIN" owner --worktree "$tmp_dir/worktree-1")" != '{"alive":true}' ]; then
+  err "owner did not read a live owner from the marker reserve wrote"
+fi
+
+# The second producer: a worktree an agent makes for itself on a /next prompt.
+claim_ledger="$tmp_dir/.git-loopy/claim.jsonl"
+prompt_worktree="$tmp_dir/worktree-prompt-made"
+"$CHAIN" claim --ledger "$claim_ledger" --worktree "$prompt_worktree" \
+  --create-branch prompt-made --owner-pid "$$"
+if [ ! -d "$prompt_worktree/.git" ] && [ ! -f "$prompt_worktree/.git" ]; then
+  err "claim --create-branch did not create the worktree"
+fi
+if [ ! -f "$prompt_worktree/.git-loopy/worktree-owner" ]; then
+  err "claim --create-branch did not mark the worktree it made"
+elif [ "$(cat "$prompt_worktree/.git-loopy/worktree-owner")" != "$(cat "$tmp_dir/worktree-1/.git-loopy/worktree-owner")" ]; then
+  err "claim and reserve wrote different markers for the same owner"
+fi
+if [ "$("$CHAIN" owner --worktree "$prompt_worktree")" != '{"alive":true}' ]; then
+  err "owner did not read a live owner from a claimed worktree"
+fi
+if [ -e "$claim_ledger.pending" ] || [ -e "$claim_ledger.lock" ]; then
+  err "claim --create-branch left its journal or lock behind"
+fi
+if "$CHAIN" claim --ledger "$claim_ledger" --worktree "$prompt_worktree" \
+  --create-branch prompt-made-again --owner-pid "$$" 2>/dev/null
+then
+  err "claim --create-branch overwrote an existing worktree"
+fi
+if [ ! -f "$prompt_worktree/.git-loopy/worktree-owner" ]; then
+  err "a failed claim --create-branch destroyed the worktree already there"
+fi
+if [ -e "$claim_ledger.pending" ]; then
+  err "a failed claim --create-branch left its journal behind"
+fi
+
+# A collision must be refused before anything claims the right to undo it: an
+# unmarked worktree and a pre-existing branch both belong to somebody else.
+bystander_worktree="$tmp_dir/worktree-bystander"
+git -C "$tmp_dir" worktree add --quiet -b bystander "$bystander_worktree" >/dev/null
+if "$CHAIN" claim --ledger "$claim_ledger" --worktree "$bystander_worktree" \
+  --create-branch bystander-new --owner-pid "$$" 2>/dev/null
+then
+  err "claim --create-branch took over an unmarked worktree"
+fi
+if [ ! -d "$bystander_worktree" ]; then
+  err "a failed claim --create-branch destroyed an unmarked worktree it did not make"
+fi
+if "$CHAIN" claim --ledger "$claim_ledger" --worktree "$tmp_dir/worktree-branch-taken" \
+  --create-branch bystander --owner-pid "$$" 2>/dev/null
+then
+  err "claim --create-branch reused a branch that already existed"
+fi
+if ! git -C "$tmp_dir" rev-parse --verify --quiet bystander >/dev/null; then
+  err "a failed claim --create-branch deleted a branch it did not make"
+fi
+if [ -e "$claim_ledger.pending" ]; then
+  err "a refused claim --create-branch left its journal behind"
+fi
+git -C "$tmp_dir" worktree remove --force "$bystander_worktree"
+git -C "$tmp_dir" branch -D bystander >/dev/null
+
+# The new worktree starts from the caller's HEAD, not the main checkout's.
+caller_worktree="$tmp_dir/worktree-caller"
+git -C "$tmp_dir" worktree add --quiet -b caller-base "$caller_worktree" >/dev/null
+git -C "$caller_worktree" -c user.name=test -c user.email=test@example.com \
+  commit --quiet --allow-empty -m "ahead of the main checkout"
+caller_head="$(git -C "$caller_worktree" rev-parse HEAD)"
+(cd "$caller_worktree" && "$CHAIN" claim --ledger "$claim_ledger" \
+  --worktree "$tmp_dir/worktree-from-caller" --create-branch from-caller --owner-pid "$$")
+if [ "$(git -C "$tmp_dir/worktree-from-caller" rev-parse HEAD)" != "$caller_head" ]; then
+  err "claim --create-branch based the new worktree on the wrong commit"
+fi
+git -C "$tmp_dir" worktree remove --force "$tmp_dir/worktree-from-caller"
+git -C "$tmp_dir" branch -D from-caller >/dev/null
+git -C "$tmp_dir" worktree remove --force "$caller_worktree"
+git -C "$tmp_dir" branch -D caller-base >/dev/null
+
+# An interrupted claim leaves an unmarked worktree; the marker is its commit, so
+# recovery must undo it exactly as it undoes an uncommitted reservation.
+unmarked_worktree="$tmp_dir/worktree-claim-crash"
+git -C "$tmp_dir" worktree add --quiet -b claim-crash "$unmarked_worktree" >/dev/null
+python3 - "$unmarked_worktree" > "$claim_ledger.pending" <<'PY'
+import json
+import sys
+
+print(json.dumps({
+    "worktree": sys.argv[1],
+    "branch": "claim-crash",
+    "commit": "marker",
+}, separators=(",", ":")))
+PY
+"$CHAIN" recover --ledger "$claim_ledger" --stale-after-seconds 999999999 \
+  --now 2026-08-22T00:00:00Z >/dev/null
+if [ -e "$unmarked_worktree" ]; then
+  err "recovery kept the unmarked worktree of an interrupted claim"
+fi
+if git -C "$tmp_dir" rev-parse --verify --quiet claim-crash >/dev/null; then
+  err "rolling back an interrupted claim left its branch behind"
+fi
+printf '{"worktree":"%s","branch":"prompt-made","commit":"marker"}\n' "$prompt_worktree" \
+  > "$claim_ledger.pending"
+"$CHAIN" recover --ledger "$claim_ledger" --stale-after-seconds 999999999 \
+  --now 2026-08-22T00:00:00Z >/dev/null
+if [ ! -f "$prompt_worktree/.git-loopy/worktree-owner" ]; then
+  err "recovery rolled back a claim whose marker had already landed"
+fi
+if [ -e "$claim_ledger.pending" ]; then
+  err "recovery left the pending record of a committed claim behind"
+fi
+
+# A bystander that won the race between the guard and the creation is not this
+# transaction's to remove: the proof of ownership is the branch, not the path.
+race_worktree="$tmp_dir/worktree-race-loser"
+git -C "$tmp_dir" worktree add --quiet -b race-winner "$race_worktree" >/dev/null
+printf '{"worktree":"%s","branch":"race-loser","commit":"marker"}\n' "$race_worktree" \
+  > "$claim_ledger.pending"
+if "$CHAIN" recover --ledger "$claim_ledger" --stale-after-seconds 999999999 \
+  --now 2026-08-22T00:00:00Z >/dev/null 2>&1
+then
+  err "recovery reported success after refusing to remove a bystander worktree"
+fi
+if [ ! -d "$race_worktree" ]; then
+  err "rollback removed a worktree created by somebody else at its recorded path"
+fi
+if ! git -C "$tmp_dir" rev-parse --verify --quiet race-winner >/dev/null; then
+  err "rollback deleted the branch of a worktree it did not create"
+fi
+if ! git -C "$tmp_dir" worktree list --porcelain | grep -qxF "worktree $race_worktree"; then
+  err "rollback unregistered a worktree it did not create"
+fi
+if [ ! -f "$claim_ledger.pending" ]; then
+  err "rollback dropped the record of a worktree it refused to remove"
+fi
+rm -f "$claim_ledger.pending"
+git -C "$tmp_dir" worktree remove --force "$race_worktree"
+git -C "$tmp_dir" branch -D race-winner >/dev/null
+
+if "$CHAIN" claim --ledger "$claim_ledger" --worktree "$tmp_dir/worktree-absent" --owner-pid "$$" 2>/dev/null; then
+  err "claim marked a worktree that does not exist"
+fi
+if "$CHAIN" claim --worktree "$prompt_worktree" --owner-pid 999999999 2>/dev/null; then
+  err "claim marked a worktree for an owner that is not running"
+fi
+git -C "$tmp_dir" worktree remove --force "$prompt_worktree"
+git -C "$tmp_dir" branch -D prompt-made >/dev/null
+rm -f "$claim_ledger" "$claim_ledger.pending"
 
 "$CHAIN" bind \
   --ledger "$ledger" \
@@ -1333,40 +1503,50 @@ CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE=1 "$CHAIN" reserve --parent-pid "$$" \
   --worktree "$tmp_dir/worktree-reservation-crash" \
   --chain-depth 1 &
 reservation_crash_pid=$!
-for _ in $(seq 1 100); do
-  grep -q reservation-crash "$reservation_ledger" 2>/dev/null && break
+for _ in $(seq 1 500); do
+  [ -f "$reservation_ledger.pending" ] && break
   sleep 0.01
 done
-if ! grep -q reservation-crash "$reservation_ledger" 2>/dev/null; then
-  err "reservation crash fixture did not record its worktree reservation"
+if [ ! -f "$reservation_ledger.pending" ]; then
+  err "reservation crash fixture did not record its pending reservation"
 else
   kill -KILL "$reservation_crash_pid"
   wait "$reservation_crash_pid" 2>/dev/null || true
 fi
 
+if [ -e "$reservation_ledger" ]; then
+  err "reservation crash fixture published a reservation row before its worktree"
+fi
 if [ -e "$tmp_dir/worktree-reservation-crash" ]; then
   err "reservation crash fixture created its worktree before the test could interrupt it"
 fi
 
 reservation_recovery="$("$CHAIN" recover --ledger "$reservation_ledger" --stale-after-seconds 60 --now 2026-08-22T00:05:00Z)"
-assert_plan "uncreated worktree recovery" "$reservation_recovery" \
-  '{"recovered":1,"targets":["issue-reservation-crash"]}'
+assert_plan "uncommitted reservation recovery" "$reservation_recovery" \
+  '{"recovered":0,"targets":[]}'
+if [ -e "$reservation_ledger.pending" ]; then
+  err "recovery left the pending record of an uncommitted reservation behind"
+fi
+if [ -e "$tmp_dir/worktree-reservation-crash" ]; then
+  err "recovery left an uncommitted reservation worktree behind"
+fi
 
 lock_crash_ledger="$tmp_dir/.git-loopy/lock-crash.jsonl"
+lock_crash_worktree="$tmp_dir/worktree-lock-crash"
 CHAIN_RESERVE_PAUSE_BEFORE_COMMIT=1 "$CHAIN" reserve --parent-pid "$$" \
   --ledger "$lock_crash_ledger" \
   --route implement \
   --target issue-lock-crash \
   --spawn-time 2026-08-22T00:00:00Z \
-  --worktree "$tmp_dir/worktree-lock-crash" \
+  --worktree "$lock_crash_worktree" \
   --chain-depth 1 &
 lock_crash_pid=$!
-for _ in $(seq 1 100); do
-  [ -f "$lock_crash_ledger.lock/pid" ] && break
+for _ in $(seq 1 500); do
+  [ -f "$lock_crash_worktree/.git-loopy/worktree-owner" ] && break
   sleep 0.01
 done
-if [ ! -f "$lock_crash_ledger.lock/pid" ]; then
-  err "SIGKILL recovery fixture did not acquire the ledger lock"
+if [ ! -f "$lock_crash_worktree/.git-loopy/worktree-owner" ]; then
+  err "SIGKILL recovery fixture did not reach its marked worktree"
 else
   kill -KILL "$lock_crash_pid"
   wait "$lock_crash_pid" 2>/dev/null || true
@@ -1374,6 +1554,12 @@ fi
 
 if [ ! -d "$lock_crash_ledger.lock" ]; then
   err "SIGKILL did not leave the ledger lock behind"
+fi
+if [ -e "$lock_crash_ledger" ]; then
+  err "SIGKILL published a reservation row past its commit point"
+fi
+if [ ! -f "$lock_crash_ledger.pending" ]; then
+  err "SIGKILL did not leave the pending record of its marked worktree behind"
 fi
 
 reserve_and_bind \
@@ -1391,6 +1577,158 @@ reserve_and_bind \
 if [ -e "$lock_crash_ledger.lock" ]; then
   err "reserve did not recover the SIGKILL-stranded ledger lock"
 fi
+if [ -e "$lock_crash_worktree" ]; then
+  err "reserve did not roll back the marked worktree of an uncommitted reservation"
+fi
+if [ -e "$lock_crash_ledger.pending" ]; then
+  err "reserve did not clear the pending record of an uncommitted reservation"
+fi
+if ! python3 - "$lock_crash_ledger" "$lock_crash_worktree" <<'PY'
+import json
+import sys
+
+ledger_path, rolled_back = sys.argv[1:]
+with open(ledger_path, encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger if line.strip()]
+assert [row["target"] for row in rows] == ["issue-after-lock-crash"], rows
+assert all(row["worktree"] != rolled_back for row in rows), rows
+PY
+then
+  err "a SIGKILL before the commit point left a reservation row behind"
+fi
+
+# A SIGKILL in the other half of the window — after the row is published but
+# before the pending record is cleared — must keep the reservation, not undo it.
+python3 - "$tmp_dir/worktree-after-lock-crash" "$lock_crash_ledger" > "$lock_crash_ledger.pending" <<'PY'
+import json
+import sys
+
+worktree, ledger_path = sys.argv[1:]
+with open(ledger_path, encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger if line.strip()]
+committed = next(row for row in rows if row["worktree"] == worktree)
+print(json.dumps({
+    "worktree": worktree,
+    "branch": "no-such-branch",
+    "commit": "row",
+    "reservation_id": committed["reservation_id"],
+}, separators=(",", ":")))
+PY
+"$CHAIN" recover --ledger "$lock_crash_ledger" --stale-after-seconds 999999999 \
+  --now 2026-08-22T00:02:00Z >/dev/null
+if [ -e "$lock_crash_ledger.pending" ]; then
+  err "recovery left the pending record of a committed reservation behind"
+fi
+if [ ! -f "$tmp_dir/worktree-after-lock-crash/.git-loopy/worktree-owner" ]; then
+  err "recovery rolled back a reservation that had already committed"
+fi
+
+# A retry that reuses every reserve argument: only the reservation's own id tells
+# the new transaction from the row the previous one left, so the unrecorded
+# worktree must still go.
+reuse_worktree="$tmp_dir/worktree-after-lock-crash"
+git -C "$tmp_dir" worktree remove --force "$reuse_worktree"
+git -C "$tmp_dir" worktree add --quiet -b reused-path "$reuse_worktree" >/dev/null
+"$CHAIN" claim --worktree "$reuse_worktree" --owner-pid "$$"
+python3 - "$reuse_worktree" "$lock_crash_ledger" > "$lock_crash_ledger.pending" <<'PY'
+import json
+import sys
+
+worktree, ledger_path = sys.argv[1:]
+with open(ledger_path, encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger if line.strip()]
+committed = next(row for row in rows if row["worktree"] == worktree)
+print(json.dumps({
+    "worktree": worktree,
+    "branch": "reused-path",
+    "commit": "row",
+    "reservation_id": "0" * 32,
+}, separators=(",", ":")))
+PY
+"$CHAIN" recover --ledger "$lock_crash_ledger" --stale-after-seconds 999999999 \
+  --now 2026-08-22T09:01:00Z >/dev/null
+if [ -e "$reuse_worktree" ]; then
+  err "a retry that reused every reserve argument was mistaken for its own commit"
+fi
+if git -C "$tmp_dir" rev-parse --verify --quiet reused-path >/dev/null; then
+  err "rolling back an uncommitted reservation left its branch behind"
+fi
+
+# A rollback that cannot remove the worktree must keep its record, because
+# dropping it would leave nothing naming the directory it failed to remove.
+stuck_dir="$tmp_dir/worktree-unremovable"
+mkdir -p "$stuck_dir"
+python3 - "$stuck_dir" > "$lock_crash_ledger.pending" <<'PY'
+import json
+import sys
+
+print(json.dumps({
+    "worktree": sys.argv[1],
+    "branch": "",
+    "commit": "row",
+    "reservation_id": "f" * 32,
+}, separators=(",", ":")))
+PY
+if "$CHAIN" recover --ledger "$lock_crash_ledger" --stale-after-seconds 999999999 \
+  --now 2026-08-22T10:00:00Z >/dev/null 2>&1
+then
+  err "recovery reported success after failing to remove an unrecorded worktree"
+fi
+if [ ! -f "$lock_crash_ledger.pending" ]; then
+  err "a failed rollback dropped the record of the worktree it could not remove"
+fi
+if [ -e "$lock_crash_ledger.lock" ]; then
+  err "a failed rollback stranded the ledger lock"
+fi
+rm -f "$lock_crash_ledger.pending"
+rmdir "$stuck_dir"
+
+# An unreadable record is not a committed one. Keep it and fail, rather than
+# dropping the last thing naming whatever worktree it described.
+for unreadable in \
+  'not json' \
+  '[]' \
+  '{"worktree":"/tmp/x","commit":"row"}' \
+  '{"worktree":"/tmp/x","commit":"nonsense"}' \
+  '{"worktree":"/tmp/x","branch":5,"commit":"marker"}' \
+  '{"worktree":"/tmp/x","branch":0,"commit":"marker"}' \
+  '{"worktree":"/tmp/x","branch":false,"commit":"marker"}' \
+  '{"worktree":"/tmp/x","branch":[],"commit":"marker"}' \
+  '{"worktree":"/tmp/x","branch":null,"commit":"marker"}' \
+  '{"worktree":"/tmp/x","branch":"","commit":"row","reservation_id":7}' \
+  '{"commit":"marker"}'
+do
+  printf '%s\n' "$unreadable" > "$lock_crash_ledger.pending"
+  if "$CHAIN" recover --ledger "$lock_crash_ledger" --stale-after-seconds 999999999 \
+    --now 2026-08-22T11:00:00Z >/dev/null 2>&1
+  then
+    err "recovery reported success on an unreadable pending worktree record"
+  fi
+  if [ ! -f "$lock_crash_ledger.pending" ]; then
+    err "an unreadable pending worktree record was deleted as though it had committed"
+  fi
+  if [ -e "$lock_crash_ledger.lock" ]; then
+    err "an unreadable pending worktree record stranded the ledger lock"
+  fi
+done
+rm -f "$lock_crash_ledger.pending"
+
+# A ledger the sweep cannot read is unreadable state too, not proof of a commit.
+unreadable_ledger="$tmp_dir/.git-loopy/unreadable.jsonl"
+for bad_row in '["not","a","row"]' '{"reservation_id":7}' 'not json'; do
+  printf '%s\n' "$bad_row" > "$unreadable_ledger"
+  printf '{"worktree":"/tmp/x","branch":"","commit":"row","reservation_id":"%s"}\n' "$(printf 'a%.0s' $(seq 32))" \
+    > "$unreadable_ledger.pending"
+  if "$CHAIN" recover --ledger "$unreadable_ledger" --stale-after-seconds 999999999 \
+    --now 2026-08-22T12:00:00Z >/dev/null 2>&1
+  then
+    err "recovery reported success while the ledger it swept could not be read"
+  fi
+  if [ ! -f "$unreadable_ledger.pending" ]; then
+    err "an unreadable ledger caused its pending worktree record to be deleted"
+  fi
+done
+rm -f "$unreadable_ledger" "$unreadable_ledger.pending"
 
 pidless_lock_ledger="$tmp_dir/.git-loopy/pidless-lock.jsonl"
 mkdir -p "$pidless_lock_ledger.lock"

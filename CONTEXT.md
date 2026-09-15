@@ -62,6 +62,20 @@ _Avoid_: Placeholder, pending row
 Attaching the runtime-assigned agent identity to a reservation, which is what later lets a
 completion payload find its row.
 
+**Worktree marker**:
+A file inside a worktree naming the process that owns it and when that process started, so a later
+reader can tell a directory an agent is thinking in from one nobody will return to. Two producers
+write it: a reservation, and an agent told to make its own worktree.
+_Avoid_: Lock, owner file
+
+**Pending worktree**:
+A worktree that has begun coming into existence but whose transaction has not finished. It is named
+in a record beside the ledger before the directory exists, so an interruption that outruns any
+cleanup still leaves something naming it. Whoever next takes the ledger lock finishes it or undoes
+it. A reservation finishes when its row reaches the ledger; a claimed worktree, which has no row,
+finishes when its marker lands.
+_Avoid_: Journal entry, temp worktree
+
 **Reserving parent**:
 The process whose death orphans a reservation — the routing session that will do the binding, not
 the shell that invokes the chain script and exits with the command. A reservation records its
