@@ -61,8 +61,74 @@ release_lock() {
 }
 
 repository_root() {
-  git worktree list --porcelain |
-    awk '/^worktree / { sub(/^worktree /, ""); print; exit }'
+  local main_worktree common_dir git_dir current_worktree
+  local root_anchor recorded_root recorded_common_dir
+
+  main_worktree="$(
+    git worktree list --porcelain |
+      awk '/^worktree / { sub(/^worktree /, ""); print; exit }'
+  )"
+
+  # When the main worktree's .git points to an out-of-tree gitdir, Git cannot
+  # name that worktree and reports the common gitdir itself. Record the main
+  # working tree once so linked worktrees resolve the same repository ledger.
+  common_dir="$(git rev-parse --git-common-dir)"
+  common_dir="$(cd "$common_dir" 2>/dev/null && pwd -P)" || common_dir=""
+  if [ -n "$main_worktree" ] && [ -n "$common_dir" ] &&
+    [ "$(cd "$main_worktree" 2>/dev/null && pwd -P)" = "$common_dir" ]; then
+    git_dir="$(git rev-parse --git-dir)"
+    git_dir="$(cd "$git_dir" 2>/dev/null && pwd -P)" || git_dir=""
+    current_worktree="$(git rev-parse --show-toplevel)"
+    current_worktree="$(cd "$current_worktree" 2>/dev/null && pwd -P)" || current_worktree=""
+    [ -n "$git_dir" ] && [ -n "$current_worktree" ] || {
+      echo "error: could not resolve repository metadata for the working tree" >&2
+      return 1
+    }
+
+    root_anchor="$common_dir/git-loopy-worktree-root"
+    if [ ! -e "$root_anchor" ] && [ ! -L "$root_anchor" ]; then
+      [ "$git_dir" = "$common_dir" ] || {
+        echo "error: repository root is not recorded for this separate-git-dir repository" >&2
+        return 1
+      }
+      if ! ln -s "$current_worktree" "$root_anchor" 2>/dev/null &&
+        [ ! -L "$root_anchor" ]; then
+        echo "error: could not record repository root: $root_anchor" >&2
+        return 1
+      fi
+    fi
+
+    if [ ! -L "$root_anchor" ] ||
+      ! recorded_root="$(readlink "$root_anchor")" ||
+      [ -z "$recorded_root" ]; then
+      echo "error: could not read repository root: $root_anchor" >&2
+      return 1
+    fi
+    if ! recorded_common_dir="$(
+      git -C "$recorded_root" rev-parse --git-common-dir |
+        while IFS= read -r dir; do
+          cd "$recorded_root"
+          cd "$dir"
+          pwd -P
+        done
+    )"; then
+      echo "error: recorded repository root is unavailable: $recorded_root" >&2
+      return 1
+    fi
+    [ "$recorded_common_dir" = "$common_dir" ] || {
+      echo "error: recorded repository root belongs to a different repository: $recorded_root" >&2
+      return 1
+    }
+    printf '%s\n' "$recorded_root"
+    return
+  fi
+
+  if [ -n "$main_worktree" ]; then
+    printf '%s\n' "$main_worktree"
+    return
+  fi
+  echo "error: could not resolve repository root" >&2
+  return 1
 }
 
 process_start() {

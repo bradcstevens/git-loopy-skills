@@ -688,6 +688,69 @@ if [ -e "$default_worktree" ]; then
   err "completion from a linked worktree did not remove its worktree"
 fi
 
+separate_git_dir="$tmp_dir/vault-gitdir"
+separate_working_tree="$tmp_dir/vault"
+separate_worktree="$tmp_dir/vault-run-1"
+separate_ledger="$separate_working_tree/.git-loopy/subagents.jsonl"
+git init --quiet --separate-git-dir="$separate_git_dir" "$separate_working_tree"
+git -C "$separate_working_tree" -c user.name=test -c user.email=test@example.com \
+  commit --quiet --allow-empty -m initial
+(
+  cd "$separate_working_tree"
+  reserve_and_bind \
+    --route implement \
+    --target issue-separate-git-dir \
+    --session-id session-separate-git-dir \
+    --agent-id agent-separate-git-dir \
+    --agent-type implement-agent \
+    --agent-name implement-agent \
+    --spawn-time 2026-08-22T00:00:00Z \
+    --worktree "$separate_worktree" \
+    --chain-depth 1
+)
+
+if [ ! -f "$separate_ledger" ]; then
+  err "reserve from a separate-git-dir repository did not use the main working tree ledger"
+fi
+if [ -e "$separate_git_dir/.git-loopy/subagents.jsonl" ]; then
+  err "reserve from a separate-git-dir repository wrote the ledger into the gitdir"
+fi
+if [ -e "$separate_worktree/.git-loopy/subagents.jsonl" ]; then
+  err "reserve from a separate-git-dir repository created a linked worktree ledger"
+fi
+
+separate_completion_output="$(
+  cd "$separate_worktree"
+  PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete \
+    <<< "$(completion_payload agent-separate-git-dir 2026-08-22T00:11:00Z implement-agent implement-agent session-separate-git-dir "$separate_worktree")"
+)"
+assert_plan "separate-git-dir linked worktree completion" "$separate_completion_output" \
+  '{"continue":true,"outcome":"published","target":"issue-separate-git-dir"}'
+
+if ! python3 - "$separate_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger]
+
+assert len(rows) == 1
+assert rows[0]["session_id"] == "session-separate-git-dir"
+assert rows[0]["finish_time"] == "2026-08-22T00:11:00Z"
+assert rows[0]["outcome"] == "published"
+PY
+then
+  err "completion from a separate-git-dir linked worktree did not close the main ledger row"
+fi
+
+if [ -e "$separate_worktree" ]; then
+  err "completion from a separate-git-dir linked worktree did not remove its worktree"
+fi
+if git -C "$separate_working_tree" worktree list --porcelain |
+  grep -qxF "worktree $separate_worktree"; then
+  err "completion from a separate-git-dir linked worktree leaked its worktree registration"
+fi
+
 reserve_and_bind \
   --ledger "$complete_ledger" \
   --route code-review \
@@ -1325,7 +1388,7 @@ if [ -e "$concurrent_worktree" ]; then
 fi
 
 reservation_ledger="$tmp_dir/.git-loopy/reservation-crash.jsonl"
-CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE=1 "$CHAIN" reserve --parent-pid "$$" \
+CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE=30 "$CHAIN" reserve --parent-pid "$$" \
   --ledger "$reservation_ledger" \
   --route implement \
   --target issue-reservation-crash \
@@ -1333,15 +1396,20 @@ CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE=1 "$CHAIN" reserve --parent-pid "$$" \
   --worktree "$tmp_dir/worktree-reservation-crash" \
   --chain-depth 1 &
 reservation_crash_pid=$!
-for _ in $(seq 1 100); do
-  grep -q reservation-crash "$reservation_ledger" 2>/dev/null && break
+reservation_recorded=0
+reservation_deadline=$((SECONDS + 30))
+while [ "$SECONDS" -lt "$reservation_deadline" ]; do
+  if grep -q reservation-crash "$reservation_ledger" 2>/dev/null; then
+    reservation_recorded=1
+    break
+  fi
+  kill -0 "$reservation_crash_pid" 2>/dev/null || break
   sleep 0.01
 done
-if ! grep -q reservation-crash "$reservation_ledger" 2>/dev/null; then
+kill -KILL "$reservation_crash_pid" 2>/dev/null || true
+wait "$reservation_crash_pid" 2>/dev/null || true
+if [ "$reservation_recorded" -eq 0 ]; then
   err "reservation crash fixture did not record its worktree reservation"
-else
-  kill -KILL "$reservation_crash_pid"
-  wait "$reservation_crash_pid" 2>/dev/null || true
 fi
 
 if [ -e "$tmp_dir/worktree-reservation-crash" ]; then
