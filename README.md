@@ -87,6 +87,7 @@ situation matches. The rest you invoke by name.
 | playwright-cli | automatic | Automates browser interactions for web testing, form filling, screenshots, and data extraction. |
 | [prototype](docs/prototype.md) | automatic | Build a throwaway prototype to answer a design question. |
 | push | `/push` | Publish current work by staging intended changes, committing, pushing, and opening a pull request when needed. |
+| [release](docs/release.md) | `/release` | Publish one project-versioned GitHub release for all unreleased issues completed by git-loopy. |
 | [research](docs/research.md) | automatic | Investigate a question against high-trust primary sources and capture the findings as a Markdown file in the repo. |
 | [resolving-merge-conflicts](docs/resolving-merge-conflicts.md) | automatic | Use when you need to resolve an in-progress git merge/rebase conflict. |
 | [setup-git-loopy-skills](docs/setup-git-loopy-skills.md) | `/setup-git-loopy-skills` | Configure this repo for the engineering skills — set up its issue tracker, triage label vocabulary, and domain doc layout. |

@@ -159,6 +159,11 @@ sequenceDiagram
 A genuinely small change may skip the middle and go straight from grilling to
 [`implement`](./implement.md).
 
+After integration, the human may invoke [`/release`](./release.md) to publish one
+release for the unreleased completed batch. Unlike `/push`, which publishes a
+branch, it follows the target project's versioning and release gates. It is a
+user-invoked endpoint, not an automatic route or addition to the chain allowlist.
+
 ## 2. Routing and session continuity
 
 [`next`](./next.md) decides *what*; [`handoff`](./handoff.md) launches detached work that must
