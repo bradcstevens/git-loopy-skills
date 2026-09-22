@@ -35,7 +35,8 @@ not identify an artifact class.
 This tracer handles spec-shaped workflow-bearing issues. A spec contains all four exact
 Markdown headings: `## Problem Statement`, `## Solution`, `## User Stories`, and
 `## Implementation Decisions`. Tickets use a distinct body shape. Never use
-`ready-for-agent` to distinguish the two: both specs and tickets carry that label.
+`ready-for-agent` to distinguish the two: it is a workflow state rather than an artifact
+class, and across a real tracker's history specs carry it, lack it, or have had it stripped.
 
 `--grace-days` defaults to `7`. It accepts a non-negative integer and overrides only this
 structural finding's grace period; for example, `/loose-ends --grace-days 0` exposes every

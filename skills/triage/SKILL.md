@@ -44,6 +44,18 @@ These are canonical role names — the actual label strings used in the issue tr
 
 State transitions: an unlabeled issue normally goes to `needs-triage` first; from there it moves to `needs-info`, `ready-for-agent`, `ready-for-human`, or `wontfix`. `needs-info` returns to `needs-triage` once the reporter replies. The maintainer can override at any time — flag transitions that look unusual and ask before proceeding.
 
+### Planning documents are never agent-ready
+
+An issue whose title begins `PRD:` or `Spec:` (case-insensitive) is a **planning document**, not an executable ticket. It never takes `ready-for-agent`:
+
+- **Refuse the label.** Do not apply `ready-for-agent` to such a title — including when the maintainer asks for it directly, and including the quick state override below. Say why, and offer `ready-for-human` instead, the role a planning document belongs in.
+- **Remove it when found.** If the label is already there, take it off (`--remove-label`). Do **not** close the document, and do **not** touch its other labels — it stays open and otherwise exactly as it was.
+- **Route the work instead.** A planning document is triaged by decomposing it: run `/to-tickets` on it, which publishes one issue per ticket and links each to the document as a native sub-issue.
+
+`ready-for-agent` belongs on a **standalone issue** — one that specifies its own work end to end — or on a **child of a planning document**, which is what `/to-tickets` produces. Never on the planning document itself.
+
+An AFK runner enforces this at pickup regardless of what triage did, so a mislabelled planning document is not merely unworked: it is a permanent candidate that is re-excluded every iteration.
+
 ## Invocation
 
 The maintainer invokes `/triage` and describes what they want in natural language. Interpret the request and act. Examples:
@@ -76,7 +88,7 @@ Show counts and a one-line summary per item. Let the maintainer pick.
 4. **Grill (if needed).** If the request needs fleshing out, run the `/grilling` and `/domain-modeling` skills together — grill it into shape a round of questions at a time, sharpening domain terms and updating `CONTEXT.md`/ADRs inline as decisions land.
 
 5. **Apply the outcome:**
-   - `ready-for-agent` — post an agent brief comment ([AGENT-BRIEF.md](AGENT-BRIEF.md)).
+   - `ready-for-agent` — post an agent brief comment ([AGENT-BRIEF.md](AGENT-BRIEF.md)). Never on a `PRD:`- or `Spec:`-titled planning document; see [Planning documents are never agent-ready](#planning-documents-are-never-agent-ready).
    - `ready-for-human` — same structure as an agent brief, but note why it can't be delegated (judgment calls, external access, design decisions, manual testing).
    - `needs-info` — post triage notes (template below).
    - `wontfix` — close, with the comment depending on *why*:
@@ -115,6 +127,8 @@ successor yet.
 ## Quick state override
 
 If the maintainer says "move #42 to ready-for-agent", trust them and apply the role directly. Confirm what you're about to do (role changes, comment, close), then act. Skip grilling. If moving to `ready-for-agent` without a grilling session, ask whether they want to write an agent brief.
+
+The one thing this override does **not** cover is `ready-for-agent` on a `PRD:`- or `Spec:`-titled planning document. Refuse it, explain that a runner excludes the document at pickup anyway, and offer `ready-for-human` plus a `/to-tickets` pass — see [Planning documents are never agent-ready](#planning-documents-are-never-agent-ready).
 
 ## Needs-info template
 

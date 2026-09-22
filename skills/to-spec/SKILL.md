@@ -16,7 +16,7 @@ The issue tracker and triage label vocabulary should have been provided to you �
 
 Check with the user that these seams match their expectations.
 
-3. Write the spec using the template below, then publish it to the project issue tracker. Apply the `ready-for-agent` triage label - no need for additional triage.
+3. Write the spec using the template below, then publish it to the project issue tracker. A spec is a **planning document**, not work: apply the planning-document triage role, `ready-for-human`. Never apply `ready-for-agent` — an AFK runner refuses a planning document at pickup, so the label would only mint a candidate it re-excludes every iteration and a human has to strip by hand. The tickets sliced out of the spec are what carry `ready-for-agent`, and `/to-tickets` applies it to each of them.
 
 <spec-template>
 
@@ -87,8 +87,9 @@ next session — human or agent — reads the same answer you did.
 2. Post one short evidence comment on that issue — what this transition changed and what it
    came from (`gh issue comment <spec-issue> --body "..."`).
 
-A published spec is a **specification artifact**, not an executable ticket — it keeps the
-`ready-for-agent` label so triage stays simple, because the next step is **decomposition**
-rather than implementation.
+A published spec is a **specification artifact**, not an executable ticket — so it ends this
+session labelled as the planning document it is (`ready-for-human`, step 3). The next step is
+**decomposition** rather than implementation, and the way to take that step is to run
+`/to-tickets`, not to leave behind a label no runner will act on.
 
 At the conclusion of a `/to-spec` session, run `/to-tickets` on the spec issue to decompose it.
