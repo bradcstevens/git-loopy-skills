@@ -121,44 +121,41 @@ shares with work in flight is named.
 
 ## 4. Size the runtime
 
-Every recommendation names the **pair** that carries it — a model and a
-reasoning effort — plus a context tier.
+Every recommendation names the **runtime** that carries it — an entitlement-aware
+model selector, an auto-routing tier, and a context tier.
 
 Name the **task type** of the chosen route from git-loopy's closed taxonomy:
 `planning`, `review`, `implementation`, `test`, `docs`, `chore`, `bugfix`.
 
-Read the pair from the project's own calibration rather than deciding it:
+Read the quality target from the project's own calibration rather than
+hard-coding a model name:
 
 ```bash
 git-loopy config list
 ```
 
-Use the `task-type:<key>` line matching the route's task type. A key the map
-leaves unset falls back to the `model` and `reasoning_effort` the same output
-prints. Read the map even when it reports itself inert — that note is about
-git-loopy's own serial iterations, while this pair carries a Copilot CLI
-session the user launches.
+Use the `task-type:<key>` line matching the route's task type to choose the
+Auto tier. Ignore its exact model and reasoning-effort values when constructing
+a Copilot CLI command: organization policy and subscription availability can
+change independently of the repository calibration.
 
-A repository without git-loopy, or a command that fails, falls back to this
-table, which balances speed against quality per task type:
+Use `--model auto` for every recommendation. Copilot CLI's Auto model selection
+chooses only models available to the user's plan and administrator policy, so
+the recommendation remains valid when the organization's model catalog changes.
+Set `--auto-tier intelligence` for `planning` and `review`, `balance` for
+`implementation`, `bugfix`, and `test`, and `efficiency` for `docs` and
+`chore`. The tier is a preference, not a promise of a particular model.
+Do not combine `--model auto` with `--reasoning-effort`; Auto routing owns that
+choice.
 
-| Task type | Model | `--effort` |
-| --- | --- | --- |
-| `planning` | strongest reasoning model available (`claude-opus-5`) | `xhigh` |
-| `review` | strongest reasoning model available (`gpt-5.6-sol`) | `xhigh` |
-| `bugfix` | strong general model (`claude-sonnet-5`, `gpt-5.6-terra`) | `high` |
-| `implementation` | strong general model (`gpt-5.6-terra`) | `high` |
-| `test` | strong general model (`gpt-5.6-terra`) | `medium` |
-| `docs` | strong general model (`gpt-5.6-luna`) | `low` |
-| `chore` | fast model (`claude-haiku-4.5`) | `none` |
+If a human explicitly asks for a named model, select it from Copilot CLI's
+`/model` list first and use that exact identifier; never infer entitlement from
+the repository's calibration or from a model name in this skill.
 
 Mark the action `AFK-safe` only when its target is fully specified and requires
-no new human judgment; otherwise mark it `HITL`. Raise an `AFK-safe` action's
-effort one level, capped at `xhigh`, **only when the pair came from the fallback
-table** — a configured route is already calibrated against unattended runs, so
-raising it counts the same allowance twice. Reserve `max` for a route an `xhigh`
-pass has already failed. When the running CLI does not offer the named model,
-use `auto` and let the effort level carry the demand.
+no new human judgment; otherwise mark it `HITL`. Use the `intelligence` Auto
+tier for AFK-safe work whose quality target is not already `intelligence`;
+otherwise preserve the calibrated tier.
 
 Set `--context long_context` when the run must hold more at once than one
 default window holds — a repo-wide survey, a review over a large diff, a map or
@@ -167,8 +164,9 @@ judgment stays the skill's own; it bills at a higher tier, so `default` carries
 every other run.
 
 This step is complete when the action is marked `HITL` or `AFK-safe` and the
-task type, model, effort, and context tier are each named, with the pair traced
-either to a `task-type:` line in the routing map or to the fallback table.
+task type, `auto` model selector, auto tier, and context tier are each named,
+with the tier traced either to a `task-type:` line in the routing map or to the
+task-type defaults above.
 
 ## 5. Apply the phase-boundary procedure and chain gate
 
@@ -227,7 +225,7 @@ Use this shape:
 Target: <linked issue, PR, map, spec, branch, document, or current conversation>
 State: <Ready | Blocked by ...>
 Context: <Continue here | Fresh session | Fresh session in a new worktree | Subagent>
-Runtime: `--model <model> --effort <level> --context <default | long_context>`
+Runtime: `--model auto --auto-tier <efficiency | balance | intelligence> --context <default | long_context>`
 Why now: <one sentence grounded in live state>
 
 Prompt:
@@ -241,7 +239,7 @@ PROMPT=$(cat <<'PROMPT_EOF'
 /<route> <concise imperative naming the target and desired outcome>
 PROMPT_EOF
 )
-co -n "<descriptive name>" --model "<model>" --effort "<level>" --context "<default | long_context>" --no-mouse -p "$PROMPT"
+copilot -n "<descriptive name>" --model auto --auto-tier "<tier>" --context "<default | long_context>" -p "$PROMPT"
 ```
 ````
 
@@ -268,7 +266,7 @@ target; what this session learned travels only in the prompt.
 The `Command` block is the whole recommendation as one selection the user can
 copy and run. Repeat the prompt inside it byte for byte between the quoted
 heredoc markers, which carry its `#` and spacing through to `-p "$PROMPT"` as
-one argument, and splice the same three runtime flags in verbatim. Name the
+one argument, and splice the same runtime flags in verbatim. Name the
 session with `-n` in a few words drawn from the action, because a launched
 session has no terminal to identify it and that name is how the user returns to
 it with `copilot --yolo --resume="<descriptive name>"`. The command
@@ -284,7 +282,7 @@ command still runs from the current directory, because the prompt it carries
 opens with the `git worktree add` that moves the agent before it writes.
 
 For `/handoff`, use `Continue here` and say that its output opens the fresh
-session. Give `Runtime` as the three flags verbatim, so a launcher such as
+session. Give `Runtime` as the runtime flags verbatim, so a launcher such as
 `/handoff` splices them straight into its background agent.
 
 For a terminal workstream, return:
