@@ -266,8 +266,8 @@ constraint is cleared before the agent writes:
 Use this rather than a bare `git worktree add`. A prompt-created worktree is the
 second producer of an ownership marker and never passes through the chain's
 `reserve`, so nothing else vouches for it; `claim` writes the same marker
-`reserve` writes and journals the pair, so an interrupted prompt cannot leave a
-worktree a later reader mistakes for abandoned clutter. Give the prompt that one
+`reserve` writes and records the pair as a pending worktree, so an interrupted
+prompt cannot leave a worktree a later reader mistakes for abandoned clutter. Give the prompt that one
 command, do not restate the marker format, and splice in this skill's own
 absolute path to `chain.sh`, because the fresh session starts somewhere that has
 not loaded `/next`.

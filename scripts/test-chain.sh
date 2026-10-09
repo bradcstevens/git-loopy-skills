@@ -161,7 +161,7 @@ if [ "$("$CHAIN" owner --worktree "$prompt_worktree")" != '{"alive":true}' ]; th
   err "owner did not read a live owner from a claimed worktree"
 fi
 if [ -e "$claim_ledger.pending" ] || [ -e "$claim_ledger.lock" ]; then
-  err "claim --create-branch left its journal or lock behind"
+  err "claim --create-branch left its pending worktree record or lock behind"
 fi
 if "$CHAIN" claim --ledger "$claim_ledger" --worktree "$prompt_worktree" \
   --create-branch prompt-made-again --owner-pid "$$" 2>/dev/null
@@ -172,7 +172,7 @@ if [ ! -f "$prompt_worktree/.git-loopy/worktree-owner" ]; then
   err "a failed claim --create-branch destroyed the worktree already there"
 fi
 if [ -e "$claim_ledger.pending" ]; then
-  err "a failed claim --create-branch left its journal behind"
+  err "a failed claim --create-branch left its pending worktree record behind"
 fi
 
 # A collision must be refused before anything claims the right to undo it: an
@@ -196,10 +196,37 @@ if ! git -C "$tmp_dir" rev-parse --verify --quiet bystander >/dev/null; then
   err "a failed claim --create-branch deleted a branch it did not make"
 fi
 if [ -e "$claim_ledger.pending" ]; then
-  err "a refused claim --create-branch left its journal behind"
+  err "a refused claim --create-branch left its pending worktree record behind"
 fi
 git -C "$tmp_dir" worktree remove --force "$bystander_worktree"
 git -C "$tmp_dir" branch -D bystander >/dev/null
+
+# Claims on different ledgers share a path and a branch, so one must lose cleanly
+# without rolling back the worktree the winner is still marking.
+race_worktree="$tmp_dir/worktree-race"
+for racer in a b; do
+  "$CHAIN" claim --ledger "$tmp_dir/race-$racer.jsonl" --worktree "$race_worktree" \
+    --create-branch race-branch --owner-pid "$$" >/dev/null 2>&1 &
+  eval "race_$racer=\$!"
+done
+race_wins=0
+wait "$race_a" && race_wins=$((race_wins + 1))
+wait "$race_b" && race_wins=$((race_wins + 1))
+if [ "$race_wins" -ne 1 ]; then
+  err "exactly one claim on a shared path and branch should win, got $race_wins"
+fi
+if [ ! -f "$race_worktree/.git-loopy/worktree-owner" ] ||
+  ! git -C "$race_worktree" rev-parse --git-dir >/dev/null 2>&1
+then
+  err "a losing claim on another ledger destroyed the winner's worktree"
+fi
+if [ -e "$tmp_dir/race-a.jsonl.pending" ] || [ -e "$tmp_dir/race-b.jsonl.pending" ] ||
+  [ -e "$tmp_dir/.git-loopy/worktree.lock" ]
+then
+  err "racing claims left a pending worktree record or lock behind"
+fi
+git -C "$tmp_dir" worktree remove --force "$race_worktree"
+git -C "$tmp_dir" branch -D race-branch >/dev/null
 
 # The new worktree starts from the caller's HEAD, not the main checkout's.
 caller_worktree="$tmp_dir/worktree-caller"

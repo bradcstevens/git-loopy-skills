@@ -44,6 +44,7 @@ lock_dir=""
 tmp=""
 metadata=""
 lock_acquired=0
+outer_lock_dir=""
 pending=""
 repo_root=""
 
@@ -55,6 +56,10 @@ cleanup() {
   if [ "$lock_acquired" -eq 1 ]; then
     rm -f "$lock_dir/pid"
     rmdir "$lock_dir" 2>/dev/null || true
+  fi
+  if [ -n "$outer_lock_dir" ]; then
+    rm -f "$outer_lock_dir/pid"
+    rmdir "$outer_lock_dir" 2>/dev/null || true
   fi
   [ -z "$tmp" ] || rm -f "$tmp"
   [ -z "$metadata" ] || rm -f "$metadata"
@@ -284,10 +289,10 @@ PY
 # worktree before it exists and survives a SIGKILL that the EXIT trap cannot.
 # Every command that takes the ledger lock runs this first. A rollback that cannot
 # finish keeps its record and fails rather than dropping it, because the record is
-# the last thing naming the worktree it left. Callers that own recovery — reserve
-# and recover — refuse to continue on that failure; the rest sweep opportunistically
-# and carry on, because an unrelated directory git cannot remove must not stop a
-# finished run from being bound or closed.
+# the last thing naming the worktree it left. Every caller refuses to continue on
+# that failure, because the next lock holder must finish or undo the pending
+# worktree and carrying on would leave it unresolved. Only the EXIT trap ignores it,
+# as it has nowhere left to report to.
 rollback_pending_worktree() {
   local pending_path="$1" record verdict pending_worktree pending_branch removed=0
 
@@ -575,7 +580,7 @@ plan() {
     mkdir -p "$(dirname "$ledger")"
     lock_dir="$ledger.lock"
     acquire_lock
-    rollback_pending_worktree "$ledger.pending" || true
+    rollback_pending_worktree "$ledger.pending"
     guard="$(evaluate_and_record_target_guard "$route" "$target")"
     release_lock
   fi
@@ -877,7 +882,7 @@ bind() {
   worktree="$(python3 -c 'import os; import sys; print(os.path.realpath(os.path.abspath(sys.argv[1])))' "$worktree")"
   mkdir -p "$ledger_dir"
   acquire_lock
-  rollback_pending_worktree "$ledger.pending" || true
+  rollback_pending_worktree "$ledger.pending"
 
   tmp="$(mktemp "$ledger_dir/.subagents.XXXXXX")"
   if ! python3 - "$ledger" "$tmp" "$worktree" "$session_id" "$agent_id" "$agent_type" "$agent_name" <<'PY'
@@ -951,7 +956,7 @@ complete() {
   lock_dir="$ledger.lock"
 
   acquire_lock
-  rollback_pending_worktree "$ledger.pending" || true
+  rollback_pending_worktree "$ledger.pending"
 
   tmp="$(mktemp "$ledger_dir/.subagents.XXXXXX")"
   metadata="$tmp.worktree"
@@ -1383,7 +1388,7 @@ PY
 # The second producer of an ownership marker: a worktree an agent made for itself
 # on a /next prompt, which never passes through reserve and would otherwise be
 # indistinguishable from abandoned clutter. With --create-branch the worktree is
-# made here rather than by the caller, so creating and marking it is one journaled
+# made here rather than by the caller, so creating and marking it is one pending-worktree
 # transaction and no interruption can leave a worktree nothing vouches for.
 claim() {
   local worktree="" owner_pid="" create_branch="" owner_start ledger_dir spawn_commit worktree_argument
@@ -1431,6 +1436,14 @@ claim() {
   lock_dir="$ledger.lock"
   mkdir -p "$ledger_dir"
   acquire_lock
+  # Claims on different ledgers hold different ledger locks yet contend for the same
+  # path and branch, so the transaction also takes a lock scoped to the repository.
+  # Only claim takes it, and always after its ledger lock, so the order cannot cycle.
+  outer_lock_dir="$lock_dir"
+  lock_dir="$repo_root/.git-loopy/worktree.lock"
+  mkdir -p "$(dirname "$lock_dir")"
+  lock_acquired=0
+  acquire_lock
   rollback_pending_worktree "$ledger.pending"
 
   # Refuse a path or branch that already exists, before anything claims the right
@@ -1466,6 +1479,10 @@ PY
   }
   rm -f "$pending"
   pending=""
+  release_lock
+  lock_dir="$outer_lock_dir"
+  outer_lock_dir=""
+  lock_acquired=1
   release_lock
 }
 
