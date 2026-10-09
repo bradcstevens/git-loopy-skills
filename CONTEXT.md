@@ -70,18 +70,25 @@ _Avoid_: Caller, spawner
 
 **Orphaned reservation**:
 A reservation that never got bound, because the spawn failed or its parent died in between. It
-holds a slot no agent will ever release, so it is reclaimed by checking whether the parent is still
-alive, with a timeout as backstop — the intent of `chain.sh recover`, which is the timeout alone
-until #64 adds the liveness check.
+holds a slot no agent will ever release, so `chain.sh recover` reclaims it once its reserving parent
+is gone or the stale timeout passes.
 _Avoid_: Stale row, dangling row
 
 **Completed chain reservation**:
-A ledger row whose run has finished. `chain.sh complete` removes its worktree inside the ledger
-lock, in the same step that releases its concurrency slot, so it is never a sweep's to reclaim.
+A ledger row whose run has finished and whose slot `chain.sh complete` has released inside the ledger
+lock. Its worktree is removed only when clean; otherwise it becomes a **retained worktree**.
+
+**Tracker-failed completion**:
+A completed run whose tracker lookup did not answer, recorded apart from `no-evidence`. Its cause is
+kept; a transient failure leaves the target retryable, while a permanent one halts it.
+
+**Abandoned run**:
+A bound reservation whose reserving parent ended before the run completed. `chain.sh recover`
+reclaims it only once that parent is proven gone, never on age alone.
 
 **In flight**:
-Describes a target currently held by a running agent. An in-flight target is spoken for: routing a
-second agent at it would duplicate or corrupt the work.
+A target held by an active bound run, where routing a second agent would duplicate or corrupt the
+work. A binding whose reserving parent is gone is an **abandoned run**, not in flight.
 
 ### Worktrees and sweeping
 
@@ -90,6 +97,11 @@ A working directory whose work is finished or abandoned and which no live proces
 from an **orphaned reservation**, which is a ledger row holding a concurrency slot: a stale worktree
 is a directory, it may come from a producer no ledger tracks, and it holds nothing but disk.
 _Avoid_: Dead worktree, leftover
+
+**Retained worktree**:
+A worktree `chain.sh` left on disk when completing or reclaiming its row, because it has uncommitted
+changes, cannot be inspected, or cannot be removed. Its row is closed, so it holds no slot and is no
+longer the chain's to reclaim.
 
 **Worktree marker**:
 The record inside a worktree naming the process that owns it and when that process started, together

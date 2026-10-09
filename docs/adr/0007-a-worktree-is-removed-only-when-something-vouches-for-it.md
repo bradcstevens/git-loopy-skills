@@ -71,42 +71,28 @@ as its own question rather than leaving it implied here.
 
 Four kinds of worktree exist in this workflow, and the sweeper owns two of them.
 
-A **completed chain reservation** is removed by `chain.sh complete`, inside the ledger lock, in the
-same step that releases the concurrency slot. That cannot move. Deferring it to a skill run would
-leave slots held between the run finishing and the next sweep, starving the chain — a regression
-wearing the clothes of a decoupling.
+A **completed chain reservation** releases its slot inside `chain.sh complete`'s ledger lock.
+`complete` removes the worktree in that same step when it is clean; any other worktree becomes a
+**retained worktree** (see Amendments) rather than risk deleting work that exists nowhere else.
+That cannot move. Deferring slot release to a skill run would leave slots held between the run
+finishing and the next sweep, starving the chain — a regression wearing the clothes of a decoupling.
 
-An **orphaned reservation** is a ledger row, and `CONTEXT.md` already names it. `chain.sh recover` is
-written for it and #28 owns wiring it up, with the explicit instruction to reuse the existing
-stale-lock recovery rather than invent a second mechanism. The sweeper calls `recover`; it does not
+An **orphaned reservation** is a ledger row, and `CONTEXT.md` names it. `chain.sh recover` reuses the
+existing stale-lock recovery machinery to verify the reserving parent's process identity. It
+reclaims an unbound reservation when its parent is gone, with age as a backstop, and reclaims a
+bound **abandoned run** only when its parent is proven gone. The sweeper calls `recover`; it does not
 reimplement it.
-
-That delegation is to a mechanism which does not yet honour this record. `recover` as written closes
-every open row older than its stale threshold and then force-removes the worktree, with no liveness
-check anywhere in that path — the pid and start-time check lives only in stale-lock recovery and
-never looks at ledger rows. It is exactly the timer rejected above. The objection does not stop
-applying at a delegation boundary, so #64 owes `recover` that liveness check before the sweeper
-leans on it; until then, a sweep that calls `recover` inherits the failure mode instead of escaping
-it.
 
 That leaves the sweeper the worktrees **no ledger tracks**: those the `git-loopy --parallel` runner
 creates, and those an agent creates itself because a `/next` prompt told it to. This is where the
 clutter actually is, and it is the only region with no owner at all.
 
-A fifth kind nearly exists, and is designed out rather than owned. `reserve` accepts any `--target`
-string, while `complete` resolves that target against the tracker and exits before closing the row
-if it does not resolve. A row bound to a target that never existed therefore holds a slot and a
-worktree it can never release, and it fits none of the four: it is bound, so it is not an orphaned
-reservation, and it is ledger-tracked, so it is not the sweeper's. The answer is to stop creating it
-— `reserve` and `plan` validate the target when the row is written, at the same boundary `complete`
-already validates it — rather than to admit it as a fifth kind with an owner to match.
-
-Validating at the write boundary is necessary and not sufficient. `complete` resolves the target
-over the network, so a target that was perfectly valid when reserved still strands its row on any
-transient `gh` failure, and a network blip is the common case rather than the exotic one. `complete`
-must therefore fail safe: a tracker it cannot reach is a tracker whose answer is unknown, and an
-unknown answer is not grounds for holding a concurrency slot and a worktree forever. Every open row
-being closable is a property the four kinds assume, and #63 owes both halves of it.
+A fifth kind nearly existed and is designed out rather than owned. `reserve` and `plan` validate a
+target before writing a row or creating a worktree, so a target that does not resolve cannot claim a
+slot. `complete` still resolves the target over the network: if the tracker cannot answer, it
+closes the row as `tracker-failed` rather than treating the failure as `no-evidence`, and removes a
+clean worktree or retains one that is not.
+Issue #63 implements both boundaries, so a failed lookup no longer leaves an open row.
 
 ## Consequences
 
@@ -138,13 +124,14 @@ being closable is a property the four kinds assume, and #63 owes both halves of 
   only a branch a sweep can still see holding a worktree, and on the chain's mainline `/implement` →
   `/code-review` → `/push` → `/merge` path no such sweep ever happens. Every reservation is given a
   branch of its own — `chain.sh` names it `git-loopy/reservation-<pid>-<random>` as it creates the
-  worktree — `complete` then removes that worktree, and no `git branch -d` appears anywhere in
-  `chain.sh`. The branch therefore outlives the only thing that would have made it visible to a
-  sweep, by construction rather than by accident. So a sweep classifies a branch with no worktree
-  too, and what vouches for one is the answer ADR-0006 already forces: ancestry proves nothing under
-  squash, so the sweeper asks GitHub whether that branch's pull request merged. A merged branch is
-  removable; an unmerged or never-pushed one is reported and never removed, because it may be the
-  only copy. #65 implements it.
+  worktree — `complete` removes that worktree when it is clean and retains it otherwise. No
+  `git branch -d` appears anywhere in `chain.sh`.
+  A retained worktree keeps its branch visible to a sweep; once a clean worktree is removed, its
+  branch has no worktree and is no longer visible that way. So a sweep classifies a branch with no
+  worktree too, and what vouches for one is the answer ADR-0006 already forces: ancestry proves
+  nothing under squash, so the sweeper asks GitHub whether that branch's pull request merged. A
+  merged branch is removable; an unmerged or never-pushed one is reported and never removed,
+  because it may be the only copy. #65 implements it.
 - **The marker narrows #47 rather than closing it.** `/next` step 1 attributes an in-flight worktree
   through `.git-loopy/logs/`, a path that does not exist. Three producers need three different
   answers. Worktrees the chain created are already attributable and always were — `chain.sh reserve`
@@ -154,3 +141,31 @@ being closable is a property the four kinds assume, and #63 owes both halves of 
   --parallel` runner created stay unattributable whatever is decided here, because that runner lives
   in another repository and observation yields removability after two sweeps and never attribution.
   #47 therefore shrinks to that last producer instead of closing.
+
+## Amendments
+
+Issue #63 (PR #79) amended this record while it was still proposed. The edits above change what
+was originally stated, so they are listed here rather than left to be found by diff:
+
+- **The liveness check and fail-safe obligations are partly discharged, not dropped.** The record
+  said #64 owed `recover` a process-liveness check before the sweeper could lean on it, and #63
+  owed `reserve`, `plan` and `complete` the validate-and-fail-safe pair. The pair is implemented.
+  `recover` now reuses `claim-recovery.py owner-gone` for bound rows, so a bound run is reclaimed
+  only when its parent is proven gone; the unbound age backstop below remains, so #64 is not closed
+  by this amendment. The "owes" wording is replaced by a statement of what the code does.
+- **Age remains a backstop only for unbound reservations, and clean-only removal bounds its cost
+  without closing its risk.** The rejected threshold option is not reopened. `complete` and
+  `recover` never force-remove a worktree, so the backstop can no longer delete unsaved work. It can
+  still remove the clean directory of a live agent whose `bind` was late or lost, which the argument
+  above shows is indistinguishable from an abandoned one; that residual risk is the existing
+  backstop's (#28), and this amendment does not claim to close it.
+- **A population exists that the taxonomy does not name: the retained worktree.** When `complete` or
+  `recover` leaves a **retained worktree** (`CONTEXT.md`), the row still closes and the slot is
+  released, so it is no longer a reservation. It holds no open row, so the sweeper meets it as an
+  unmarked worktree: reported, never removed on sight, and removable only once it is clean and has
+  earned a marker through corroboration. Until `chain.sh reserve` writes a marker itself (#51),
+  nothing else vouches for it. ADR-0002's first Consequence is revised to match.
+- **The branch-visibility consequence changes with it.** It said a reservation's branch outlives
+  the only thing that would have made it visible to a sweep, "by construction", because `complete`
+  always removed the worktree. A retained worktree now keeps its branch visible; a branch whose
+  worktree was cleanly removed is still the branch-with-no-worktree case #65 implements.
