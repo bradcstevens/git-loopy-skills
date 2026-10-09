@@ -54,7 +54,7 @@ $STAMP
 # live. -p would exit after the first turn and the agent would grill an empty room.
 
 # Pre-set any of these before sourcing and your value wins.
-export GIT_LOOPY_MODEL="\${GIT_LOOPY_MODEL:-claude-opus-5}"
+export GIT_LOOPY_MODEL="\${GIT_LOOPY_MODEL:-gpt-6.1-sol}"
 export GIT_LOOPY_EFFORT="\${GIT_LOOPY_EFFORT:-xhigh}"
 export GIT_LOOPY_CONTEXT="\${GIT_LOOPY_CONTEXT:-long_context}"
 
@@ -87,7 +87,7 @@ _git_loopy_skill() {
 
     "\$cli" \\
         --agent "\$skill" \\
-        --model "\${GIT_LOOPY_MODEL:-claude-opus-5}" \\
+        --model "\${GIT_LOOPY_MODEL:-claude-gpt-6.1-sol}" \\
         --effort "\${GIT_LOOPY_EFFORT:-xhigh}" \\
         --context "\${GIT_LOOPY_CONTEXT:-long_context}" \\
         -i "\$prompt"

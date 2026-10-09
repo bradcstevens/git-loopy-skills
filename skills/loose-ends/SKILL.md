@@ -114,7 +114,7 @@ Every finding is a complete card containing:
    - **Runtime:** read `git-loopy config list` when available and use its
      `task-type:planning` model and effort. When that route is unset, use the command's
      generic model and effort. Always include `--context long_context`; if `git-loopy` is
-     unavailable, use `--model claude-opus-5 --effort xhigh --context long_context`.
+     unavailable, use `--model gpt-6.1-sol --effort xhigh --context long_context`.
    - **Prompt:** a separate code block containing exactly one physical ASCII line:
      `/to-tickets <issue-number>`
 

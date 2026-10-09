@@ -891,11 +891,11 @@ if [ -e "$tmp_dir/worktree-repeat-limit" ]; then
   err "repetition guard created a worktree"
 fi
 
-depth_below="$(plan /research issue-depth-below AFK-safe research-agent claude-opus-5 high default "$tmp_dir/plan-depth-below")"
+depth_below="$(plan /research issue-depth-below AFK-safe research-agent gpt-6.1-sol high default "$tmp_dir/plan-depth-below")"
 assert_plan "eighth lineage hop" "$depth_below" \
-  '{"decision":"spawn","route":"/research","target":"issue-depth-below","agent":"research-agent","model":"claude-opus-5","effort":"high","context_tier":"default","worktree":"'"$tmp_dir"'/plan-depth-below"}'
+  '{"decision":"spawn","route":"/research","target":"issue-depth-below","agent":"research-agent","model":"gpt-6.1-sol","effort":"high","context_tier":"default","worktree":"'"$tmp_dir"'/plan-depth-below"}'
 
-depth_limit="$(plan /research issue-depth-limit AFK-safe research-agent claude-opus-5 high default "$tmp_dir/plan-depth-limit")"
+depth_limit="$(plan /research issue-depth-limit AFK-safe research-agent gpt-6.1-sol high default "$tmp_dir/plan-depth-limit")"
 assert_plan "ninth lineage hop" "$depth_limit" \
   '{"decision":"decline","reason":"target-halted","halt_reason":"chain-depth-limit","route":"/research","target":"issue-depth-limit"}'
 
