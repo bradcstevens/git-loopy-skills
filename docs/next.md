@@ -42,11 +42,12 @@ AFK-safe target and one of its five allowlisted routes — `/implement`, `/code-
 `/push`, or `/resolving-merge-conflicts`. Planning declines a target the tracker confirms is
 unresolvable, and reservation checks it again before writing the ledger row or creating the
 worktree. A transient tracker failure is reported as tracker unavailability rather than as a
-missing target. A bare number is first resolved to its canonical issue; if that lookup fails or a
-pull request does not close exactly one issue, `plan` declines with `target-resolution-failed` and
-the cause, `reserve` refuses with both, and `complete` closes the row as a transient
-`tracker-failed` rather than leaving it open. An older ledger row whose pull request has no single
-closing issue keeps its own spelling, so it cannot block unrelated targets. A valid target
+missing target. A bare number is first resolved to its canonical issue, a lookup bounded at 10
+seconds; if it fails or a pull request does not close exactly one issue, `plan` declines with
+`target-resolution-failed` and the cause, `reserve` refuses with both, and `complete` closes the row
+as a transient `tracker-failed` rather than leaving it open. An older ledger row whose pull request
+has no single closing issue keeps its own spelling and does not block unrelated targets; a row
+whose number the tracker can no longer find still fails the lookup. A valid target
 reserves a worktree and a concurrency slot in the spawn ledger
 before starting the in-session subagent, then binds the run to that reservation.
 
