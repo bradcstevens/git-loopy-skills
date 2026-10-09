@@ -13,6 +13,12 @@ GitHub name. Then open the repository where git-loopy completed the work and typ
 /release
 ```
 
+To select an exact version instead:
+
+```text
+/release v0.10.2
+```
+
 [Skill source](../skills/release/SKILL.md)
 
 ## What it releases
@@ -28,17 +34,24 @@ not-planned and already-released work is accounted for rather than blindly
 included. Uncertain or unintegrated completions block publication instead of
 silently shrinking the batch.
 
-## Whose version convention
+## Version selection
 
-The **target project's**: its release docs, version tooling, bump rules, tag
-format and release channel. `/release` combines the batch once; it preserves an
-already-advanced version target and refuses to invent missing policy.
+`/release` automatically selects the next stable patch version for the whole
+batch: after `v0.10.0`, the default is `v0.10.1`, even if development has reached
+`v0.11.0-dev.5`. An exact version in the invocation overrides that default.
+The [version-selection rules](../skills/release/SKILL.md#3-resolve-one-version-and-prepare-its-notes)
+also cover first releases, non-SemVer projects and publication retries.
+
+Selection does not waive the **target project's** release contract. If its bump
+rules require a larger version or its release path cannot publish the selected
+patch, the skill asks for a decision rather than silently promoting a development
+target. A patch on an older line needs a supported maintenance path and an
+integrated patch batch.
 
 For git-loopy's own repository, the
-[Release-line branch](../skills/release/references/git-loopy.md) promotes the
-existing target through the existing Promotion workflow. It does not add another
-bump for each issue or invent a release milestone. An ordinary project that
-git-loopy worked in retains its own convention.
+[Release-line branch](../skills/release/references/git-loopy.md) uses Promotion
+only when the selected version matches the existing target. It neither invents
+a milestone nor relabels the development tree to manufacture a patch.
 
 ## Where it fits
 

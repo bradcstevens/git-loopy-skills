@@ -1,6 +1,6 @@
 ---
 name: release
-description: Publish one project-versioned GitHub release for all unreleased issues completed by git-loopy.
+description: Release completed work at the next patch version, or the version you specify.
 disable-model-invocation: true
 ---
 
@@ -25,6 +25,8 @@ configuration, release workflows and recent release history. Establish the relea
 branch, channel, version authority, tag format, publication trigger and required
 gates/artifacts. Use `gh` with the explicit repository on every GitHub operation.
 Inspect the actual scripts and workflow triggers rather than inventing commands.
+Capture any version supplied in the invocation as the requested version; otherwise
+use the automatic selection in step 3.
 
 **Release-line policy:** when the target uses git-loopy's Bump class / `dev.N` /
 Promotion convention, read [the Promotion branch](references/git-loopy.md) now.
@@ -62,12 +64,29 @@ is a named blocker, not permission to silently release a smaller batch.
 
 ## 3. Resolve one version and prepare its notes
 
-Apply the project's version authority to the **whole batch once**. Use its bump
-labels, changesets, conventional commits or native version command as documented.
-For SemVer, combine changes using the project's highest applicable bump rule,
-including its pre-1.0 exceptions; preserve its tag prefix and prerelease scheme.
-If automation already advanced the release target, reuse/promote that target
-instead of bumping it again. Ask about missing or conflicting bump evidence.
+**Patch by default.** For a non-empty batch, automatically select the next smallest
+stable version after the latest published stable release on the selected line.
+For SemVer, increment only the patch component: `v0.10.0` becomes `v0.10.1`;
+`v1.2.9` becomes `v1.2.10`. Preserve the project's tag prefix. A development
+target such as `v0.11.0-dev.5` neither changes that baseline nor requests
+Promotion. Select once for the whole batch, without asking the user to choose
+the default version.
+
+**Explicit version.** When the invocation supplies an exact version, select that
+version instead, including its prerelease suffix if present. An ambiguous request
+such as "a minor release" needs clarification. For a non-SemVer project, use its
+documented smallest increment; a first release needs its documented initial
+version or a user-supplied one.
+
+**Compatibility.** Check the selected version against the batch's bump evidence
+and the project's release path. Reuse an already-prepared matching candidate.
+If the batch requires a larger bump, an automated target differs, or a patch
+requires an unavailable maintenance/backport path, report the mismatch and ask
+for a version or release-policy decision before writes. Keep the selected version
+visible rather than silently substituting a larger target or shrinking the batch.
+An explicit version selects an identity, not an exemption from release gates.
+Reconcile an existing tag, Release or in-flight publication before preparing
+anything; a retry resumes the same candidate rather than allocating another patch.
 
 Read the full landed change range. Write the project's release notes with every
 batch issue linked, its user-visible changes, and any required migration warnings.
@@ -76,8 +95,9 @@ boundary, not a claim that unrelated commits disappear from the artifact.
 Preserve authored notes and use the native version writer for synchronized copies.
 
 **Done:** one version/tag and one set of notes cover every batch issue, with the
-derivation traceable to project policy. The planned trigger publishes that one
-release; a trigger that would also publish other pending versions needs a bounded
+derivation traceable to the default increment or explicit request and compatible
+with project policy. The planned trigger publishes that one release; a trigger
+that would also publish other pending versions needs a bounded
 project-supported path before proceeding.
 
 ## 4. Prove the candidate

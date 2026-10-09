@@ -11,13 +11,20 @@ current commands, distribution promise and gates; this reference is not a cached
 command line. If this policy has changed, follow the current authority or ask
 about a conflict.
 
-## Promote the existing target
+## Match the selected version to a release path
 
 Under this convention, completed issues already ratchet one Release target by
-**Bump class**, and `dev.N` counts advances. `/release` requests one stable
-**Promotion** of that target, including all unreleased completed issues since the
-previous stable release. Development fragments remain part of that batch.
-Recompute neither a per-issue bump nor a second aggregate bump.
+**Bump class**, and `dev.N` counts advances. Apply the version selection in
+step 3 of the skill before choosing Promotion. The automated target is evidence
+of the project's release line, not an override of the selected version.
+
+When the selected version matches that target, use its stable **Promotion**,
+including all unreleased completed issues since the previous stable release.
+Development fragments remain part of that batch; reuse the target without
+another bump. When the selected version belongs to an older stable line, locate
+the documented maintenance branch, integrated patch batch and publication path.
+If that path is absent, ask for a maintenance-release decision before writes.
+Relabeling the development tree would not establish a patch release.
 
 A `vX.Y.Z` milestone is a Promotion trigger, not a version selector. List the
 repository's existing milestones, including closed ones, with pagination. Verify
@@ -31,9 +38,9 @@ milestone. Reconcile its existing Promotion run, tag and Release first. A closed
 milestone with failed publication calls for the documented retry, not reopening
 and reclosing it or starting a second version.
 
-**Done:** one existing Release target and its exact trigger cover the batch.
-Check whether the workflow sweeps other untagged stable candidates too; resolve
-that scope before triggering it.
+**Done:** the selected version has a supported release path and its exact trigger
+covers the batch. Check whether the workflow sweeps other untagged stable
+candidates too; resolve that scope before triggering it.
 
 ## Keep proof ahead of publication
 

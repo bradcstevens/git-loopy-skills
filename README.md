@@ -87,10 +87,11 @@ situation matches. The rest you invoke by name.
 | playwright-cli | automatic | Automates browser interactions for web testing, form filling, screenshots, and data extraction. |
 | [prototype](docs/prototype.md) | automatic | Build a throwaway prototype to answer a design question. |
 | push | `/push` | Publish current work by staging intended changes, committing, pushing, and opening a pull request when needed. |
-| [release](docs/release.md) | `/release` | Publish one project-versioned GitHub release for all unreleased issues completed by git-loopy. |
+| [release](docs/release.md) | `/release` | Release completed work at the next patch version, or the version you specify. |
 | [research](docs/research.md) | automatic | Investigate a question against high-trust primary sources and capture the findings as a Markdown file in the repo. |
 | [resolving-merge-conflicts](docs/resolving-merge-conflicts.md) | automatic | Use when you need to resolve an in-progress git merge/rebase conflict. |
 | [setup-git-loopy-skills](docs/setup-git-loopy-skills.md) | `/setup-git-loopy-skills` | Configure this repo for the engineering skills — set up its issue tracker, triage label vocabulary, and domain doc layout. |
+| [sync-model-roster](docs/sync-model-roster.md) | `/sync-model-roster` | Reconcile the live Copilot roster with the repo's model-roster file and the user's git-loopy config.toml without drifting unrelated settings. |
 | skill-router | `/skill-router` | Ask which skill or flow fits your situation. |
 | [tdd](docs/tdd.md) | automatic | Test-driven development. |
 | [teach](docs/teach.md) | `/teach` | Teach the user a new skill or concept, within this workspace. |

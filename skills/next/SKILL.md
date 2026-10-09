@@ -210,7 +210,8 @@ carries re-entry into `/next`.
 
 The chain and `/handoff` have different lifetimes. The chain runs an in-session subagent alongside
 this session and ends with it. `/handoff` launches detached work that outlives this session. Keep
-`/handoff` separate; never use it as the chain's launcher.
+`/wayfinder`, `/grilling`, `/grill-with-docs`, and `/grill-me` in this session: return their route
+directly, never `/handoff`. Keep `/handoff` separate; never use it as the chain's launcher.
 
 This step is complete when the first applicable phase-boundary choice is known, every `Subagent`
 outcome has a `plan` decision, every decline carries its reason, every fill that stopped short of
