@@ -26,8 +26,8 @@ _Avoid_: Manual, interactive
 
 **Allowlisted route**:
 One of the five routes the chain is permitted to spawn without asking: `/implement`,
-`/code-review`, `/research`, `/push`, `/resolving-merge-conflicts`. Being allowlisted is necessary
-but not sufficient — the route must also be AFK-safe.
+`/code-review`, `/research`, `/push`, `/resolving-merge-conflicts`, with `/merge` joining them when
+#58 lands. Being allowlisted is necessary but not sufficient — the route must also be AFK-safe.
 
 ### The chain
 
@@ -71,12 +71,73 @@ _Avoid_: Caller, spawner
 **Orphaned reservation**:
 A reservation that never got bound, because the spawn failed or its parent died in between. It
 holds a slot no agent will ever release, so it is reclaimed by checking whether the parent is still
-alive, with a timeout as backstop.
+alive, with a timeout as backstop — the intent of `chain.sh recover`, which is the timeout alone
+until #64 adds the liveness check.
 _Avoid_: Stale row, dangling row
+
+**Completed chain reservation**:
+A ledger row whose run has finished. `chain.sh complete` removes its worktree inside the ledger
+lock, in the same step that releases its concurrency slot, so it is never a sweep's to reclaim.
 
 **In flight**:
 Describes a target currently held by a running agent. An in-flight target is spoken for: routing a
 second agent at it would duplicate or corrupt the work.
+
+### Worktrees and sweeping
+
+**Stale worktree**:
+A working directory whose work is finished or abandoned and which no live process holds. Distinct
+from an **orphaned reservation**, which is a ledger row holding a concurrency slot: a stale worktree
+is a directory, it may come from a producer no ledger tracks, and it holds nothing but disk.
+_Avoid_: Dead worktree, leftover
+
+**Worktree marker**:
+The record inside a worktree naming the process that owns it and when that process started, together
+with the route and target it bound. The first pair decides removal; the second attributes the
+directory to a workstream.
+_Avoid_: Lock file, owner file, sentinel
+
+**Held**:
+Said of a worktree a live process is using at the moment it is looked at. Weak evidence on its own,
+because an agent's worktree is unheld between commands while the model thinks.
+_Avoid_: Busy, locked, in use
+
+**Marked**:
+Said of a worktree carrying a worktree marker, whichever producer wrote it — the process that
+created the directory, or the sweeper after corroboration.
+
+**Vouched**:
+Said of a worktree something answers for: it is marked and the process named is gone. Unvouched is
+the absence of that, and earns a report rather than a removal.
+_Avoid_: Verified, confirmed, approved
+
+**Sweep**:
+One pass over every worktree, classifying each as held, marked, or unvouched. Corroboration is
+counted in sweeps rather than elapsed time, because a directory unchanged across two of them is
+evidence about that directory, where an idle timer is only a guess about how long an agent thinks.
+_Avoid_: Scan, cleanup run
+
+**Observation ledger**:
+The sweeper's own durable record of what each sweep saw in each unvouched directory. Separate from
+the spawn ledger because it holds directories nobody claims, where that one holds runs the chain
+owns.
+_Avoid_: Sweep log, history
+
+### The merge boundary
+
+**Merge boundary**:
+The point where a reviewed head enters the default branch. A human's by rule today;
+[ADR-0006](./docs/adr/0006-the-chain-may-merge-on-this-workflows-own-evidence.md) moves it to
+whatever the merge evidence says, which is why the chain may cross it and a bare `git merge` may
+not.
+_Avoid_: Ship, land
+
+**Merge evidence**:
+What makes an unattended merge legitimate: GitHub's own mergeable state, a matchable `review-clean`
+record from `/code-review` that nothing emits yet, and every check green. It is this workflow's own
+record rather than the remote's branch protection, because a repository may require nothing and
+still be merged into.
+_Avoid_: Approval, sign-off (an approval is one possible input, not the whole set)
 
 ### Connection kinds
 
