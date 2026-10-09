@@ -71,7 +71,8 @@ _Avoid_: Caller, spawner
 **Orphaned reservation**:
 A reservation that never got bound, because the spawn failed or its parent died in between. It
 holds a slot no agent will ever release, so `chain.sh recover` reclaims it when its reserving parent
-is gone, with the stale timeout as a backstop for unbound rows without usable parent identity.
+is gone, or after the stale timeout when an unbound reservation has not been released. A bound
+reservation is reclaimed only when its parent is proven gone.
 _Avoid_: Stale row, dangling row
 
 **Completed chain reservation**:
