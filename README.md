@@ -64,10 +64,12 @@ situation matches. The rest you invoke by name.
 | Skill | Invoke | What it does |
 | --- | --- | --- |
 | batch-grill-me | `/batch-grill-me` | A relentless interview that asks every frontier question at once, round by round. |
+| build-iterated-agentic-loop | automatic | build a repo-local skill and install a matching iterated coding-agent GitHub Actions workflow, prompt, memory file, and reference templates |
 | [code-review](docs/code-review.md) | automatic | Review the changes since a fixed point (commit, branch, tag, or merge-base) along two axes — Standards (does the code follow this repo's documented coding standards?) and Spec (does the code match what the originating issue/spec asked for?). |
 | codebase-audit | automatic | Deep audit before GitHub push: removes junk files, dead code, security holes, and optimization issues. |
 | [codebase-design](docs/codebase-design.md) | automatic | Shared vocabulary for designing deep modules. |
 | create-readme | automatic | Create a README.md file for the project |
+| design-control-loop | automatic | interview the user to design an agentic control loop (sensor, controller, actuator under disturbances) tailored to their codebase, then build it as locally-runnable components plus a scheduled coding-agent workflow |
 | [diagnosing-bugs](docs/diagnosing-bugs.md) | automatic | Diagnosis loop for hard bugs and performance regressions. |
 | [domain-modeling](docs/domain-modeling.md) | automatic | Build and sharpen a project's domain model. |
 | grill-me | `/grill-me` | A relentless interview to sharpen a plan or design. |
@@ -83,6 +85,7 @@ situation matches. The rest you invoke by name.
 | microsoft-docs | automatic | Understand Microsoft technologies by querying official documentation. |
 | microsoft-foundry | automatic | Deploy, evaluate, and manage Foundry agents end-to-end: Docker build, ACR push, hosted/prompt agent create, container start, batch eval, continuous eval, prompt optimizer workflows, agent.yaml, dataset curation from traces. |
 | model-fit | `/model-fit` | Research licensed Copilot models and synchronize model, effort, context, and enforcement across Copilot built-ins and git-loopy task routing. |
+| narrow-react-prop-types | automatic | narrow React component prop types to match live code paths |
 | [next](docs/next.md) | automatic | Route the engineering workflow from live project state. |
 | playwright-cli | automatic | Automates browser interactions for web testing, form filling, screenshots, and data extraction. |
 | [prototype](docs/prototype.md) | automatic | Build a throwaway prototype to answer a design question. |
@@ -91,15 +94,15 @@ situation matches. The rest you invoke by name.
 | [research](docs/research.md) | automatic | Investigate a question against high-trust primary sources and capture the findings as a Markdown file in the repo. |
 | [resolving-merge-conflicts](docs/resolving-merge-conflicts.md) | automatic | Use when you need to resolve an in-progress git merge/rebase conflict. |
 | [setup-git-loopy-skills](docs/setup-git-loopy-skills.md) | `/setup-git-loopy-skills` | Configure this repo for the engineering skills — set up its issue tracker, triage label vocabulary, and domain doc layout. |
-| [sync-model-roster](docs/sync-model-roster.md) | `/sync-model-roster` | Reconcile the live Copilot roster with the repo's model-roster file and the user's git-loopy config.toml without drifting unrelated settings. |
+| show-me | automatic | Help the user understand the current topic visually with concise diagrams, code-shape sketches, and focused HTML artifacts. |
 | skill-router | `/skill-router` | Ask which skill or flow fits your situation. |
+| [sync-model-roster](docs/sync-model-roster.md) | `/sync-model-roster` | Reconcile git-loopy's pinned model roster and one config.toml scope with authenticated harness evidence. |
 | [tdd](docs/tdd.md) | automatic | Test-driven development. |
 | [teach](docs/teach.md) | `/teach` | Teach the user a new skill or concept, within this workspace. |
 | [to-questionnaire](docs/to-questionnaire.md) | `/to-questionnaire` | Turn a decision you can't fully answer into a questionnaire for someone else to fill in. |
 | [to-spec](docs/to-spec.md) | automatic | Turn the current conversation into a spec and publish it to the project issue tracker — no interview, just synthesis of what you've already discussed. |
 | [to-tickets](docs/to-tickets.md) | automatic | Break a plan, spec, or the current conversation into a set of tracer-bullet tickets, each declaring its blocking edges, published to the configured tracker — edges as text in one file per ticket locally, or native blocking links on a real tracker. |
 | [triage](docs/triage.md) | `/triage` | Move issues and external PRs through a state machine of triage roles — categorise, verify, grill if needed, and write agent-ready briefs. |
-| unslop | automatic | Cut AI tells from any writing. |
 | [wait-what](docs/wait-what.md) | `/wait-what` | Stop — that last message did not land, so re-pitch it. |
 | [wayfinder](docs/wayfinder.md) | `/wayfinder` | Plan a huge chunk of work — more than one agent session can hold — as a shared map of decision tickets on your issue tracker, and resolve them one at a time until the way to the destination is clear. |
 | wizard | automatic | Generate an interactive bash wizard that walks a human through steps only they can perform. |
