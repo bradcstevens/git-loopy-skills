@@ -1,11 +1,11 @@
 ---
 name: design-control-loop
-description: interview the user to design an agentic control loop (sensor, controller, actuator under disturbances) tailored to their codebase, then build it as locally-runnable components plus a scheduled coding-agent workflow
+description: interview the user to design an agentic control loop (sensor, controller, actuator under disturbances) tailored to their codebase, then build it as locally-runnable components plus a scheduled GitHub Copilot CLI workflow
 ---
 
 # Design Control Loop
 
-Use this skill when a user wants to drive some property of their codebase toward a target with small, low-risk, reviewable changes on a schedule — an **agentic control loop**.
+Use this skill when a user wants to drive some property of their codebase toward a target with small, low-risk, reviewable changes on a schedule — an **agentic control loop** — run by git-loopy's toolchain: the GitHub Copilot CLI as actuator, with git-loopy skills (`/implement`, `/code-review`, `/next`) available to the actuator and the git-loopy issue tracker and triage labels (`docs/agents/`) as the human's steering surface.
 
 Your job is to **interview the user, design the loop _with_ them, and then build it for them**. The design must be tailored to *their* codebase and the tooling they already use. There is no fixed toolset and no template to reproduce: propose options grounded in what you find in the repo, discuss trade-offs, agree on a design, then implement it.
 
@@ -33,7 +33,7 @@ Read `references/control-loop-taxonomy.md` and walk the user through these conce
 Create or update these in the target repo, tailored to the agreed design:
 
 - The **sensor** and **controller** as version-controlled commands/scripts the user can run locally.
-- `.claude/skills/<skill-name>/SKILL.md` — the **actuator** skill capturing the agent's judgement (path may be `.agents/skills/...` per repo convention).
+- `.copilot/skills/<skill-name>/SKILL.md` — the **actuator** skill capturing the agent's judgement. A loop still being tuned can live in `~/.copilot/skills/<skill-name>/` first, then move into the repo.
 - The recurring **workflow** that runs the loop and opens a PR (GitHub Actions by default; whatever CI the repo uses).
 - A **memory/feedback file** that carries standing feedback between runs.
 - Optionally, a **dampener** (regression gate) that keeps the problem from getting worse while the loop improves it.
@@ -49,7 +49,7 @@ Read before asking setup questions:
 - Existing CI: `.github/workflows/*.yml`, `.github/actions/**`, or the repo's non-GitHub CI config — runner, checkout, dependency install, cache, and PR conventions.
 - Package manager files (`package.json`, `bun.lock`, `pnpm-lock.yaml`, `yarn.lock`, `package-lock.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`, …).
 - Existing validation scripts: typecheck, lint, test, quality, format, and package-scoped commands.
-- Existing `.claude/skills` / `.agents/skills` and any existing agent loops (workflows, `agent-memory`, where glue scripts live) to mirror conventions instead of inventing new ones.
+- Existing `.copilot/skills`, `.copilot/settings.json`, `~/.copilot/skills`, `git-loopy.env`, and any existing agent loops (workflows, `agent-memory`, where glue scripts live) to mirror conventions instead of inventing new ones.
 - The static-analysis, linting, codegen, and test tooling already in the repo — these are the most likely raw material for a sensor.
 - Discover packages, services, and repo purpose at a high level. 
 
@@ -68,7 +68,7 @@ This is an interview. Work through each component below. Start by asking the use
 3. **Controller.** How will the loop choose the next increment from the measurement, sized to stay low-risk and reviewable? Design this *with* the user: how to prioritize targets, how big one increment is, and what "one reviewable unit of work" means here. A controller can be anything from fully deterministic (a script that selects the next target) to fully agentic (an agent that decides from natural-language criteria), and it may be **fused** with the sensor or the actuator. The controller is the part you will **tune over time** from loop output — start simple and expect to revise it.
 
 4. **Actuator.** A coding agent plus a repo-local skill applies the change.
-   - **Agent + credentials.** Pick the CLI coding agent (Claude Code, Codex, OpenCode, CodeLayer, …), its secret, and its headless command from `references/agent-runner-templates.md`.
+   - **Agent + credentials.** The actuator is the GitHub Copilot CLI, run headless. Settle the model, reasoning effort, and context tier (default to the `GIT_LOOPY_*` values in `git-loopy.env`), the `COPILOT_GITHUB_TOKEN` secret for CI, and the permission flags, from `references/agent-runner-templates.md`.
    - **Golden patterns first.** Before automating, establish what a good change looks like: ask the user whether existing patterns in the codebase should be followed, and inspect the code to find them. Capture these in the actuator skill (Phase C).
    - **Validation.** Decide which commands must pass before the agent commits (propose these from Phase A and confirm).
 
@@ -88,7 +88,7 @@ Write a repo-local skill that captures the actuator's judgement for this task. I
 - Include a response template (e.g. `references/response-template.md`) defining how the agent formats its final output, which becomes the PR body. Instruct the skill to read and follow it.
 - Use `references/skill-template.md` as the skeleton and `references/example-skill.md` as a concrete example. See https://agentskills.io/specification for the skill spec.
 
-**IMPORTANT:** the `name` in the skill's frontmatter must match its directory slug — a skill named `migrate-foo` lives at `.claude/skills/migrate-foo/SKILL.md` (or `.agents/skills/migrate-foo/SKILL.md`).
+**IMPORTANT:** the `name` in the skill's frontmatter must match its directory slug — a skill named `migrate-foo` lives at `.copilot/skills/migrate-foo/SKILL.md`.
 
 Completion criterion: the skill explains the job clearly enough that the agent can do it unattended, including how to format its final response.
 
@@ -100,7 +100,7 @@ Before any CI exists, land the sensor and controller as version-controlled comma
 
 - Run the **sensor** standalone and confirm it produces a stable, usable measurement.
 - Run the **controller** on real sensor output and confirm it selects a sensible next increment.
-- Run the **actuator** locally via its headless CLI command on a controller-selected target, and confirm it makes the change and passes validation.
+- Run the **actuator** locally via `copilot -p` (see `references/agent-runner-templates.md`) on a controller-selected target, and confirm it makes the change and passes validation.
 
 Only proceed to CI once each piece runs locally on its own. This keeps the loop debuggable and makes the workflow a thin orchestrator of things the user can already run.
 
@@ -116,7 +116,7 @@ Assemble the components into a recurring job. GitHub Actions is the default beca
 - Reusable logic can live in a custom composite action.
 - Decide the **cadence** (daily, weekdays, weekly, monthly, manual-only, or custom cron) based on task risk and review burden.
 - Interpolate the memory file (Phase F) into the actuator's context.
-- Use `references/workflow-template.yml` as the base and `references/prompt-template.md` for the embedded prompt. Pull the agent run + response-extraction steps from `references/agent-runner-templates.md` (each agent outputs differently; get the final response into `/tmp/pr-body.md`).
+- Use `references/workflow-template.yml` as the base and `references/prompt-template.md` for the embedded prompt. Pull the Copilot CLI run step from `references/agent-runner-templates.md` (`--silent` output goes straight to `/tmp/pr-body.md`).
 
 Completion criterion: the workflow can run from `workflow_dispatch` without relying on files that do not exist.
 
@@ -162,7 +162,7 @@ Each phase above names the references relevant to it — read each one when you 
 
 - `references/control-loop-taxonomy.md` — the control-loop components and the design questions to ask; read this first and use it to teach the user.
 - `references/example-control-loop.md` — one fully worked loop, annotated component-by-component. An illustration, not a template.
-- `references/agent-runner-templates.md` — local + CI headless commands and secrets for Claude Code, Codex, OpenCode, and CodeLayer, with response extraction.
+- `references/agent-runner-templates.md` — Copilot CLI headless command, `COPILOT_GITHUB_TOKEN` secret, and response capture, locally and in CI.
 - `references/workflow-template.yml` — recurring loop workflow skeleton with discrete sensor/controller/actuator steps.
 - `references/prompt-template.md` — embedded prompt structure for the actuator step.
 - `references/memory-template.md` — memory/feedback file skeleton.
