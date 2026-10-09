@@ -1885,7 +1885,7 @@ serial_reentry="$(
   python3 "$REPO/skills/setup-git-loopy-skills/git-loopy-agent-stop.py" \
     <<< '{"cwd":"'"$serial_repo"'","timestamp":"2026-08-22T00:12:00Z","stop_hook_active":false}'
 )"
-if [ "$serial_reentry" != '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","target":"issue-serial-hop"}' ]; then
+if [ "$serial_reentry" != '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","targets":["issue-serial-hop"]}' ]; then
   err "serial completion did not re-enter /next through agentStop"
 fi
 if ! python3 - "$serial_ledger" <<'PY'
