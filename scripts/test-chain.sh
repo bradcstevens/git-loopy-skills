@@ -835,10 +835,11 @@ import sys
 with open(sys.argv[1], encoding="utf-8") as ledger:
     rows = [json.loads(line) for line in ledger]
 
-# The reserving parent's identity is recorded on every reservation; its values vary by run.
+# The reserving parent's identity and the reservation id are recorded on every reservation; their values vary by run.
 assert len(rows) == 1
 assert rows[0].pop("parent_pid") == int(sys.argv[2])
 assert rows[0].pop("parent_start")
+assert rows[0].pop("reservation_id")
 assert rows == [{
     "route": "code-review",
     "target": "issue-serial-hop",
