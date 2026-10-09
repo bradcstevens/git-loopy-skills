@@ -68,6 +68,9 @@ case "${CHAIN_TRACKER_MODE:-resolved}" in
     echo "tracker transport failed for $3" >&2
     exit 23
     ;;
+  hang)
+    exec sleep 120
+    ;;
   timeout)
     echo "request timed out while resolving $3" >&2
     exit 1
@@ -84,6 +87,7 @@ case "$5" in
       valid) printf '{"number":1}\n' ;;
       string-number) printf '{"number":"1"}\n' ;;
       malformed-json) printf '{not-json}\n' ;;
+      non-utf8) printf '{"number":1,"title":"\xff"}\n' ;;
       *)
         echo "unexpected target response: $CHAIN_TARGET_RESPONSE" >&2
         exit 1
@@ -101,6 +105,7 @@ case "$5" in
         ;;
       invalid-entry) printf '%s\n' '{"comments":["not-an-object"]}' ;;
       invalid-timestamp) printf '%s\n' '{"comments":[{"createdAt":"not-a-time"}]}' ;;
+      non-utf8) printf '{"comments":[{"createdAt":"2026-08-22T00:10:00Z","body":"\xff"}]}\n' ;;
       *)
         echo "unexpected comment response: $CHAIN_COMMENT_RESPONSE" >&2
         exit 1
@@ -365,6 +370,33 @@ if [ -e "$malformed_target_reserve_ledger" ]; then
 fi
 if [ -e "$malformed_target_reserve_worktree" ]; then
   err "reserve created a worktree for malformed successful target data"
+fi
+
+non_utf8_reserve_ledger="$tmp_dir/.git-loopy/non-utf8-reserve.jsonl"
+non_utf8_reserve_worktree="$tmp_dir/worktree-non-utf8-reserve"
+non_utf8_reserve_error="$tmp_dir/non-utf8-reserve.err"
+if (
+  cd "$tmp_dir"
+  CHAIN_TARGET_RESPONSE=non-utf8 "$CHAIN" reserve --parent-pid "$$" \
+    --ledger "$non_utf8_reserve_ledger" \
+    --route implement \
+    --target issue-non-utf8-reserve \
+    --spawn-time 2026-08-22T00:00:00Z \
+    --worktree "$non_utf8_reserve_worktree" \
+    --chain-depth 1 \
+    2>"$non_utf8_reserve_error"
+)
+then
+  err "reserve accepted non-UTF-8 tracker output"
+fi
+if ! grep -q \
+  "tracker-unavailable: issue-non-utf8-reserve: tracker output was not valid UTF-8" \
+  "$non_utf8_reserve_error"
+then
+  err "reserve did not report non-UTF-8 tracker output as a transient failure"
+fi
+if [ -e "$non_utf8_reserve_ledger" ] || [ -e "$non_utf8_reserve_worktree" ]; then
+  err "reserve consumed a ledger row or worktree for non-UTF-8 tracker output"
 fi
 
 (
@@ -1174,6 +1206,9 @@ no_evidence_output="$(
 )"
 assert_plan "no-evidence completion" "$no_evidence_output" \
   '{"continue":false,"outcome":"no-evidence","target":"issue-no-evidence"}'
+if [ -e "$tmp_dir/worktree-no-evidence" ]; then
+  err "no-evidence completion left its clean worktree on disk"
+fi
 
 if ! python3 - "$complete_ledger" <<'PY'
 import json
@@ -1543,6 +1578,95 @@ fi
 permanent_retry="$(plan /push issue-permanent-tracker-failure AFK-safe push-agent gpt-5.6-terra high default "$tmp_dir/plan-permanent-retry")"
 assert_plan "permanent tracker halt" "$permanent_retry" \
   '{"decision":"decline","reason":"target-halted","halt_reason":"tracker-failed","route":"/push","target":"issue-permanent-tracker-failure"}'
+
+# Each transient tracker failure must still close the row, leave the target retryable,
+# and remove a clean worktree. The hang case waits out the real 30-second tracker timeout.
+transient_tracker_cases=(
+  "rate-limit:HTTP 403: API rate limit exceeded for user."
+  "http-429:HTTP 429: too many requests"
+  "server-failure:HTTP 503: service unavailable"
+  "ambiguous-404:HTTP 404: resource not found"
+  "timeout:request timed out while resolving issue-tracker-case-timeout"
+  "hang:tracker timed out after 30 seconds"
+  "non-utf8:tracker output was not valid UTF-8"
+)
+for transient_tracker_case in "${transient_tracker_cases[@]}"; do
+  IFS=: read -r case_mode case_message <<< "$transient_tracker_case"
+  case_slug="tracker-case-$case_mode"
+  case_worktree="$tmp_dir/worktree-$case_slug"
+
+  reserve_and_bind \
+    --ledger "$complete_ledger" \
+    --route push \
+    --target "issue-$case_slug" \
+    --session-id "session-$case_slug" \
+    --agent-id "agent-$case_slug" \
+    --agent-type push-agent \
+    --agent-name push-agent \
+    --spawn-time 2026-08-22T00:00:00Z \
+    --worktree "$case_worktree" \
+    --chain-depth 3
+
+  case_status=0
+  case_output="$(
+    if [ "$case_mode" = non-utf8 ]; then
+      CHAIN_COMMENT_RESPONSE=non-utf8
+      export CHAIN_COMMENT_RESPONSE
+    else
+      CHAIN_TRACKER_MODE="$case_mode"
+      export CHAIN_TRACKER_MODE
+    fi
+    "$CHAIN" complete --ledger "$complete_ledger" \
+      <<< "$(completion_payload "agent-$case_slug" 2026-08-22T00:11:00Z push-agent push-agent "session-$case_slug")" \
+      2>/dev/null
+  )" || case_status=$?
+
+  case "$case_mode" in
+    hang) expected_status=124 ;;
+    non-utf8) expected_status=2 ;;
+    *) expected_status=1 ;;
+  esac
+  if [ "$case_status" -ne "$expected_status" ]; then
+    err "$case_mode tracker failure returned $case_status instead of $expected_status"
+  fi
+  if ! python3 - "$case_output" "$case_message" "$expected_status" "issue-$case_slug" <<'PY'
+import json
+import sys
+
+output, message, expected_status, target = sys.argv[1:]
+result = json.loads(output)
+assert result["continue"] is False
+assert result["outcome"] == "tracker-failed"
+assert result["target"] == target
+assert result["failure_kind"] == "transient"
+assert result["exit_status"] == int(expected_status)
+assert result["error"].startswith(message), result["error"]
+assert "retained_worktree" not in result
+PY
+  then
+    err "$case_mode tracker failure did not report a transient tracker-failed result"
+  fi
+  if ! python3 - "$complete_ledger" "session-$case_slug" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger]
+
+row = next(row for row in rows if row["session_id"] == sys.argv[2])
+assert row["finish_time"] == "2026-08-22T00:11:00Z"
+assert row["outcome"] == "tracker-failed"
+assert row["tracker_failure_kind"] == "transient"
+assert "halt_reason" not in row
+assert "halted_at" not in row
+PY
+  then
+    err "$case_mode tracker failure left the row open or halted the target"
+  fi
+  if [ -e "$case_worktree" ]; then
+    err "$case_mode tracker failure left its clean worktree on disk"
+  fi
+done
 
 reserve_and_bind \
   --ledger "$complete_ledger" \

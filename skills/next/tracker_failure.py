@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Classify tracker failures by whether they prove a target is invalid."""
+"""Run the tracker CLI and classify failures by whether they prove a target is invalid."""
 
 import re
 import subprocess
@@ -39,6 +39,9 @@ def run_tracker(
     except OSError as error:
         message = f"could not run tracker: {error}"
         return "", message, 1, "transient"
+    except UnicodeDecodeError as error:
+        message = f"tracker output was not valid UTF-8: {error}"
+        return "", message, 2, "transient"
 
     if not tracker.returncode:
         return tracker.stdout, None, 0, None

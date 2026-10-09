@@ -951,7 +951,7 @@ complete() {
     ledger="$(repository_root)/.git-loopy/subagents.jsonl"
   fi
 
-  local ledger_dir result exit_status tracker_failure_kind retained_worktree worktree
+  local ledger_dir result exit_status retained_worktree worktree
   ledger_dir="$(dirname "$ledger")"
   mkdir -p "$ledger_dir"
   lock_dir="$ledger.lock"
@@ -1232,17 +1232,12 @@ if tracker_error is not None:
     )
 ' "$ledger" "$tmp" "$metadata" "$tracker_failure" "$tracker_bin"
   )"
-  IFS=$'\t' read -r exit_status tracker_failure_kind < <(python3 -c '
+  exit_status="$(python3 -c '
 import json
 import sys
 
-result = json.load(sys.stdin)
-print(
-    result.get("exit_status", 0),
-    result.get("failure_kind", ""),
-    sep="\t",
-)
-' <<< "$result")
+print(json.load(sys.stdin).get("exit_status", 0))
+' <<< "$result")"
 
   if python3 -c '
 import json

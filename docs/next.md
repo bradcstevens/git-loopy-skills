@@ -52,17 +52,17 @@ command, which exits with it: recovery reclaims an unbound orphan immediately wh
 parent is gone, or after `CHAIN_RESERVATION_STALE_SECONDS` (300 seconds by default), marking it
 `reclaimed` rather than as a completed run. An abandoned run is reclaimed only when the same
 liveness check proves its reserving parent is gone; age alone never reclaims an in-flight run.
-Reclaiming releases the row's slot, but a worktree with tracked or untracked changes is retained and
-reported rather than force-removed. Every `plan` runs recovery before checking capacity, so
+Reclaiming releases the row's slot and applies the same worktree rule as completion, below. Every
+`plan` runs recovery before checking capacity, so
 reclaimed slots immediately become available to the next candidate. It stops at a checkpoint
 boundary rather than spawning when the route is HITL or not allowlisted, a route would take its
 fourth repeat for a target, or a target would take its ninth hop. `subagentStop` closes the completed
 ledger row; if its tracker lookup fails, the row closes as `tracker-failed` and records whether the
-failure was transient or permanent. A transient rate limit, server error, network failure, or
-30-second tracker timeout leaves the target retryable. A clean worktree is removed; a worktree with
-uncommitted changes, or one whose state cannot be inspected, is retained and reported. A permanent
-missing or malformed target halts the target and uses the same safe cleanup rule instead of being
-mistaken for `no-evidence`.
+failure was transient or permanent. A transient rate limit, server error, network failure,
+30-second tracker timeout, or malformed tracker response leaves the target retryable. Only a tracker
+error saying the target is missing or invalid is permanent: it halts the target instead of being
+mistaken for `no-evidence`. Either way, completion and recovery remove a clean worktree and retain
+and report one that has uncommitted changes, cannot be inspected, or cannot be removed.
 `agentStop` re-enters `/next` for the batch of completed, unrouted runs, allowing one fill to replace
 every slot that batch freed.
 AFK-safe and allowlisted are the two eligibility conditions for consulting `chain.sh plan`, not a

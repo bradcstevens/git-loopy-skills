@@ -8,12 +8,11 @@ spawning against a large ticket graph would consume credits faster than any guar
 ## Consequences
 
 - **Worktrees stop being advisory.** Ten agents cannot share one working directory. Every spawn past
-  the first lands in its own `git worktree`, created before the spawn and normally removed after it.
-  A transient tracker failure leaves the target retryable; clean worktrees are removed, while
-  uncommitted worktrees are retained and reported. Recovery likewise retains a reclaimed worktree
-  with tracked or untracked changes while still releasing its ledger slot. The spawn ledger's
-  `worktree` field is the lock that prevents two agents from being routed at the same directory.
-  This is the largest piece of new machinery in the design and the most likely to break.
+  the first lands in its own `git worktree`, created before the spawn and removed after it when
+  clean; a worktree that is not clean is retained and reported
+  ([ADR-0007](./0007-a-worktree-is-removed-only-when-something-vouches-for-it.md)). The spawn
+  ledger's `worktree` field is the lock that prevents two agents from being routed at the same
+  directory. This is the largest piece of new machinery in the design and the most likely to break.
 - **`/next` keeps its one-action contract.** `docs/next.md` promises exactly one recommendation and
   never a menu. Fan-out is achieved by the script asking repeatedly — one spawn per pass until the
   ceiling is reached, no ready action remains, or every remaining candidate collides on a held
