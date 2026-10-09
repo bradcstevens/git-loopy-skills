@@ -24,6 +24,8 @@ handoff.sh --name "<descriptive name>" \
 
 It returns straight away with one JSON object naming the outcome — `launched`, `rejected` (the CLI refused a flag), or `exited` (the session ended within seconds) — along with the log path and the resume command. You follow the run with `tail -f <log path>` and pick the session up interactively later with `copilot --yolo --resume="<descriptive name>"`.
 
+Your own session then waits on it. When the routing after the run belongs back in this conversation, `handoff` arms a background wait on the launched pid and runs [next](./next.md) the moment it exits, so the recommendation that follows reads the state the run actually left rather than the state it was launched to reach. Closing the conversation ends that wait while the detached session carries on regardless. A launch you asked for on its own, or one that bridges into another harness or directory, goes unwatched — that routing is yours or the other session's.
+
 ## When to reach for it
 
 You invoke this by typing `/handoff` when work needs to outlive this session: a long refactor, a
@@ -48,4 +50,4 @@ Three flags carry the weight, and the launcher fixes two of them for you. `--yol
 
 ## Where it fits
 
-`handoff` sits at the seam between two sessions, and what crosses it is a running agent rather than a document. It is the background half of [next](./next.md)'s recommendation: same prompt, same sized runtime, launched for you instead of handed to you. It pairs with the artifact-producing skills those recommendations point at, most obviously [to-spec](./to-spec.md) and [to-tickets](./to-tickets.md), since a background agent with a spec to work from needs very little else.
+`handoff` sits at the seam between two sessions, and what crosses it is a running agent rather than a document. It is the detached background half of [next](./next.md)'s recommendation: same prompt, same sized runtime, launched for you instead of handed to you. Unlike the chain, it is the right transition when the work must survive this session. It pairs with the artifact-producing skills those recommendations point at, most obviously [to-spec](./to-spec.md) and [to-tickets](./to-tickets.md), since a background agent with a spec to work from needs very little else.

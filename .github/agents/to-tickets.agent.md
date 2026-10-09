@@ -1,7 +1,7 @@
 ---
 name: to-tickets
 description: Slice a plan, spec or conversation into tracer-bullet tickets and publish them to the repo's issue tracker with native blocking edges.
-model: claude-opus-5
+model: GPT-6.1 Sol (copilot)
 reasoning-effort: xhigh
 user-invocable: true
 disable-model-invocation: true

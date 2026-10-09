@@ -1,7 +1,7 @@
 ---
 name: wayfinder
 description: Chart and work a wayfinder map of decision tickets on the repo's issue tracker.
-model: claude-opus-5
+model: GPT-6.1 Sol (copilot)
 reasoning-effort: xhigh
 user-invocable: true
 disable-model-invocation: true
