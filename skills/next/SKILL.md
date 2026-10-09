@@ -15,6 +15,14 @@ The merge gate's `review-clean` evidence uses the canonical producer/matcher in
 reimplement its record shape in the gate; match the comment against the exact
 head being gated through that script.
 
+A successful gate decision returns the exact evaluated `headRefOid`. Treat that
+value as a merge precondition, not as diagnostic output: an unattended merge
+consumer must pass the same value to
+`gh pr merge --match-head-commit "$headRefOid"`. If the pull request advances
+after the gate decision, the merge must refuse rather than substitute the new
+head. Until `/merge` is implemented by issue #52, `chain.sh gate` owns this
+decision contract but does not execute a merge.
+
 ## 1. Refresh the durable state
 
 Locate `docs/agents/issue-tracker.md` and `.github/hooks/git-loopy-chain.json`. If either is
