@@ -35,7 +35,9 @@ pass `--effort "<level>"`; the launcher translates it to Copilot CLI's
 
 Name the session, because a detached session has no terminal to identify it and that name is how the user finds it again.
 
-When `/next` returned `Fresh session in a new worktree`, still launch from the current directory: the prompt opens with the `git worktree add` that moves the agent before it writes.
+When `/next` returned `Fresh session in a new worktree`, still launch from the
+current directory: its prompt opens with the `chain.sh claim` that makes the
+worktree and moves the agent before it writes.
 
 The launcher returns one JSON object naming the outcome:
 

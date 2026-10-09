@@ -17,6 +17,8 @@ usage:
     --agent-type TYPE --agent-name NAME [--ledger PATH]
   chain.sh complete [--ledger PATH] < subagent-stop-payload.json
   chain.sh recover --stale-after-seconds N [--now TIMESTAMP] [--ledger PATH]
+  chain.sh owner --worktree PATH
+  chain.sh claim --worktree PATH --owner-pid PID [--create-branch BRANCH] [--ledger PATH]
 
 A PID-less ledger lock is recoverable after CHAIN_LOCK_STALE_SECONDS (default: 300).
 ROUTE is a slash-command name and carries its leading slash. The allowlist is
@@ -25,6 +27,15 @@ name such as "implement" is not a route and plan declines it as
 route-not-allowlisted.
 --parent-pid names the running process whose death orphans the reservation, which
 is the session that will bind the run and never the shell that invokes this script.
+Worktree ownership markers live at .git-loopy/worktree-owner and contain
+"<pid>\t<process start time>\n"; compare both values to determine liveness. The
+start time is that pid's `ps -o lstart=` output read under TZ=UTC, with runs of
+whitespace collapsed to single spaces. Liveness compares the two start times as parsed
+timestamps, so a marker recorded from local-time `ps` reports a live owner dead: every writer must
+produce the value in UTC. A start time that does not parse reads as a live owner, never a dead
+one. Use `claim` to mark a worktree this script did not
+create, rather than writing the file by hand; `claim --create-branch` makes the
+worktree too, so creating and marking it cannot come apart.
 Route repetition and chain depth count bound rows only. Reservations claim
 capacity and a worktree, but do not represent a spawned hop.
 The two --no-ready and --all-collide forms end a fan-out fill; they are mutually
@@ -48,22 +59,26 @@ lock_dir=""
 tmp=""
 metadata=""
 lock_acquired=0
-created_worktree=0
-created_worktree_path=""
+repository_lock_dir=""
+repository_lock_acquired=0
+pending=""
 repo_root=""
 
 cleanup() {
+  if [ -n "$pending" ]; then
+    rollback_pending_worktree "$pending" || true
+    pending=""
+  fi
   if [ "$lock_acquired" -eq 1 ]; then
     rm -f "$lock_dir/pid"
     rmdir "$lock_dir" 2>/dev/null || true
   fi
+  if [ "$repository_lock_acquired" -eq 1 ]; then
+    rm -f "$repository_lock_dir/pid"
+    rmdir "$repository_lock_dir" 2>/dev/null || true
+  fi
   [ -z "$tmp" ] || rm -f "$tmp"
   [ -z "$metadata" ] || rm -f "$metadata"
-  if [ "$created_worktree" -eq 1 ]; then
-    if ! git -C "$repo_root" worktree remove --force "$created_worktree_path"; then
-      echo "error: could not remove unrecorded worktree: $created_worktree_path" >&2
-    fi
-  fi
 }
 trap cleanup EXIT
 trap 'exit 130' INT TERM
@@ -205,20 +220,20 @@ PY
 }
 
 remove_stale_lock() {
-  local stale claim_dir recovery_dir
-  recovery_dir="$lock_dir.recovery"
+  local stale claim_dir recovery_dir directory="${1:-$lock_dir}"
+  recovery_dir="$directory.recovery"
   mkdir "$recovery_dir" 2>/dev/null || return 0
   printf '%s\t%s\n' "$$" "$(process_start "$$")" > "$recovery_dir/pid"
 
-  if ! stale="$(python3 "$claim_recovery" claim-stale "$lock_dir" "${CHAIN_LOCK_STALE_SECONDS:-300}")"; then
+  if ! stale="$(python3 "$claim_recovery" claim-stale "$directory" "${CHAIN_LOCK_STALE_SECONDS:-300}")"; then
     rm -f "$recovery_dir/pid"
     rmdir "$recovery_dir"
     return 2
   fi
 
   if [ "$stale" = "true" ]; then
-    claim_dir="$lock_dir.reclaim.$$.$RANDOM"
-    if mv "$lock_dir" "$claim_dir" 2>/dev/null; then
+    claim_dir="$directory.reclaim.$$.$RANDOM"
+    if mv "$directory" "$claim_dir" 2>/dev/null; then
       rm -f "$claim_dir/pid"
       rmdir "$claim_dir"
     fi
@@ -228,7 +243,7 @@ remove_stale_lock() {
 }
 
 recover_stale_recovery_lock() {
-  local recovery_dir="$lock_dir.recovery" stale claim_dir
+  local recovery_dir="${1:-$lock_dir}.recovery" stale claim_dir
 
   [ -d "$recovery_dir" ] || return 0
   stale="$(python3 "$claim_recovery" claim-stale "$recovery_dir" "${CHAIN_LOCK_STALE_SECONDS:-300}")"
@@ -242,38 +257,272 @@ fi
 }
 
 acquire_lock() {
+  local directory="${1:-$lock_dir}"
   while :; do
-    while [ -d "$lock_dir.recovery" ]; do
-      recover_stale_recovery_lock
+    while [ -d "$directory.recovery" ]; do
+      recover_stale_recovery_lock "$directory"
       sleep 0.01
     done
-    if mkdir "$lock_dir" 2>/dev/null; then
-      lock_acquired=1
-      printf '%s\t%s\n' "$$" "$(process_start "$$")" > "$lock_dir/pid"
+    if mkdir "$directory" 2>/dev/null; then
+      if [ "$#" -gt 0 ]; then
+        repository_lock_acquired=1
+      else
+        lock_acquired=1
+      fi
+      printf '%s\t%s\n' "$$" "$(process_start "$$")" > "$directory/pid"
       return
     fi
-    remove_stale_lock
+    remove_stale_lock "$directory"
+    sleep 0.01
+  done
+}
+
+acquire_repository_lock() {
+  repository_lock_dir="$repo_root/.git-loopy/worktree.lock"
+  mkdir -p "$(dirname "$repository_lock_dir")"
+  acquire_lock "$repository_lock_dir"
+}
+
+release_repository_lock() {
+  rm -f "$repository_lock_dir/pid"
+  rmdir "$repository_lock_dir"
+  repository_lock_acquired=0
+}
+
+pause_claim() {
+  local gate="$1"
+  [ -n "$gate" ] || return 0
+  touch "$gate.ready"
+  while [ -e "$gate" ]; do
     sleep 0.01
   done
 }
 
 remove_worktree() {
-  local worktree="$1"
-  local ledger_root
+  local worktree="$1" force="${2:-}"
+  local ledger_root marker marker_backup="" removed=0
 
+  ledger_root="$(repository_root)"
   if [ -e "$worktree" ]; then
-    git -C "$worktree" worktree remove "$worktree"
+    marker="$worktree/.git-loopy/worktree-owner"
+    # The marker is untracked bookkeeping a plain `git worktree remove` would refuse over.
+    if [ -f "$marker" ]; then
+      marker_backup="$(mktemp)"
+      cp "$marker" "$marker_backup"
+    fi
+    rm -f "$marker"
+    rmdir "$worktree/.git-loopy" 2>/dev/null || true
+    if [ "$force" = "--force" ]; then
+      git -C "$ledger_root" worktree remove --force "$worktree" && removed=1
+    else
+      git -C "$ledger_root" worktree remove "$worktree" && removed=1
+    fi
+    if [ "$removed" -eq 0 ]; then
+      # A worktree that stays on disk must stay vouched for, byte for byte.
+      if [ -n "$marker_backup" ] && [ -d "$worktree" ]; then
+        mkdir -p "$worktree/.git-loopy" && cp "$marker_backup" "$marker" || true
+      fi
+      rm -f "$marker_backup"
+      return 1
+    fi
+    rm -f "$marker_backup"
   else
-    ledger_root="$(repository_root)"
     git -C "$ledger_root" worktree prune
   fi
+}
+
+write_marker() {
+  local worktree="$1" owner_pid="$2" owner_start="$3" marker_dir marker_tmp
+
+  marker_dir="$worktree/.git-loopy"
+  marker_tmp="$marker_dir/.worktree-owner.$$"
+  if ! mkdir -p "$marker_dir" ||
+    ! printf '%s\t%s\n' "$owner_pid" "$owner_start" > "$marker_tmp" ||
+    ! mv "$marker_tmp" "$marker_dir/worktree-owner"
+  then
+    rm -f "$marker_tmp"
+    return 1
+  fi
+}
+
+# Decide the fate of a pending worktree record: exit 0 and print
+# "<worktree>\t<branch>" when the worktree still needs undoing, exit 1 when its
+# transaction finished, exit 2 when the record or the ledger cannot be read. The
+# three are distinct because only a finished transaction is safe to forget —
+# dropping a record we could not read would discard the last thing naming its
+# worktree — so anything unexpected here must land on 2 rather than on Python's
+# own exit 1. What counts as finishing differs by producer and the record says
+# which: a reservation finishes when its own id reaches the ledger, so no retry
+# reusing every argument and no later rewrite of that row can be mistaken for it;
+# a claimed worktree finishes when its marker lands, because a claim has no row.
+unfinished_worktree() {
+  python3 - "$1" "$ledger" <<'PY'
+import json
+import os
+import sys
+
+pending_path, ledger_path = sys.argv[1:]
+
+
+def unreadable():
+    raise SystemExit(2)
+
+
+try:
+    with open(pending_path, encoding="utf-8") as pending:
+        record = json.load(pending)
+    if not isinstance(record, dict):
+        unreadable()
+    worktree = record.get("worktree")
+    branch = record.get("branch", "")
+    commit = record.get("commit")
+    if not isinstance(worktree, str) or not worktree:
+        unreadable()
+    if not isinstance(branch, str):
+        unreadable()
+
+    if commit == "marker":
+        if os.path.exists(os.path.join(worktree, ".git-loopy", "worktree-owner")):
+            raise SystemExit(1)
+    elif commit == "row":
+        reservation_id = record.get("reservation_id")
+        if not isinstance(reservation_id, str) or not reservation_id:
+            unreadable()
+        if os.path.exists(ledger_path):
+            with open(ledger_path, encoding="utf-8") as ledger:
+                for line in ledger:
+                    if not line.strip():
+                        continue
+                    row = json.loads(line)
+                    if not isinstance(row, dict):
+                        unreadable()
+                    recorded = row.get("reservation_id")
+                    if "reservation_id" in row and (
+                        not isinstance(recorded, str) or not recorded
+                    ):
+                        unreadable()
+                    if recorded == reservation_id:
+                        raise SystemExit(1)
+    else:
+        unreadable()
+except SystemExit:
+    raise
+except Exception:
+    unreadable()
+
+print(worktree + "\t" + branch)
+PY
+}
+
+# Prove this transaction made the worktree before removing it. Its branch did not
+# exist when the transaction started, so a worktree git has registered at this
+# path on that branch can only be the one this transaction created. Anything else
+# occupying the path — a bystander that won the race between the check and the
+# creation, or a directory that was never a worktree — belongs to somebody whose
+# work must not be deleted, and any failure to establish this answers "not ours".
+worktree_registered_on_branch() {
+  local path="$1" branch="$2"
+
+  [ -n "$branch" ] || return 1
+  python3 - "$(repository_root)" "$path" "$branch" <<'PY'
+import os
+import subprocess
+import sys
+
+repo_root, path, branch = sys.argv[1:]
+path = os.path.realpath(os.path.abspath(path))
+listing = subprocess.run(
+    ["git", "-C", repo_root, "worktree", "list", "--porcelain"],
+    capture_output=True,
+    text=True,
+)
+if listing.returncode != 0:
+    sys.stderr.write(listing.stderr)
+    raise SystemExit(2)
+
+# Porcelain groups one record per worktree, blank-line separated. Read whole
+# records: a `prunable` worktree is registration git itself no longer trusts, so
+# whatever occupies that path now is not what this transaction created.
+record = {}
+records = []
+for line in listing.stdout.splitlines():
+    if not line.strip():
+        if record:
+            records.append(record)
+            record = {}
+        continue
+    key, _, value = line.partition(" ")
+    record[key] = value
+if record:
+    records.append(record)
+
+for record in records:
+    if "worktree" not in record:
+        continue
+    if os.path.realpath(os.path.abspath(record["worktree"])) != path:
+        continue
+    if "prunable" in record or "detached" in record or "bare" in record:
+        raise SystemExit(1)
+    if record.get("branch") == "refs/heads/" + branch:
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
+}
+
+# Roll a half-finished worktree forward or back. The pending record names the
+# worktree before it exists and survives a SIGKILL that the EXIT trap cannot.
+# Every command that takes the ledger lock runs this first. A rollback that cannot
+# finish keeps its record and fails rather than dropping it, because the record is
+# the last thing naming the worktree it left. Every caller refuses to continue on
+# that failure, because the next lock holder must finish or undo the pending
+# worktree and carrying on would leave it unresolved. Only the EXIT trap ignores it,
+# as it has nowhere left to report to.
+rollback_pending_worktree() {
+  local pending_path="$1" record verdict pending_worktree pending_branch removed=0
+
+  [ -f "$pending_path" ] || return 0
+  if record="$(unfinished_worktree "$pending_path")"; then
+    IFS=$'\t' read -r pending_worktree pending_branch <<< "$record"
+    if [ -e "$pending_worktree" ] || [ -L "$pending_worktree" ]; then
+      worktree_registered_on_branch "$pending_worktree" "$pending_branch" || ownership=$?
+      if [ "${ownership:-0}" -ne 0 ]; then
+        if [ "${ownership:-0}" -eq 2 ]; then
+          echo "error: could not ask git who owns $pending_worktree; keeping $pending_path" >&2
+        else
+          echo "error: $pending_worktree is not on branch ${pending_branch:-<none>}, so this transaction did not create it; inspect it, then remove it and $pending_path by hand if it is abandoned" >&2
+        fi
+        return 1
+      fi
+      removed=1
+    fi
+    # Rollback has already proven this transaction made the worktree, so it may
+    # discard whatever a killed transaction left inside it.
+    if ! remove_worktree "$pending_worktree" --force; then
+      echo "error: could not remove unrecorded worktree: $pending_worktree" >&2
+      return 1
+    fi
+    if [ "$removed" -eq 1 ] && [ -n "$pending_branch" ] &&
+      git -C "$(repository_root)" rev-parse --verify --quiet "refs/heads/$pending_branch" >/dev/null
+    then
+      git -C "$(repository_root)" branch -D "$pending_branch" >/dev/null 2>&1 ||
+        echo "error: could not delete branch of removed worktree: $pending_branch" >&2
+    fi
+  else
+    verdict=$?
+    if [ "$verdict" -ne 1 ]; then
+      echo "error: unreadable pending worktree record: $pending_path" >&2
+      return 1
+    fi
+  fi
+  rm -f "$pending_path"
 }
 
 worktree_can_be_removed() {
   local worktree="$1" status
 
   [ -e "$worktree" ] || return 0
-  if ! status="$(git -C "$worktree" status --porcelain=v1 --untracked-files=all)"; then
+  # The ownership marker is the chain's own bookkeeping, not the agent's work.
+  if ! status="$(git -C "$worktree" status --porcelain=v1 --untracked-files=all -- . ':(exclude).git-loopy/worktree-owner')"; then
     echo "error: could not inspect worktree; retaining it: $worktree" >&2
     return 1
   fi
@@ -344,49 +593,6 @@ with open(ledger, encoding="utf-8") as ledger_file:
 
 raise SystemExit(1)
 PY
-}
-
-mark_record_failed() {
-  local worktree="$1"
-
-  tmp="$(mktemp "$(dirname "$ledger")/.subagents.XXXXXX")"
-  python3 - "$ledger" "$tmp" "$worktree" <<'PY'
-import datetime
-import json
-import os
-import sys
-
-ledger_path, output_path, worktree = sys.argv[1:]
-worktree = os.path.realpath(os.path.abspath(worktree))
-with open(ledger_path, encoding="utf-8") as ledger:
-    rows = [json.loads(line) for line in ledger if line.strip()]
-
-matches = [
-    row
-    for row in rows
-    if (
-        isinstance(row.get("worktree"), str)
-        and os.path.realpath(os.path.abspath(row["worktree"])) == worktree
-        and not row.get("finish_time")
-    )
-]
-if len(matches) != 1:
-    print("error: could not close failed worktree reservation", file=sys.stderr)
-    raise SystemExit(2)
-
-matches[0]["finish_time"] = (
-    datetime.datetime.now(datetime.timezone.utc)
-    .isoformat(timespec="seconds")
-    .replace("+00:00", "Z")
-)
-matches[0]["outcome"] = "failed"
-
-with open(output_path, "w", encoding="utf-8") as output:
-    for row in rows:
-        output.write(json.dumps(row, separators=(",", ":")) + "\n")
-PY
-  mv "$tmp" "$ledger"
-  tmp=""
 }
 
 concurrency_limit() {
@@ -607,6 +813,7 @@ plan() {
     mkdir -p "$(dirname "$ledger")"
     lock_dir="$ledger.lock"
     acquire_lock
+    rollback_pending_worktree "$ledger.pending"
     guard="$(evaluate_and_record_target_guard "$route" "$target_context")"
     release_lock
   fi
@@ -961,7 +1168,7 @@ reserve() {
     echo "error: --chain-depth must be a non-negative integer" >&2
     exit 2
   }
-  local ledger_dir row spawn_commit worktree_branch max_concurrency open_reservations
+  local ledger_dir row reservation spawn_commit worktree_branch worktree_argument max_concurrency open_reservations
   local parent_start target_state target_error target_failure_kind target_context canonical_target
   if [ -z "$ledger" ]; then
     ledger="$(repository_root)/.git-loopy/subagents.jsonl"
@@ -969,6 +1176,9 @@ reserve() {
   ledger_dir="$(dirname "$ledger")"
   lock_dir="$ledger.lock"
   repo_root="$(repository_root)"
+  worktree_argument="$worktree"
+  worktree_branch=""
+  spawn_commit=""
   if [ "$in_place" -eq 0 ]; then
     spawn_commit="$(git rev-parse HEAD)"
     worktree_branch="git-loopy/reservation-${$}-${RANDOM}"
@@ -1018,6 +1228,7 @@ print(json.load(sys.stdin)["failure_kind"])
   max_concurrency="$(concurrency_limit)" || return $?
 
   acquire_lock
+  rollback_pending_worktree "$ledger.pending"
 
   local collision_status guard
   if ledger_has_open_worktree "$worktree"; then
@@ -1074,13 +1285,34 @@ PY
     exit 1
   fi
 
-  tmp="$(mktemp "$ledger_dir/.subagents.XXXXXX")"
-  row="$(python3 - "$route" "$canonical_target" "$spawn_time" "$worktree" "$chain_depth" "$parent_pid" "$parent_start" "$session_id" "$in_place" <<'PY'
+  if [ "$in_place" -eq 0 ]; then
+    # One reservation, one transaction. The pending record holds the row this
+    # reserve is about to commit and names its worktree before that worktree
+    # exists, so a hard kill anywhere below is undone by whoever takes this lock
+    # next; appending the row to the ledger commits it. Refuse a path or branch that
+    # already exists first: rollback proves what this transaction made from the
+    # branch it created, which only means anything if that branch was free. An
+    # in-place reservation names the session's own checkout and creates nothing.
+    if [ -e "$worktree" ] || [ -L "$worktree" ] || [ -L "$worktree_argument" ]; then
+      echo "error: worktree path already exists: $worktree" >&2
+      exit 1
+    fi
+    if git -C "$repo_root" rev-parse --verify --quiet "refs/heads/$worktree_branch" >/dev/null; then
+      echo "error: branch already exists: $worktree_branch" >&2
+      exit 1
+    fi
+  fi
+  reservation="$(python3 - "$route" "$canonical_target" "$spawn_time" "$worktree" "$chain_depth" "$parent_pid" "$parent_start" "$worktree_branch" "$session_id" "$in_place" <<'PY'
 import json
 import sys
+import uuid
 
-route, target, spawn_time, worktree, chain_depth, parent_pid, parent_start, session_id, in_place = sys.argv[1:]
+(
+    route, target, spawn_time, worktree, chain_depth, parent_pid, parent_start, branch,
+    session_id, in_place
+) = sys.argv[1:]
 row = {
+    "reservation_id": uuid.uuid4().hex,
     "route": route,
     "target": target,
     "spawn_time": spawn_time,
@@ -1096,8 +1328,29 @@ if session_id:
 if in_place == "1":
     row["in_place"] = True
 print(json.dumps(row, separators=(",", ":")))
+print(json.dumps({
+    "worktree": worktree,
+    "branch": branch,
+    "commit": "row",
+    "reservation_id": row["reservation_id"],
+}, separators=(",", ":")))
 PY
 )"
+  row="${reservation%%$'\n'*}"
+
+  if [ "$in_place" -eq 0 ]; then
+    pending="$ledger.pending"
+    printf '%s\n' "${reservation#*$'\n'}" > "$pending.$$"
+    mv "$pending.$$" "$pending"
+
+    if [ -n "${CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE:-}" ]; then
+      sleep "$CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE"
+    fi
+    git -C "$repo_root" worktree add -b "$worktree_branch" "$worktree" "$spawn_commit" || exit 1
+    write_marker "$worktree" "$parent_pid" "$parent_start" || exit 1
+  fi
+
+  tmp="$(mktemp "$ledger_dir/.subagents.XXXXXX")"
 
   if [ -f "$ledger" ]; then
     cat "$ledger" > "$tmp"
@@ -1109,20 +1362,10 @@ PY
   fi
   mv "$tmp" "$ledger"
   tmp=""
-  if [ "$in_place" -eq 1 ]; then
-    release_lock
-    return
+  if [ "$in_place" -eq 0 ]; then
+    rm -f "$pending"
+    pending=""
   fi
-  if [ -n "${CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE:-}" ]; then
-    sleep "$CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE"
-  fi
-  if ! git -C "$repo_root" worktree add -b "$worktree_branch" "$worktree" "$spawn_commit"; then
-    mark_record_failed "$worktree"
-    exit 1
-  fi
-  created_worktree=1
-  created_worktree_path="$worktree"
-  created_worktree=0
   release_lock
 }
 
@@ -1153,6 +1396,7 @@ bind() {
   worktree="$(python3 -c 'import os; import sys; print(os.path.realpath(os.path.abspath(sys.argv[1])))' "$worktree")"
   mkdir -p "$ledger_dir"
   acquire_lock
+  rollback_pending_worktree "$ledger.pending"
 
   tmp="$(mktemp "$ledger_dir/.subagents.XXXXXX")"
   if ! python3 - "$ledger" "$tmp" "$worktree" "$session_id" "$agent_id" "$agent_type" "$agent_name" <<'PY'
@@ -1234,6 +1478,7 @@ complete() {
   lock_dir="$ledger.lock"
 
   acquire_lock
+  rollback_pending_worktree "$ledger.pending"
 
   tmp="$(mktemp "$ledger_dir/.subagents.XXXXXX")"
   metadata="$tmp.worktree"
@@ -1628,7 +1873,7 @@ recover() {
     ledger="$(repository_root)/.git-loopy/subagents.jsonl"
   fi
 
-  [ -e "$ledger" ] || {
+  [ -e "$ledger" ] || [ -e "$ledger.pending" ] || {
     printf '{"recovered":0,"targets":[]}\n'
     return
   }
@@ -1638,6 +1883,7 @@ recover() {
   mkdir -p "$ledger_dir"
   lock_dir="$ledger.lock"
   acquire_lock
+  rollback_pending_worktree "$ledger.pending"
 
   tmp="$(mktemp "$ledger_dir/.subagents.XXXXXX")"
   metadata="$tmp.worktrees"
@@ -1781,6 +2027,140 @@ PY
   printf '%s\n' "$result"
 }
 
+owner() {
+  local worktree="" marker
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --worktree) worktree="${2:?missing value for --worktree}"; shift 2 ;;
+      *) usage ;;
+    esac
+  done
+  [ -n "$worktree" ] || usage
+  marker="$worktree/.git-loopy/worktree-owner"
+  python3 - "$marker" "$claim_recovery" <<'PY'
+import subprocess
+import sys
+
+marker, claim_recovery = sys.argv[1:]
+try:
+    pid_text, owner_start = open(marker, encoding="utf-8").read().rstrip("\n").split("\t", 1)
+    pid = int(pid_text)
+except (FileNotFoundError, ValueError):
+    print('{"alive":false,"reason":"invalid-marker"}')
+    raise SystemExit
+if pid <= 0 or not owner_start.strip():
+    print('{"alive":false,"reason":"invalid-marker"}')
+    raise SystemExit
+liveness = subprocess.run(
+    [sys.executable, claim_recovery, "owner-gone", str(pid), owner_start],
+    capture_output=True,
+    text=True,
+)
+if liveness.returncode != 0:
+    print('{"alive":false,"reason":"liveness-check-failed"}')
+    raise SystemExit
+print('{"alive":' + ("false" if liveness.stdout.strip() == "true" else "true") + '}')
+PY
+}
+
+# The second producer of an ownership marker: a worktree an agent made for itself
+# on a /next prompt, which never passes through reserve and would otherwise be
+# indistinguishable from abandoned clutter. With --create-branch the worktree is
+# made here rather than by the caller, so creating and marking it is one pending-worktree
+# transaction and no interruption can leave a worktree nothing vouches for.
+claim() {
+  local worktree="" owner_pid="" create_branch="" owner_start ledger_dir spawn_commit worktree_argument
+
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --worktree) worktree="${2:?missing value for --worktree}"; shift 2 ;;
+      --owner-pid) owner_pid="${2:?missing value for --owner-pid}"; shift 2 ;;
+      --create-branch) create_branch="${2:?missing value for --create-branch}"; shift 2 ;;
+      --ledger) ledger="${2:?missing value for --ledger}"; shift 2 ;;
+      *) usage ;;
+    esac
+  done
+  [ -n "$worktree" ] && [ -n "$owner_pid" ] || usage
+  [[ "$owner_pid" =~ ^[1-9][0-9]*$ ]] || {
+    echo "error: --owner-pid must be a process id" >&2
+    exit 2
+  }
+  owner_start="$(process_start "$owner_pid")"
+  [ -n "$owner_start" ] || {
+    echo "error: claiming owner is not running: $owner_pid" >&2
+    exit 2
+  }
+
+  if [ -z "$create_branch" ]; then
+    [ -d "$worktree" ] || {
+      echo "error: worktree does not exist: $worktree" >&2
+      exit 2
+    }
+    write_marker "$worktree" "$owner_pid" "$owner_start" || {
+      echo "error: could not write ownership marker: $worktree" >&2
+      exit 1
+    }
+    return
+  fi
+
+  repo_root="$(repository_root)"
+  spawn_commit="$(git rev-parse HEAD)"
+  worktree_argument="$worktree"
+  worktree="$(python3 -c 'import os; import sys; print(os.path.realpath(os.path.abspath(sys.argv[1])))' "$worktree")"
+  if [ -z "$ledger" ]; then
+    ledger="$repo_root/.git-loopy/subagents.jsonl"
+  fi
+  ledger_dir="$(dirname "$ledger")"
+  lock_dir="$ledger.lock"
+  mkdir -p "$ledger_dir"
+  acquire_lock
+  # Claims on different ledgers hold different ledger locks yet contend for the same
+  # path and branch, so the transaction also takes a lock scoped to the repository.
+  # Only claim takes it, and always after its ledger lock, so the order cannot cycle.
+  acquire_repository_lock
+  rollback_pending_worktree "$ledger.pending"
+
+  # Refuse a path or branch that already exists, before anything claims the right
+  # to undo them. Rollback proves what this transaction made from the branch it
+  # created, which only means anything if that branch was free to begin with.
+  if [ -e "$worktree" ] || [ -L "$worktree" ] || [ -L "$worktree_argument" ]; then
+    echo "error: worktree path already exists: $worktree" >&2
+    exit 1
+  fi
+  if git -C "$repo_root" rev-parse --verify --quiet "refs/heads/$create_branch" >/dev/null; then
+    echo "error: branch already exists: $create_branch" >&2
+    exit 1
+  fi
+
+  pending="$ledger.pending"
+  python3 - "$worktree" "$create_branch" > "$pending.$$" <<'PY'
+import json
+import sys
+
+worktree, branch = sys.argv[1:]
+print(json.dumps({
+    "worktree": worktree,
+    "branch": branch,
+    "commit": "marker",
+}, separators=(",", ":")))
+PY
+  mv "$pending.$$" "$pending"
+
+  # File gates let the race test hold the precondition-to-add and add-to-marker
+  # windows open without relying on scheduler timing.
+  pause_claim "${CHAIN_CLAIM_PAUSE_BEFORE_WORKTREE:-}"
+  git -C "$repo_root" worktree add -b "$create_branch" "$worktree" "$spawn_commit" || exit 1
+  pause_claim "${CHAIN_CLAIM_PAUSE_BEFORE_MARKER:-}"
+  write_marker "$worktree" "$owner_pid" "$owner_start" || {
+    echo "error: could not write ownership marker: $worktree" >&2
+    exit 1
+  }
+  rm -f "$pending"
+  pending=""
+  release_repository_lock
+  release_lock
+}
+
 [ "$#" -gt 0 ] || usage
 command="$1"
 shift
@@ -1791,5 +2171,7 @@ case "$command" in
   bind) bind "$@" ;;
   complete) complete "$@" ;;
   recover) recover "$@" ;;
+  owner) owner "$@" ;;
+  claim) claim "$@" ;;
   *) usage ;;
 esac

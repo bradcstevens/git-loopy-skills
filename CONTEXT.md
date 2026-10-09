@@ -62,6 +62,18 @@ _Avoid_: Placeholder, pending row
 Attaching the runtime-assigned agent identity to a reservation, which is what later lets a
 completion payload find its row.
 
+**Worktree marker**:
+A file inside a worktree naming the process that owns it and when that process started, so a later
+reader can tell a directory an agent is thinking in from one nobody will return to. Two producers
+write it: a reservation, and an agent told to make its own worktree.
+_Avoid_: Lock, sentinel
+
+**Pending worktree**:
+A worktree that has begun coming into existence but whose transaction has not finished. A record
+beside the ledger names it before the directory exists, so an interruption that outruns cleanup
+still leaves evidence of the unfinished transaction.
+_Avoid_: Journal entry, temp worktree
+
 **Reserving parent**:
 The process whose death orphans a reservation — the routing session that will do the binding, not
 the shell that invokes the chain script and exits with the command. A reservation records its
@@ -107,12 +119,6 @@ _Avoid_: Dead worktree, leftover
 A worktree `chain.sh` left on disk when completing or reclaiming its row, because it has uncommitted
 changes, cannot be inspected, or cannot be removed. Its row is closed, so it holds no slot and is no
 longer the chain's to reclaim.
-
-**Worktree marker**:
-The record inside a worktree naming the process that owns it and when that process started, together
-with the route and target it bound. The first pair decides removal; the second attributes the
-directory to a workstream.
-_Avoid_: Lock file, owner file, sentinel
 
 **Held**:
 Said of a worktree a live process is using at the moment it is looked at. Weak evidence on its own,
