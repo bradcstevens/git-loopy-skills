@@ -16,11 +16,9 @@ err() {
   fail=1
 }
 
-phase_boundaries_router="skills/skill-router/PHASE-BOUNDARIES.md"
-phase_boundaries_next="skills/next/PHASE-BOUNDARIES.md"
-if ! cmp -s "$phase_boundaries_router" "$phase_boundaries_next"; then
-  err "$phase_boundaries_router and $phase_boundaries_next must be kept in sync"
-fi
+for reference in PHASE-BOUNDARIES.md SKILL-SELECTION.md; do
+  [ -f "skills/next/$reference" ] || err "skills/next/$reference must be co-installed with next"
+done
 
 count=0
 while IFS= read -r skill_md; do

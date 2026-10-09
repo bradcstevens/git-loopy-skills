@@ -14,6 +14,12 @@ npx skills update next
 
 `next` is the router over the skills in this repo. It reads the live state of your work and returns a single recommendation: the one action to take now, the skill that performs it, the exact invocation to paste, and the runtime to run it on — model, reasoning effort, and context tier. For a narrowly defined set of **AFK-safe** delivery routes, it can also spawn that recommendation as an in-session subagent.
 
+It also replaces `/skill-router`: ask `/next` which skill or flow fits the current
+situation. Its co-installed `SKILL-SELECTION.md` covers interview wrappers, build
+scope, and standalone requests such as release, human-only setup, learning, agent
+writing, and model configuration. Those requests use the context their branch
+needs rather than requiring an engineering tracker and chain hook.
+
 It does not itself grill, write a spec, or fix anything. It either orients at a checkpoint boundary or, when the chain gate approves, records and launches work owned by the spawned route. What separates it from a checklist is where it looks: not at what you told it in conversation, but at `docs/agents/issue-tracker.md`, the tracker itself, and your branch and diff. Concurrent sessions move that state underneath you, so the recommendation is drawn from live records rather than from a session summary.
 
 ## When to reach for it
@@ -94,7 +100,7 @@ subagent.
 - The recommendation names whether to continue in this context, start a fresh session, or run as a
   subagent, matching the flow's own rules: grill → spec → tickets stays in one context, while the
   chain starts only approved delivery work.
-- In a repo missing either its tracker configuration or
+- For engineering work in a repo missing either its tracker configuration or
   `.github/hooks/git-loopy-chain.json`, it routes to
   [setup-git-loopy-skills](./setup-git-loopy-skills.md) and nothing else.
 - When the work is genuinely finished, it says so instead of inventing a next step.
@@ -104,7 +110,7 @@ subagent.
 `next` is the **router** — the standalone map that sits over the whole set. It points into every
 flow and carries the bounded chain when its gate approves. From here you'll most often land on
 [grill-with-docs](./grill-with-docs.md), the head of the main flow, or [triage](./triage.md), the
-on-ramp for work you didn't create. Its one hard prerequisite is
+on-ramp for work you didn't create. The engineering flow's prerequisite is
 [setup-git-loopy-skills](./setup-git-loopy-skills.md), because the tracker config and chain hook
 that skill writes are the state `next` reads. When even the router's own picture is stale, its
 [Source](https://github.com/bradcstevens/git-loopy-skills/tree/main/skills/next) is the map of
