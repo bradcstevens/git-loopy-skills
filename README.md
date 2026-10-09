@@ -69,7 +69,7 @@ situation matches. The rest you invoke by name.
 | codebase-audit | automatic | Deep audit before GitHub push: removes junk files, dead code, security holes, and optimization issues. |
 | [codebase-design](docs/codebase-design.md) | automatic | Shared vocabulary for designing deep modules. |
 | create-readme | automatic | Create a README.md file for the project |
-| design-control-loop | automatic | interview the user to design an agentic control loop (sensor, controller, actuator under disturbances) tailored to their codebase, then build it as locally-runnable components plus a scheduled coding-agent workflow |
+| design-control-loop | automatic | interview the user to design an agentic control loop (sensor, controller, actuator under disturbances) tailored to their codebase, then build it as locally-runnable components plus a scheduled GitHub Copilot CLI workflow |
 | [diagnosing-bugs](docs/diagnosing-bugs.md) | automatic | Diagnosis loop for hard bugs and performance regressions. |
 | [domain-modeling](docs/domain-modeling.md) | automatic | Build and sharpen a project's domain model. |
 | grill-me | `/grill-me` | A relentless interview to sharpen a plan or design. |
