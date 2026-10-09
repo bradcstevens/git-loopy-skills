@@ -2150,11 +2150,32 @@ with open(sys.argv[1], encoding="utf-8") as ledger:
 
 assert row["finish_time"] == "2026-08-22T00:11:00Z", row
 assert row["outcome"] == "published", row
-assert row["routed"] is True, row
-assert row["routed_at"] == "2026-08-22T00:12:00Z", row
+assert not row.get("routed"), row
+assert row["route_requested_at"] == "2026-08-22T00:12:00Z", row
+assert row["route_attempts"] == 1, row
 PY
 then
-  err "serial hop did not close and route its ledger row"
+  err "serial hop did not close its ledger row and record a route request"
+fi
+serial_confirmation="$(
+  python3 "$REPO/skills/setup-git-loopy-skills/git-loopy-agent-stop.py" \
+    <<< '{"cwd":"'"$serial_repo"'","timestamp":"2026-08-22T00:13:00Z","stop_hook_active":true}'
+)"
+if [ "$serial_confirmation" != '{"decision":"allow","reason":"stop-hook-active","confirmed":"issue-serial-hop"}' ]; then
+  err "serial route request was not confirmed by the forced turn"
+fi
+if ! python3 - "$serial_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    row = json.loads(ledger.readline())
+
+assert row["routed"] is True, row
+assert row["routed_at"] == "2026-08-22T00:13:00Z", row
+PY
+then
+  err "serial hop did not route its ledger row once the forced turn ran"
 fi
 "$CHAIN" bind \
   --ledger "$fan_out_ledger" \
@@ -3339,7 +3360,7 @@ assert_plan "re-entry completion" "$reentry_output" \
 
 reentry_decision="$(
   python3 "$REPO/skills/setup-git-loopy-skills/git-loopy-agent-stop.py" \
-    <<< '{"cwd":"'"$reentry_repo"'","timestamp":"2026-08-22T00:12:00Z","stop_hook_active":false}'
+    <<< '{"sessionId":"session-reentry","cwd":"'"$reentry_repo"'","timestamp":"2026-08-22T00:12:00Z","stop_hook_active":false}'
 )"
 if [ "$reentry_decision" != '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","targets":["issue-reentry"]}' ]; then
   err "agentStop did not see a real completion as an unrouted run"

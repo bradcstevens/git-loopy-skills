@@ -162,6 +162,14 @@ record rather than the remote's branch protection, because a repository may requ
 still be merged into.
 _Avoid_: Approval, sign-off (an approval is one possible input, not the whole set)
 
+**Route request**:
+An `agentStop` block asking the parent to run `/next` for finished runs. It is a request and not a
+route, because the block reaches the parent as a dismissible prompt: it becomes a route only once a
+following `stop_hook_active` turn shows the parent took the turn the block forced. One request covers
+the complete routable batch. `sessionId` is optional: when present it correlates confirmation to
+the requesting session, while an anonymous request remains confirmable by any forced turn.
+_Avoid_: Re-entry (the mechanism), routed (the confirmed fact)
+
 ### Connection kinds
 
 The kinds of edge one skill can have to another. The first four are the vocabulary of

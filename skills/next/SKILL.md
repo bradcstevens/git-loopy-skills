@@ -220,7 +220,9 @@ The chain stops and asks a human before an unexplained runaway: it permits a rou
 times for one target and a target lineage at most **eight** hops deep. A fourth repeat or ninth hop
 is declined. Bare issue numbers, `issue-N`, and pull request numbers that close that issue share
 those guards, including ledger rows written with an older spelling. `subagentStop` closes the
-finished run's ledger row; `agentStop`, not `subagentStop`, carries re-entry into `/next`.
+finished run's ledger row; `agentStop`, not `subagentStop`, carries re-entry into `/next`. See
+[ADR-0008](../../docs/adr/0008-a-route-is-confirmed-not-assumed.md) for the route-request
+confirmation contract.
 
 The chain and `/handoff` have different lifetimes. The chain runs an in-session subagent alongside
 this session and ends with it. `/handoff` launches detached work that outlives this session. Keep
@@ -355,10 +357,11 @@ hop from another, and nothing matches on it. Do not treat a descriptive name as 
 `subagentStop` payload carries no field holding it, so a name is never what a completion finds its
 row by.
 
-When a run completes, `subagentStop` frees its reservation and `agentStop` re-enters `/next`. Each
-completion frees one slot, and a re-entry may carry several completed runs at once: fan-out finishes
-in batches, so `agentStop` routes the whole batch in a single block and names every freed target in
-its reason. Begin the same one-recommendation fill again and refill every freed slot while ready work
+When a run completes, `subagentStop` frees its reservation and `agentStop` requests `/next` again.
+Each completion frees one slot, and a re-entry may carry several completed runs at once: fan-out
+finishes in batches, so one block requests the whole batch and names every freed target. The
+following `stop_hook_active` turn confirms that request before the helper records the rows as
+routed. Begin the same one-recommendation fill again and refill every freed slot while ready work
 remains, rather than waiting for the other in-flight runs to finish.
 
 Every other route ends at step 6 and leaves a user-launched fresh session, continued session, or
