@@ -313,7 +313,12 @@ user-launched fresh session.
 ## 7. Spawn a chain-approved route
 
 Set `Context: Subagent` only for the `spawn` decision from step 5. Reserve the target in the
-decision's new worktree before launching the returned custom agent in background mode. The routing
+decision's new worktree before launching the returned custom agent in background mode. For the
+serial first hop, reserve the current working directory instead with `chain.sh reserve --in-place`
+and record `COPILOT_AGENT_SESSION_ID` with `--session-id` on that reservation: it is the
+deterministic parent-session value the completion payload will carry, so the transcript can be
+correlated even before the runtime returns the agent identity. An in-place reservation never
+creates, and `complete` and `recover` never remove, the working directory it names. The routing
 agent performs the background custom-agent `task` invocation; `chain.sh` deliberately owns only
 the durable reserve, bind, complete, and guard operations. Each reservation records the process
 identity of its reserving parent, which is this routing session and never the shell that runs the

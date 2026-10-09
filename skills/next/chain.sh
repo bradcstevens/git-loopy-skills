@@ -11,7 +11,8 @@ usage:
   chain.sh plan --all-collide [--ledger PATH]
   chain.sh gate --pull-request NUMBER --ticket NUMBER [--repo OWNER/REPO]
   chain.sh reserve --route ROUTE --target TARGET --spawn-time TIMESTAMP \
-    --worktree PATH --chain-depth N --parent-pid PID [--ledger PATH]
+    --worktree PATH --chain-depth N --parent-pid PID [--session-id ID] [--in-place] \
+    [--ledger PATH]
   chain.sh bind --worktree PATH --session-id ID --agent-id ID \
     --agent-type TYPE --agent-name NAME [--ledger PATH]
   chain.sh complete [--ledger PATH] < subagent-stop-payload.json
@@ -933,6 +934,7 @@ PY
 
 reserve() {
   local route="" target="" spawn_time="" worktree="" chain_depth="" parent_pid=""
+  local session_id="" in_place=0
 
   while [ "$#" -gt 0 ]; do
     case "$1" in
@@ -941,6 +943,8 @@ reserve() {
       --spawn-time) spawn_time="${2:?missing value for --spawn-time}"; shift 2 ;;
       --worktree) worktree="${2:?missing value for --worktree}"; shift 2 ;;
       --chain-depth) chain_depth="${2:?missing value for --chain-depth}"; shift 2 ;;
+      --session-id) session_id="${2:?missing value for --session-id}"; shift 2 ;;
+      --in-place) in_place=1; shift ;;
       --parent-pid) parent_pid="${2:?missing value for --parent-pid}"; shift 2 ;;
       --ledger) ledger="${2:?missing value for --ledger}"; shift 2 ;;
       *) usage ;;
@@ -949,6 +953,10 @@ reserve() {
 
   [ -n "$route" ] && [ -n "$target" ] && [ -n "$spawn_time" ] &&
     [ -n "$worktree" ] && [ -n "$chain_depth" ] && [ -n "$parent_pid" ] || usage
+  if [ "$in_place" -eq 1 ] && [ -z "$session_id" ]; then
+    echo "error: --in-place requires --session-id" >&2
+    exit 2
+  fi
   [[ "$chain_depth" =~ ^[0-9]+$ ]] || {
     echo "error: --chain-depth must be a non-negative integer" >&2
     exit 2
@@ -960,9 +968,11 @@ reserve() {
   fi
   ledger_dir="$(dirname "$ledger")"
   lock_dir="$ledger.lock"
-  spawn_commit="$(git rev-parse HEAD)"
   repo_root="$(repository_root)"
-  worktree_branch="git-loopy/reservation-${$}-${RANDOM}"
+  if [ "$in_place" -eq 0 ]; then
+    spawn_commit="$(git rev-parse HEAD)"
+    worktree_branch="git-loopy/reservation-${$}-${RANDOM}"
+  fi
   worktree="$(python3 -c 'import os; import sys; print(os.path.realpath(os.path.abspath(sys.argv[1])))' "$worktree")"
   [[ "$parent_pid" =~ ^[1-9][0-9]*$ ]] || {
     echo "error: --parent-pid must be a process id" >&2
@@ -1065,11 +1075,11 @@ PY
   fi
 
   tmp="$(mktemp "$ledger_dir/.subagents.XXXXXX")"
-  row="$(python3 - "$route" "$canonical_target" "$spawn_time" "$worktree" "$chain_depth" "$parent_pid" "$parent_start" <<'PY'
+  row="$(python3 - "$route" "$canonical_target" "$spawn_time" "$worktree" "$chain_depth" "$parent_pid" "$parent_start" "$session_id" "$in_place" <<'PY'
 import json
 import sys
 
-route, target, spawn_time, worktree, chain_depth, parent_pid, parent_start = sys.argv[1:]
+route, target, spawn_time, worktree, chain_depth, parent_pid, parent_start, session_id, in_place = sys.argv[1:]
 row = {
     "route": route,
     "target": target,
@@ -1081,6 +1091,10 @@ row = {
     "finish_time": "",
     "outcome": "",
 }
+if session_id:
+    row["session_id"] = session_id
+if in_place == "1":
+    row["in_place"] = True
 print(json.dumps(row, separators=(",", ":")))
 PY
 )"
@@ -1095,6 +1109,10 @@ PY
   fi
   mv "$tmp" "$ledger"
   tmp=""
+  if [ "$in_place" -eq 1 ]; then
+    release_lock
+    return
+  fi
   if [ -n "${CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE:-}" ]; then
     sleep "$CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE"
   fi
@@ -1169,6 +1187,14 @@ if any(row.get("agent_id") == agent_id for row in rows):
     raise SystemExit(1)
 
 row = rows[reservations[0]]
+reserved_session_id = row.get("session_id")
+if reserved_session_id not in (None, "", session_id):
+    print(
+        "error: reservation session identity does not match: "
+        f"{reserved_session_id}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
 row["session_id"] = session_id
 row["agent_id"] = agent_id
 row["agent_type"] = agent_type
@@ -1202,7 +1228,7 @@ complete() {
     ledger="$(repository_root)/.git-loopy/subagents.jsonl"
   fi
 
-  local ledger_dir result exit_status retained_worktree worktree
+  local ledger_dir result exit_status retained_worktree worktree in_place
   ledger_dir="$(dirname "$ledger")"
   mkdir -p "$ledger_dir"
   lock_dir="$ledger.lock"
@@ -1511,6 +1537,7 @@ with open(output_path, "w", encoding="utf-8") as output:
         output.write(json.dumps(updated_row, separators=(",", ":")) + "\n")
 with open(metadata_path, "w", encoding="utf-8") as metadata:
     metadata.write(worktree + "\n")
+    metadata.write("true\n" if row.get("in_place") is True else "false\n")
 
 result = {
     "continue": has_evidence and "halt_reason" not in row,
@@ -1543,8 +1570,12 @@ import sys
 raise SystemExit(0 if json.load(sys.stdin).get("reason") is None else 1)
 ' <<< "$result"; then
   retained_worktree=""
-  worktree="$(cat "$metadata")"
-  if worktree_can_be_removed "$worktree"; then
+  worktree="$(sed -n '1p' "$metadata")"
+  in_place="$(sed -n '2p' "$metadata")"
+  # An in-place run works in the session's own checkout, which the chain never created.
+  if [ "$in_place" = "true" ]; then
+    :
+  elif worktree_can_be_removed "$worktree"; then
     if ! remove_worktree "$worktree"; then
       echo "warning: could not remove clean worktree; retaining it: $worktree" >&2
       retained_worktree="$worktree"
@@ -1701,7 +1732,8 @@ for row in rows:
         )
         row["outcome"] = "reclaimed"
         row["reclaimed_at"] = row["finish_time"]
-        recovered_worktrees.append(worktree)
+        if row.get("in_place") is not True:
+            recovered_worktrees.append(worktree)
         recovered_targets.append(target)
 
 with open(output_path, "w", encoding="utf-8") as output:
