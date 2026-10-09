@@ -157,7 +157,7 @@ to-tickets [spec]               # slice a spec into tracer-bullet tickets
 
 The wrappers call `co` when it is defined and fall back to the `copilot` binary otherwise, so the
 file loads in both zsh and bash. `GIT_LOOPY_MODEL`, `GIT_LOOPY_EFFORT` and `GIT_LOOPY_CONTEXT` are
-exported with the pinned defaults (`claude-opus-5`, `xhigh`, `long_context`) and can be overridden
+exported with the pinned defaults (`gpt-6.1-sol`, `xhigh`, `long_context`) and can be overridden
 before sourcing or per invocation; `GIT_LOOPY_CLI` overrides which CLI is launched.
 
 ## Provenance

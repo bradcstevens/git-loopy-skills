@@ -4,16 +4,17 @@ set -euo pipefail
 usage() {
   cat >&2 <<'EOF'
 usage:
-  handoff.sh --name NAME --model MODEL --effort LEVEL --context TIER \
+  handoff.sh --name NAME --model MODEL (--auto-tier PREF | --effort LEVEL) --context TIER \
     --prompt-file PATH [--log PATH]
 
 Launches a detached GitHub Copilot CLI session on the prompt in --prompt-file and
 returns once its log has proven or disproven the launch.
 
---name, --model, --effort and --context are the runtime /next sized, and reach
-the session as -n, --model, --effort and --context. The prompt travels as a file
-that no shell re-quotes, so an apostrophe in it is safe. --log defaults to a
-timestamped path under TMPDIR, outside every worktree.
+--name, --model, exactly one of --auto-tier or --effort, and --context are the
+runtime /next sized. They reach the session as -n, --model, --auto-tier (or
+--reasoning-effort) and --context. The prompt travels as a file that no shell
+re-quotes, so an apostrophe in it is safe. --log defaults to a timestamped path
+under TMPDIR, outside every worktree.
 
 Prints one JSON object and exits 0 only for "launched":
   launched  the session is running; "resume" is the command that rejoins it
@@ -31,13 +32,16 @@ die() {
   exit 2
 }
 
-name="" model="" effort="" context="" prompt_file="" log=""
+name="" model="" effort="" auto_tier="" context="" prompt_file="" log=""
 
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --name) [ -z "$name" ] || usage; name="${2:?missing value for --name}"; shift 2 ;;
     --model) [ -z "$model" ] || usage; model="${2:?missing value for --model}"; shift 2 ;;
     --effort) [ -z "$effort" ] || usage; effort="${2:?missing value for --effort}"; shift 2 ;;
+    --auto-tier)
+      [ -z "$auto_tier" ] || usage
+      auto_tier="${2:?missing value for --auto-tier}"; shift 2 ;;
     --context) [ -z "$context" ] || usage; context="${2:?missing value for --context}"; shift 2 ;;
     --prompt-file)
       [ -z "$prompt_file" ] || usage
@@ -47,8 +51,12 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-[ -n "$name" ] && [ -n "$model" ] && [ -n "$effort" ] && [ -n "$context" ] &&
-  [ -n "$prompt_file" ] || usage
+[ -n "$name" ] && [ -n "$model" ] && [ -n "$context" ] && [ -n "$prompt_file" ] ||
+  usage
+if { [ -n "$effort" ] && [ -n "$auto_tier" ]; } ||
+  { [ -z "$effort" ] && [ -z "$auto_tier" ]; }; then
+  usage
+fi
 
 [ -s "$prompt_file" ] || die "prompt file is empty or missing: $prompt_file"
 
@@ -80,6 +88,12 @@ trap 'rm -f "$pid_file"' EXIT
 # The prompt reaches the session as one argument read from the file, never as
 # shell text a launcher could re-quote and split.
 prompt="$(cat "$prompt_file")"
+runtime_flags=(--model "$model")
+if [ -n "$auto_tier" ]; then
+  runtime_flags+=(--auto-tier "$auto_tier")
+else
+  runtime_flags+=(--reasoning-effort "$effort")
+fi
 
 # --yolo carries the session past permission prompts no one is there to answer,
 # and --no-ask-user keeps it working alone rather than waiting on a question that
@@ -87,7 +101,7 @@ prompt="$(cat "$prompt_file")"
 # script, so it outlives the caller's process tree rather than ending with it.
 (
   nohup "$copilot_bin" --yolo --no-ask-user \
-    -n "$name" --model "$model" --effort "$effort" --context "$context" \
+    -n "$name" "${runtime_flags[@]}" --context "$context" \
     -p "$prompt" >"$log" 2>&1 &
   printf '%s\n' "$!" > "$pid_file"
 )
@@ -116,12 +130,12 @@ while [ "$polls" -gt 0 ]; do
   polls=$(( polls - 1 ))
 done
 
-python3 - "$status" "$pid" "$log" "$name" "$model" "$effort" "$context" <<'PY'
+python3 - "$status" "$pid" "$log" "$name" "$model" "$effort" "$auto_tier" "$context" <<'PY'
 import json
 import shlex
 import sys
 
-status, pid, log, name, model, effort, context = sys.argv[1:]
+status, pid, log, name, model, effort, auto_tier, context = sys.argv[1:]
 
 result = {
     "status": status,
@@ -130,6 +144,7 @@ result = {
     "name": name,
     "model": model,
     "effort": effort,
+    "auto_tier": auto_tier,
     "context": context,
     "resume": "copilot --yolo --resume=" + shlex.quote(name),
 }

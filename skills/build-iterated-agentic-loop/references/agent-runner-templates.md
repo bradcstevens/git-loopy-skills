@@ -118,7 +118,7 @@ Secret: usually `ANTHROPIC_API_KEY` for Anthropic-backed runs.
   run: |
     bunx @humanlayer/cli@latest codelayer \
       --provider anthropic \
-      --model claude-opus-4-8 \
+      --model claude-opus-5.5 \
       --thinking high \
       --prompt "$PROMPT" \
       2>&1 | tee /tmp/agent-output.txt

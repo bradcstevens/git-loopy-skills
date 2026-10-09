@@ -24,9 +24,14 @@ Run the launcher from the current working directory, by its path beside this fil
 ```bash
 <this skill's directory>/handoff.sh \
   --name "<a few bare words drawn from the action>" \
-  --model "<model>" --effort "<level>" --context "<default | long_context>" \
+  --model "<model>" --auto-tier "<efficiency | balance | intelligence>" \
+  --context "<default | long_context>" \
   --prompt-file "$TMPDIR/handoff-prompt.txt"
 ```
+
+When the runtime explicitly names a reasoning effort instead of an Auto tier,
+pass `--effort "<level>"`; the launcher translates it to Copilot CLI's
+`--reasoning-effort` flag. Use exactly one of `--auto-tier` or `--effort`.
 
 Name the session, because a detached session has no terminal to identify it and that name is how the user finds it again.
 

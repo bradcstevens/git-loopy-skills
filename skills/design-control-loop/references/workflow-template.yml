@@ -216,7 +216,7 @@ jobs:
           # NOTE: replace this block with your agent runner from references/agent-runner-templates.md.
           # Each agent has different output formats — see that file for extraction steps.
           bunx @humanlayer/cli@latest codelayer \
-            --provider anthropic --model claude-opus-4-8 --thinking high \
+            --provider anthropic --model claude-opus-5.5 --thinking high \
             --prompt "$PROMPT" \
             2>&1 | tee /tmp/agent-output.txt
 
