@@ -42,13 +42,21 @@ AFK-safe target and one of its five allowlisted routes — `/implement`, `/code-
 `/push`, or `/resolving-merge-conflicts`. Planning declines a target the tracker confirms is
 unresolvable, and reservation checks it again before writing the ledger row or creating the
 worktree. A transient tracker failure is reported as tracker unavailability rather than as a
-missing target. A valid target reserves a worktree and a concurrency slot in the spawn ledger
+missing target. A bare number is first resolved to its canonical issue, a lookup bounded at 10
+seconds; if it fails or a pull request does not close exactly one issue, `plan` declines with
+`target-resolution-failed` and the cause, `reserve` refuses with both, and `complete` closes the row
+as a transient `tracker-failed` rather than leaving it open. An older ledger row whose pull request
+has no single closing issue keeps its own spelling and does not block unrelated targets; a row
+whose number the tracker can no longer find still fails the lookup. A valid target
+reserves a worktree and a concurrency slot in the spawn ledger
 before starting the in-session subagent, then binds the run to that reservation.
 
 The ledger records each reservation, binding, worktree, completion, and per-target chain depth so the
-chain neither duplicates in-flight work nor exceeds ten concurrent runs. A reservation also names the
-process identity of its reserving parent — the routing session itself, never the shell that runs the
-command, which exits with it: recovery reclaims an unbound orphan immediately when that
+chain neither duplicates in-flight work nor exceeds ten concurrent runs. Numeric issue targets and
+their `issue-N` spelling share one identity; a pull request number uses the issue it closes, including
+when older ledger rows retain a previous spelling. A reservation also names the process identity of
+its reserving parent — the routing session itself, never the shell that runs the command, which exits
+with it: recovery reclaims an unbound orphan immediately when that
 parent is gone, or after `CHAIN_RESERVATION_STALE_SECONDS` (300 seconds by default), marking it
 `reclaimed` rather than as a completed run. An abandoned run is reclaimed only when the same
 liveness check proves its reserving parent is gone; age alone never reclaims an in-flight run.
