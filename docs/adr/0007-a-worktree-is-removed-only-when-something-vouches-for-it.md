@@ -151,14 +151,20 @@ was originally stated, so they are listed here rather than left to be found by d
   owed `recover` a process-liveness check before the sweeper could lean on it, and #63 owed
   `reserve`, `plan` and `complete` the validate-and-fail-safe pair. `recover` now reuses
   `claim-recovery.py owner-gone` for bound rows, and the pair is implemented, so the "owes" wording
-  is replaced by a statement of what the code does. ADR-0002's first Consequence is revised to match.
-- **Age remains a backstop only for unbound reservations, and it no longer contradicts the rejected
-  threshold option.** That option deletes a running agent's directory because of elapsed time. An
-  unbound reservation has no run to destroy, and neither `complete` nor `recover` force-removes any
-  worktree: only a clean one is removed, so no timer ever deletes work that exists nowhere else.
-- **A fifth population exists that the four kinds do not name: the retained worktree.** When
-  `complete` or `recover` finds uncommitted changes, cannot inspect the worktree, or cannot remove
-  it, the row still closes and the slot is released, so it is no longer a reservation. It holds no
-  open row, so the sweeper meets it as an unmarked worktree: reported, never removed on sight, and
-  removable only once it is clean and has earned a marker through corroboration. Until
-  `chain.sh reserve` writes a marker itself (#51), nothing else vouches for it.
+  is replaced by a statement of what the code does.
+- **Age remains a backstop only for unbound reservations, and clean-only removal bounds its cost
+  without closing its risk.** The rejected threshold option is not reopened. `complete` and
+  `recover` never force-remove a worktree, so the backstop can no longer delete unsaved work. It can
+  still remove the clean directory of a live agent whose `bind` was late or lost, which the argument
+  above shows is indistinguishable from an abandoned one; that residual risk is the existing
+  backstop's (#28), and this amendment does not claim to close it.
+- **A population exists that the taxonomy does not name: the retained worktree.** When `complete` or
+  `recover` leaves a **retained worktree** (`CONTEXT.md`), the row still closes and the slot is
+  released, so it is no longer a reservation. It holds no open row, so the sweeper meets it as an
+  unmarked worktree: reported, never removed on sight, and removable only once it is clean and has
+  earned a marker through corroboration. Until `chain.sh reserve` writes a marker itself (#51),
+  nothing else vouches for it. ADR-0002's first Consequence is revised to match.
+- **The branch-visibility consequence changes with it.** It said a reservation's branch outlives
+  the only thing that would have made it visible to a sweep, "by construction", because `complete`
+  always removed the worktree. A retained worktree now keeps its branch visible; a branch whose
+  worktree was cleanly removed is still the branch-with-no-worktree case #65 implements.

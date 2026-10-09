@@ -30,7 +30,7 @@ def run_tracker(
             command,
             capture_output=True,
             cwd=cwd,
-            text=True,
+            encoding="utf-8",
             timeout=TRACKER_TIMEOUT_SECONDS,
         )
     except subprocess.TimeoutExpired as error:

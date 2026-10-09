@@ -61,8 +61,8 @@ ledger row; if its tracker lookup fails, the row closes as `tracker-failed` and 
 failure was transient or permanent. A transient rate limit, server error, network failure,
 30-second tracker timeout, or malformed tracker response leaves the target retryable. Only a tracker
 error saying the target is missing or invalid is permanent: it halts the target instead of being
-mistaken for `no-evidence`. Either way, completion and recovery remove a clean worktree and retain
-and report one that has uncommitted changes, cannot be inspected, or cannot be removed.
+mistaken for `no-evidence`. Completion and recovery remove a clean worktree and report any other as
+a retained worktree (`CONTEXT.md`).
 `agentStop` re-enters `/next` for the batch of completed, unrouted runs, allowing one fill to replace
 every slot that batch freed.
 AFK-safe and allowlisted are the two eligibility conditions for consulting `chain.sh plan`, not a
