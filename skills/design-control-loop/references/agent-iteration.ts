@@ -50,7 +50,7 @@ This PR was opened by a coding agent workflow. Maintainers can comment:
 
 The workflow stores durable feedback in its agent memory file and injects that memory into future runs.
 
-<!-- codelayer-agent:workflow=${workflow};memory=${memory};version=1 -->
+<!-- git-loopy-agent:workflow=${workflow};memory=${memory};version=1 -->
 `.trim()
 }
 

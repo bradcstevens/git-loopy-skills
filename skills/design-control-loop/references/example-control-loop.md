@@ -22,9 +22,9 @@ Chosen because it is repeatable, configurable, and lives outside the editor/lint
 
 There is no separate controller: `react-doctor` returns "the top 3 rules by impact," and the loop's policy is "fix up to 5 issues from those top 3 rules this run." That selection logic lives in the actuator's prompt. This is the **sensor + controller blur** — one tool plus a small policy does both jobs.
 
-## Actuator — CodeLayer + a repo-local skill
+## Actuator — Copilot CLI + a repo-local skill
 
-A CodeLayer agent runs with the repo's `react-doctor` skill. Its per-issue loop gives the agent three honest options — **fix**, **ignore** (add to `doctor.config.ts` with a reason), or **skip** (leave for a human) — and validates each change before committing it separately:
+A headless Copilot CLI run uses the repo's `react-doctor` skill. Its per-issue loop gives the agent three honest options — **fix**, **ignore** (add to `doctor.config.ts` with a reason), or **skip** (leave for a human) — and validates each change before committing it separately:
 
 ```bash
 bun run typecheck
@@ -45,7 +45,7 @@ A scheduled workflow (daily, plus manual dispatch and `/iterate`) runs the loop 
 ## Human on the loop
 
 - `.github/agent-memory/react-doctor.md` is loaded into the agent every run — standing feedback like "always use the `no-use-effect` skill for `useEffect` fixes" and "don't globally ignore a rule when only specific files need an exemption."
-- Maintainers comment `/iterate` on the PR; a hidden marker in the PR body routes the comment to the workflow that created it, which loads the PR context and feedback and updates the memory file and the PR. Deterministic glue lives in `ci-scripts/` (`agent-iteration.ts`, `codelayer-output.ts`).
+- Maintainers comment `/iterate` on the PR; a hidden marker in the PR body routes the comment to the workflow that created it, which loads the PR context and feedback and updates the memory file and the PR. Deterministic glue lives in `ci-scripts/` (`agent-iteration.ts`).
 
 ## Flow control
 
@@ -54,4 +54,4 @@ Every PR is labeled `agent-react-doctor`. Scheduled runs no-op when an open PR w
 ## What to take from this
 
 - **Reusable shape:** set point → sensor → controller → actuator under disturbances, plus a dampener, a memory file, `/iterate` steering, and one-PR flow control.
-- **Not reusable:** `react-doctor`, the bun/CodeLayer commands, the "top 3 rules / 5 fixes" policy, the `riptide-ui` scope. Those are tailored to this repo — yours come from your interview.
+- **Not reusable:** `react-doctor`, the bun/Copilot CLI commands, the "top 3 rules / 5 fixes" policy, the `riptide-ui` scope. Those are tailored to this repo — yours come from your interview.

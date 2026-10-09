@@ -14,7 +14,7 @@ Foreground these four (plus the set point they serve). Keep the rest of the voca
 
 - **Controller** — how the loop turns the measurement into the next change, sized to stay low-risk and reviewable. It decides *what to do now versus defer*: which target, how many, in what order. It ranges from fully deterministic (a script that sorts findings and picks one) to fully agentic (an agent choosing from natural-language criteria), with data-driven variants in between (e.g. prioritize by where production errors cluster). This is the part you **tune over time** from loop output — start simple.
 
-- **Actuator** — what applies the change: a coding agent (Claude Code, Codex, OpenCode, CodeLayer, …) plus a repo-local skill, running in CI and opening a PR.
+- **Actuator** — what applies the change: a Copilot CLI agent plus a repo-local skill, running in CI and opening a PR.
 
 - **Disturbance** — anything that changes the system from outside the loop: teammates' commits, dependency updates, generated code, flaky tests, large refactors. The loop has to make progress *despite* these.
 
