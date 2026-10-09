@@ -10,6 +10,11 @@ current state and return one recommendation. Leave source files and the issue
 tracker unchanged. A chain spawn may write its ledger and create its reserved
 branch and worktree; the spawned subagent owns work inside that worktree.
 
+The merge gate's `review-clean` evidence uses the canonical producer/matcher in
+[`scripts/review-clean-record.py`](../../scripts/review-clean-record.py). Do not
+reimplement its record shape in the gate; match the comment against the exact
+head being gated through that script.
+
 ## 1. Refresh the durable state
 
 Locate `docs/agents/issue-tracker.md` and `.github/hooks/git-loopy-chain.json`. If either is

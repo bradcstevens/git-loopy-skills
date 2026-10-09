@@ -17,6 +17,10 @@ usage:
   chain.sh recover --stale-after-seconds N [--now TIMESTAMP] [--ledger PATH]
 
 A PID-less ledger lock is recoverable after CHAIN_LOCK_STALE_SECONDS (default: 300).
+ROUTE is a slash-command name and carries its leading slash. The allowlist is
+/implement, /code-review, /research, /push, and /resolving-merge-conflicts; a bare
+name such as "implement" is not a route and plan declines it as
+route-not-allowlisted.
 --parent-pid names the running process whose death orphans the reservation, which
 is the session that will bind the run and never the shell that invokes this script.
 Route repetition and chain depth count bound rows only. Reservations claim
