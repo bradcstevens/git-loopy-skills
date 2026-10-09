@@ -26,6 +26,7 @@ the remaining smart zone. At a phase boundary where it no longer fits, apply
 
 | Desired outcome | Recommend | Scope |
 | --- | --- | --- |
+| Design and build a recurring agentic loop to move a codebase property toward a target | `/design-control-loop` | Interview on the set point and scope, then build and validate the locally runnable loop and its workflow. |
 | Publish completed, integrated work as a project-versioned GitHub release | `/release` | Follow the target project's release gates; user-invoked, outside the delivery chain. |
 | Perform a step only a human can take | `/wizard` | Generate an interactive bash wizard for provisioning, credentials, dashboards, or cutovers. Agent-executable work stays with the agent. |
 | Re-pitch the last message with its missing context | `/wait-what` | Stay in this conversation and use the project's domain vocabulary. |

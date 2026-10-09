@@ -67,6 +67,7 @@ does not make an explicit standalone request complete.
 | --- | --- |
 | The repository is not configured for the engineering skills | `/setup-git-loopy-skills` |
 | An intentional phase boundary needs a context transition | Apply `PHASE-BOUNDARIES.md` before choosing a route |
+| A codebase property should improve through a measured, recurring agentic loop | `/design-control-loop` |
 | An idea outside a codebase still needs sharpening | `/grill-me` |
 | An idea in a codebase still has human decisions | `/grill-with-docs` |
 | The destination is too foggy or large for one planning context | `/wayfinder` |

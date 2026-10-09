@@ -59,9 +59,11 @@ Completion criterion: you can name the repo's package manager, install command, 
 
 **Read the following references:** `references/control-loop-taxonomy.md`, `references/example-control-loop.md`, `references/agent-runner-templates.md`.
 
-This is an interview. Work through each component below. Start by asking the user questions about the set point. Proposing options grounded in Phase A and surfacing trade-offs rather than mandating any choice. Record the decisions as you go.
+This is an interview. Work through each component below, proposing options grounded in Phase A and surfacing trade-offs rather than mandating any choice. Record the decisions as you go.
 
-1. **Set point.** What property are we driving, and to what target? Examples: an invariant ("no procedures use the old pattern"), a threshold ("test coverage ≥ X in these packages"), or a direction ("reduce occurrences each run"). Also pin the **scope**: which directories/packages the loop may change, and which it may only read.
+1. **Set point and scope.** Begin with a focused `/grilling` interview about the property to drive, its target, and the boundaries for files the loop may change or only read. Bring repo-grounded options from Phase A; use the grill's one-question-at-a-time rounds and stop once the target and scope are settled. Examples include an invariant ("no procedures use the old pattern"), a threshold ("test coverage ≥ X in these packages"), or a direction ("reduce occurrences each run"). Carry the settled answers into the remaining design; do not reopen them without new evidence.
+
+   Use `/domain-modeling` alongside the interview only when project-specific vocabulary blocks a decision or a resolved term belongs in the project's `CONTEXT.md`. General control-theory terms do not by themselves warrant a domain-modeling session.
 
 2. **Sensor.** How will the loop measure the gap to the set point? Inspect the codebase and the user's existing tooling and propose the options that fit *their* stack — a static-analysis or lint tool, a structural/AST search, a test suite, a type checker, a telemetry or error query, a custom script, or even an agent-based check. Discuss the trade-offs that matter to them (stability, cost, repeatability, and whether the measurement can be silently disabled) instead of mandating any property. Aim for a measurement the controller can act on repeatably.
 
@@ -74,7 +76,7 @@ This is an interview. Work through each component below. Start by asking the use
 
 5. **Disturbances + dampener (offer).** Name what changes the system outside the loop (teammates shipping concurrently, dependency bumps, generated code). Then **offer** a dampener: a check that keeps the measured problem from getting worse while the scheduled loop chips away at it — for example a PR check that compares the sensor's output against a baseline and surfaces (or eventually blocks) newly introduced deviations. This is optional; some loops do not need one.
 
-Completion criterion: a short written design naming the set point, sensor, controller, actuator (agent + skill + validation), and disturbances/dampener — with each component something the user can run locally.
+Completion criterion: a short written design naming the agreed set point and change/read scope, sensor, controller, actuator (agent + skill + validation), and disturbances/dampener — with each component something the user can run locally.
 
 ### Phase C — Build the actuator skill
 
