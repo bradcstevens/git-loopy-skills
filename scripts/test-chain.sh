@@ -39,6 +39,10 @@ if [ "$1" = "api" ] && [ "$2" = "graphql" ]; then
     echo "gh unavailable" >&2
     exit 127
   fi
+  if [ "${CHAIN_TARGET_LOOKUP:-}" = "non-utf8" ]; then
+    printf '{"data":"\xff"}\n'
+    exit
+  fi
 
   query=""
   for argument in "$@"; do
@@ -67,6 +71,11 @@ for alias, number_text in re.findall(
         repository[alias] = {
             "__typename": "PullRequest",
             "closingIssuesReferences": {"nodes": [{"number": 15}]},
+        }
+    elif number == 7:
+        repository[alias] = {
+            "__typename": "PullRequest",
+            "closingIssuesReferences": {"nodes": []},
         }
     else:
         repository[alias] = None
@@ -1598,7 +1607,7 @@ if [ "$resolution_failure_status" -ne 1 ]; then
   err "completion with an unresolvable canonical target returned $resolution_failure_status instead of 1"
 fi
 assert_plan "completion with an unresolvable canonical target" "$resolution_failure_output" \
-  '{"continue":false,"outcome":"tracker-failed","target":"60","failure_kind":"transient","error":"target-resolution-failed","exit_status":1}'
+  '{"continue":false,"outcome":"tracker-failed","target":"60","failure_kind":"transient","error":"target-resolution-failed: gh unavailable","exit_status":1}'
 if ! python3 - "$resolution_failure_ledger" <<'PY'
 import json
 import sys
@@ -1619,6 +1628,10 @@ fi
 
 plan_ledger="$tmp_dir/.git-loopy/canonical-resolution-failure.jsonl"
 for resolution_failure in rate-limited unavailable; do
+  case "$resolution_failure" in
+    rate-limited) resolution_detail="API rate limit exceeded" ;;
+    unavailable) resolution_detail="gh unavailable" ;;
+  esac
   canonical_resolution_failure="$(
     PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
       CHAIN_TARGET_LOOKUP="$resolution_failure" \
@@ -1626,8 +1639,92 @@ for resolution_failure in rate-limited unavailable; do
         "$tmp_dir/plan-canonical-resolution-$resolution_failure"
   )"
   assert_plan "target resolution $resolution_failure" "$canonical_resolution_failure" \
-    '{"decision":"decline","reason":"target-resolution-failed","route":"/implement","target":"60"}'
+    '{"decision":"decline","reason":"target-resolution-failed","route":"/implement","target":"60","error":"'"$resolution_detail"'"}'
 done
+
+non_utf8_resolution="$(
+  PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+    CHAIN_TARGET_LOOKUP=non-utf8 \
+    plan /implement 60 AFK-safe implement-agent gpt-5.6-terra high default \
+      "$tmp_dir/plan-canonical-resolution-non-utf8"
+)"
+if ! python3 - "$non_utf8_resolution" <<'PY'
+import json
+import sys
+
+decision = json.loads(sys.argv[1])
+assert decision["decision"] == "decline", decision
+assert decision["reason"] == "target-resolution-failed", decision
+assert decision["error"].startswith("could not run gh:"), decision
+PY
+then
+  err "plan did not decline cleanly when the canonical lookup returned non-UTF-8 output"
+fi
+
+legacy_unresolvable_ledger="$tmp_dir/.git-loopy/legacy-unresolvable-subagents.jsonl"
+python3 - "$legacy_unresolvable_ledger" <<'PY'
+import json
+import os
+import sys
+
+ledger_path = sys.argv[1]
+os.makedirs(os.path.dirname(ledger_path), exist_ok=True)
+row = {
+    "route": "code-review",
+    "target": "7",
+    "session_id": "session-legacy-unresolvable",
+    "agent_id": "agent-legacy-unresolvable",
+    "agent_type": "code-review-agent",
+    "agent_name": "code-review-agent",
+    "spawn_time": "2026-08-22T00:00:00Z",
+    "worktree": "/tmp/legacy-unresolvable",
+    "chain_depth": 1,
+    "finish_time": "2026-08-22T00:10:00Z",
+    "outcome": "published",
+}
+with open(ledger_path, "w", encoding="utf-8") as ledger:
+    ledger.write(json.dumps(row, separators=(",", ":")) + "\n")
+PY
+plan_ledger="$legacy_unresolvable_ledger"
+unrelated_beside_legacy="$(
+  PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+    plan /code-review issue-unrelated-legacy AFK-safe code-review-agent \
+      gpt-5.6-sol high default "$tmp_dir/plan-unrelated-legacy"
+)"
+assert_plan "unrelated target beside an unresolvable legacy row" "$unrelated_beside_legacy" \
+  '{"decision":"spawn","route":"/code-review","target":"issue-unrelated-legacy","agent":"code-review-agent","model":"gpt-5.6-sol","effort":"high","context_tier":"default","worktree":"'"$tmp_dir"'/plan-unrelated-legacy"}'
+requested_unresolvable="$(
+  PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+    plan /code-review 7 AFK-safe code-review-agent \
+      gpt-5.6-sol high default "$tmp_dir/plan-requested-unresolvable"
+)"
+assert_plan "requested pull request without exactly one closing issue" "$requested_unresolvable" \
+  '{"decision":"decline","reason":"target-resolution-failed","route":"/code-review","target":"7","error":"pull request #7 does not close exactly one issue"}'
+
+resolution_reserve_ledger="$tmp_dir/.git-loopy/resolution-reserve.jsonl"
+resolution_reserve_worktree="$tmp_dir/worktree-resolution-reserve"
+resolution_reserve_error="$tmp_dir/resolution-reserve.err"
+if (
+  cd "$tmp_dir"
+  PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+    CHAIN_TARGET_LOOKUP=unavailable "$CHAIN" reserve --parent-pid "$$" \
+    --ledger "$resolution_reserve_ledger" \
+    --route implement \
+    --target 60 \
+    --spawn-time 2026-08-22T00:00:00Z \
+    --worktree "$resolution_reserve_worktree" \
+    --chain-depth 1 \
+    2>"$resolution_reserve_error"
+)
+then
+  err "reserve accepted a target whose canonical lookup failed"
+fi
+if ! grep -q "target-resolution-failed: 60: gh unavailable" "$resolution_reserve_error"; then
+  err "reserve did not name the target and cause of a failed canonical lookup"
+fi
+if [ -e "$resolution_reserve_ledger" ] || [ -e "$resolution_reserve_worktree" ]; then
+  err "reserve consumed a ledger row or worktree for a failed canonical lookup"
+fi
 
 complete_ledger="$tmp_dir/.git-loopy/complete-subagents.jsonl"
 reserve_and_bind \

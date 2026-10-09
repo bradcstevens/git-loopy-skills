@@ -8,12 +8,16 @@ import subprocess
 import sys
 import urllib.parse
 
+LOOKUP_TIMEOUT_SECONDS = 10
 
-def resolution_failure():
+
+def resolution_failure(detail):
     print(json.dumps({
         "canonical_target": None,
+        "detail": detail,
         "equivalent_targets": [],
         "error": "target-resolution-failed",
+        "tracker_target": None,
     }, separators=(",", ":"), sort_keys=True))
     raise SystemExit(0)
 
@@ -28,16 +32,16 @@ def repository_coordinates(repo_root):
         elif len(parts) == 2:
             owner, name = parts
         else:
-            resolution_failure()
+            resolution_failure(f"GH_REPO is not a repository: {repo}")
         return host, owner, name.removesuffix(".git")
 
     remote = subprocess.run(
         ["git", "-C", repo_root, "config", "--get", "remote.origin.url"],
         capture_output=True,
-        text=True,
+        encoding="utf-8",
     )
     if remote.returncode or not remote.stdout.strip():
-        resolution_failure()
+        resolution_failure("repository has no origin remote")
 
     remote_url = remote.stdout.strip()
     if "://" in remote_url:
@@ -47,21 +51,21 @@ def repository_coordinates(repo_root):
     else:
         match = re.fullmatch(r"(?:[^@]+@)?([^:]+):(.+)", remote_url)
         if not match:
-            resolution_failure()
+            resolution_failure(f"origin remote is not a repository URL: {remote_url}")
         host, path = match.groups()
 
     parts = path.strip("/").split("/")
     if len(parts) != 2:
-        resolution_failure()
+        resolution_failure(f"origin remote is not a repository URL: {remote_url}")
     owner, name = parts
     return host, owner, name.removesuffix(".git")
 
 
 def local_identity(target):
-    issue = re.fullmatch(r"issue-(\d+)", target, re.IGNORECASE)
+    issue = re.fullmatch(r"issue-([0-9]+)", target, re.IGNORECASE)
     if issue:
         return f"issue-{int(issue.group(1))}", None
-    if target.isdigit():
+    if re.fullmatch(r"[0-9]+", target):
         return None, int(target)
     return target, None
 
@@ -83,7 +87,7 @@ def load_targets(ledger_path, requested_target):
     return list(dict.fromkeys(targets))
 
 
-def lookup_numeric_targets(numbers, repo_root):
+def lookup_numeric_targets(numbers, repo_root, requested_number):
     if not numbers:
         return {}
 
@@ -122,21 +126,27 @@ def lookup_numeric_targets(numbers, repo_root):
             command,
             capture_output=True,
             cwd=repo_root,
-            text=True,
-            timeout=10,
+            encoding="utf-8",
+            timeout=LOOKUP_TIMEOUT_SECONDS,
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        resolution_failure()
+    except subprocess.TimeoutExpired:
+        resolution_failure(f"gh timed out after {LOOKUP_TIMEOUT_SECONDS} seconds")
+    except (OSError, UnicodeDecodeError) as error:
+        resolution_failure(f"could not run gh: {error}")
     if response.returncode:
-        resolution_failure()
+        resolution_failure(
+            response.stderr.strip()
+            or response.stdout.strip()
+            or f"gh exited with status {response.returncode}"
+        )
 
     try:
         payload = json.loads(response.stdout)
         repository = payload["data"]["repository"]
     except (json.JSONDecodeError, KeyError, TypeError):
-        resolution_failure()
+        resolution_failure("gh returned invalid GraphQL data")
     if payload.get("errors") or not isinstance(repository, dict):
-        resolution_failure()
+        resolution_failure("gh returned GraphQL errors")
 
     identities = {}
     for number, alias in aliases.items():
@@ -145,22 +155,22 @@ def lookup_numeric_targets(numbers, repo_root):
             identities[number] = f"issue-{number}"
             continue
         if not isinstance(node, dict):
-            resolution_failure()
+            resolution_failure(f"gh returned invalid data for #{number}")
         if node.get("__typename") == "Issue":
             issue_number = node.get("number")
             if not isinstance(issue_number, int):
-                resolution_failure()
+                resolution_failure(f"gh returned invalid data for #{number}")
             identities[number] = f"issue-{issue_number}"
             continue
         if node.get("__typename") != "PullRequest":
-            resolution_failure()
+            resolution_failure(f"#{number} is neither an issue nor a pull request")
 
         references = node.get("closingIssuesReferences")
         if not isinstance(references, dict):
-            resolution_failure()
+            resolution_failure(f"gh returned invalid data for #{number}")
         nodes = references.get("nodes")
         if not isinstance(nodes, list):
-            resolution_failure()
+            resolution_failure(f"gh returned invalid data for #{number}")
         issue_numbers = {
             reference.get("number")
             for reference in nodes
@@ -168,7 +178,14 @@ def lookup_numeric_targets(numbers, repo_root):
             and isinstance(reference.get("number"), int)
         }
         if len(issue_numbers) != 1:
-            resolution_failure()
+            # An older ledger row naming such a pull request keeps its own spelling,
+            # so one unresolvable historical row cannot refuse every other target.
+            if number != requested_number:
+                identities[number] = str(number)
+                continue
+            resolution_failure(
+                f"pull request #{number} does not close exactly one issue"
+            )
         identities[number] = f"issue-{issue_numbers.pop()}"
 
     return identities
@@ -188,7 +205,10 @@ def main():
         if lookup_number is not None:
             lookup_numbers.add(lookup_number)
 
-    looked_up_identities = lookup_numeric_targets(lookup_numbers, os.getcwd())
+    _, requested_number = local_identity(requested_target)
+    looked_up_identities = lookup_numeric_targets(
+        lookup_numbers, os.getcwd(), requested_number
+    )
     resolved = {}
     for target in targets:
         identity = local_identities[target]
@@ -205,10 +225,15 @@ def main():
             if identity == canonical_target
         ),
     })
+    # `gh issue view` rejects the `issue-N` spelling, so the tracker is asked
+    # about the bare issue number.
+    issue = re.fullmatch(r"issue-([0-9]+)", canonical_target)
     print(json.dumps({
         "canonical_target": canonical_target,
+        "detail": None,
         "equivalent_targets": equivalent_targets,
         "error": None,
+        "tracker_target": issue.group(1) if issue else canonical_target,
     }, separators=(",", ":"), sort_keys=True))
 
 

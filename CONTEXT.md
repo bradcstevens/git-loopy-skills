@@ -90,6 +90,11 @@ reclaims it only once that parent is proven gone, never on age alone.
 A target held by an active bound run, where routing a second agent would duplicate or corrupt the
 work. A binding whose reserving parent is gone is an **abandoned run**, not in flight.
 
+**Canonical target**:
+The one identity every spelling of a workstream's target resolves to before a guard compares it:
+`15`, `issue-15`, and a pull request number that closes issue 15 are all `issue-15`. A row written
+under an older spelling is resolved on read rather than rewritten.
+
 ### Worktrees and sweeping
 
 **Stale worktree**:

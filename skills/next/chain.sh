@@ -148,16 +148,6 @@ resolve_target_context() {
   python3 "$target_identity" "$ledger" "$1"
 }
 
-# `gh issue view` rejects the `issue-N` spelling a canonical target uses, so the
-# tracker is always asked about the bare issue number.
-tracker_target() {
-  if [[ "$1" =~ ^issue-[0-9]+$ ]]; then
-    printf '%s\n' "${1#issue-}"
-  else
-    printf '%s\n' "$1"
-  fi
-}
-
 target_context_field() {
   python3 -c 'import json, sys; print(json.load(sys.stdin)[sys.argv[1]] or "")' "$1" <<< "$2"
 }
@@ -595,7 +585,7 @@ plan() {
     target_context="$(resolve_target_context "$target")" || return $?
     if [ -z "$(target_context_field error "$target_context")" ] &&
       target_state="$(target_resolution \
-        "$(tracker_target "$(target_context_field canonical_target "$target_context")")" \
+        "$(target_context_field tracker_target "$target_context")" \
         "$repo_root")"
     then
       target_resolved=1
@@ -655,6 +645,7 @@ elif target_context and target_context["error"]:
         "reason": target_context["error"],
         "route": route,
         "target": target,
+        "error": target_context["detail"],
     }
 elif target_state is None:
     decision = {
@@ -985,11 +976,11 @@ reserve() {
   target_context="$(resolve_target_context "$target")" || return $?
   target_error="$(target_context_field error "$target_context")"
   if [ -n "$target_error" ]; then
-    echo "error: $target_error: $target" >&2
+    echo "error: $target_error: $target: $(target_context_field detail "$target_context")" >&2
     exit 1
   fi
   canonical_target="$(target_context_field canonical_target "$target_context")"
-  if ! target_state="$(target_resolution "$(tracker_target "$canonical_target")" "$repo_root")"; then
+  if ! target_state="$(target_resolution "$(target_context_field tracker_target "$target_context")" "$repo_root")"; then
     if [ -z "$target_state" ]; then
       echo "error: tracker-unavailable: $target: tracker target resolution failed without a result" >&2
       exit 1
@@ -1225,7 +1216,6 @@ complete() {
 import datetime
 import json
 import os
-import re
 import subprocess
 import sys
 
@@ -1395,8 +1385,12 @@ def resolve_tracker_target():
     except (OSError, UnicodeDecodeError, subprocess.TimeoutExpired) as error:
         return None, f"could not resolve target: {error}"
     if resolution.returncode:
-        message = resolution.stderr.strip()
-        return None, message or f"target resolver exited with status {resolution.returncode}"
+        message = resolution.stderr.strip().splitlines()
+        return None, (
+            message[-1]
+            if message
+            else f"target resolver exited with status {resolution.returncode}"
+        )
     try:
         canonical = json.loads(resolution.stdout)
     except json.JSONDecodeError as error:
@@ -1404,13 +1398,12 @@ def resolve_tracker_target():
     if not isinstance(canonical, dict):
         return None, "target resolver returned invalid data"
     if canonical.get("error"):
-        return None, str(canonical["error"])
-    canonical_target = canonical.get("canonical_target")
-    if not isinstance(canonical_target, str) or not canonical_target:
-        return None, "target resolver returned no canonical target"
-    if re.fullmatch(r"issue-\d+", canonical_target):
-        return canonical_target.removeprefix("issue-"), None
-    return canonical_target, None
+        detail = canonical.get("detail")
+        return None, f"{canonical['error']}: {detail}" if detail else str(canonical["error"])
+    tracker_target = canonical.get("tracker_target")
+    if not isinstance(tracker_target, str) or not tracker_target:
+        return None, "target resolver returned no tracker target"
+    return tracker_target, None
 
 
 tracker_target, resolution_error = resolve_tracker_target()
