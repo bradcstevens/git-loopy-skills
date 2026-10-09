@@ -300,14 +300,15 @@ pause_claim() {
 
 remove_worktree() {
   local worktree="$1" force="${2:-}"
-  local ledger_root marker saved_marker="" removed=0
+  local ledger_root marker marker_backup="" removed=0
 
   ledger_root="$(repository_root)"
   if [ -e "$worktree" ]; then
     marker="$worktree/.git-loopy/worktree-owner"
     # The marker is untracked bookkeeping a plain `git worktree remove` would refuse over.
     if [ -f "$marker" ]; then
-      saved_marker="$(cat "$marker")"
+      marker_backup="$(mktemp)"
+      cp "$marker" "$marker_backup"
     fi
     rm -f "$marker"
     rmdir "$worktree/.git-loopy" 2>/dev/null || true
@@ -317,12 +318,14 @@ remove_worktree() {
       git -C "$ledger_root" worktree remove "$worktree" && removed=1
     fi
     if [ "$removed" -eq 0 ]; then
-      # A worktree that stays on disk must stay vouched for.
-      if [ -n "$saved_marker" ] && [ -d "$worktree" ]; then
-        write_marker "$worktree" "${saved_marker%%$'\t'*}" "${saved_marker#*$'\t'}" || true
+      # A worktree that stays on disk must stay vouched for, byte for byte.
+      if [ -n "$marker_backup" ] && [ -d "$worktree" ]; then
+        mkdir -p "$worktree/.git-loopy" && cp "$marker_backup" "$marker" || true
       fi
+      rm -f "$marker_backup"
       return 1
     fi
+    rm -f "$marker_backup"
   else
     git -C "$ledger_root" worktree prune
   fi

@@ -175,5 +175,6 @@ was originally stated, so they are listed here rather than left to be found by d
   records only the owning process and its start time, not the route and target, so attribution
   still waits on #47. The prompt convention is one `claim --create-branch` rather than a second
   command beside `git worktree add`, because a marker written in a separate command can be lost
-  between the two. A `git worktree add` that fails now leaves no ledger row and no halted target,
-  where it used to close the row as failed; the transaction either lands whole or not at all.
+  between the two. A `git worktree add` that fails now leaves no ledger row, and so no failed
+  target, where it used to close the row as failed; the transaction either lands whole or not at
+  all.
