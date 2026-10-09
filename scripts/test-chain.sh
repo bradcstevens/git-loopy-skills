@@ -3,12 +3,18 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 CHAIN="$REPO/skills/next/chain.sh"
+RECORD="$REPO/scripts/review-clean-record.py"
 tmp_dir="$(python3 -c 'import os; import sys; print(os.path.realpath(sys.argv[1]))' "$(mktemp -d)")"
 fail=0
 
 err() {
   echo "error: $1" >&2
   fail=1
+}
+
+worktree_count() {
+  git -C "$1" worktree list --porcelain |
+    awk '/^worktree / { count += 1 } END { print count + 0 }'
 }
 
 cleanup() {
@@ -23,11 +29,256 @@ git -C "$tmp_dir" -c user.name=test -c user.email=test@example.com commit --quie
 ledger="$tmp_dir/.git-loopy/subagents.jsonl"
 export CHAIN_RESERVATION_STALE_SECONDS=999999999
 
+fake_bin="$tmp_dir/bin"
+mkdir -p "$fake_bin"
+cat > "$fake_bin/gh" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [ "$1" = "api" ] && [ "$2" = "graphql" ]; then
+  if [ "${CHAIN_TARGET_LOOKUP:-}" = "rate-limited" ]; then
+    echo "API rate limit exceeded" >&2
+    exit 1
+  fi
+  if [ "${CHAIN_TARGET_LOOKUP:-}" = "unavailable" ]; then
+    echo "gh unavailable" >&2
+    exit 127
+  fi
+  if [ "${CHAIN_TARGET_LOOKUP:-}" = "non-utf8" ]; then
+    printf '{"data":"\xff"}\n'
+    exit
+  fi
+
+  query=""
+  for argument in "$@"; do
+    case "$argument" in
+      query=*) query="${argument#query=}" ;;
+    esac
+  done
+  if [ -n "${CHAIN_GH_LOG:-}" ]; then
+    printf '%s\n' "$query" >> "$CHAIN_GH_LOG"
+  fi
+
+  python3 - "$query" <<'PY'
+import json
+import re
+import sys
+
+repository = {}
+for alias, number_text in re.findall(
+    r"(target\d+):issueOrPullRequest\(number:(\d+)\)",
+    sys.argv[1],
+):
+    number = int(number_text)
+    if number in {15, 16}:
+        repository[alias] = {"__typename": "Issue", "number": number}
+    elif number == 60:
+        repository[alias] = {
+            "__typename": "PullRequest",
+            "closingIssuesReferences": {"nodes": [{"number": 15}]},
+        }
+    elif number == 7:
+        repository[alias] = {
+            "__typename": "PullRequest",
+            "closingIssuesReferences": {"nodes": []},
+        }
+    else:
+        repository[alias] = None
+
+print(json.dumps({"data": {"repository": repository}}, separators=(",", ":")))
+PY
+  exit
+fi
+
+if [ "$1" != "issue" ] || [ "$2" != "view" ] || [ "$4" != "--json" ]; then
+  echo "unexpected gh invocation: $*" >&2
+  exit 1
+fi
+if [ -n "${CHAIN_EXPECT_ISSUE:-}" ] && [ "$3" != "$CHAIN_EXPECT_ISSUE" ]; then
+  echo "expected issue $CHAIN_EXPECT_ISSUE, got $3" >&2
+  exit 1
+fi
+
+case "${CHAIN_TRACKER_MODE:-resolved}" in
+  resolved) ;;
+  unresolvable)
+    echo "GraphQL: Could not resolve to an issue or pull request with the number of $3. (repository.issue)" >&2
+    exit 1
+    ;;
+  not-found)
+    echo "GraphQL: Could not resolve to an issue or pull request with the number of $3. (repository.issue)" >&2
+    exit 1
+    ;;
+  ambiguous-404)
+    echo "HTTP 404: resource not found" >&2
+    exit 1
+    ;;
+  malformed-target)
+    echo "malformed target: $3" >&2
+    exit 1
+    ;;
+  rate-limit)
+    echo "HTTP 403: API rate limit exceeded for user." >&2
+    exit 1
+    ;;
+  http-429)
+    echo "HTTP 429: too many requests" >&2
+    exit 1
+    ;;
+  server-failure)
+    echo "HTTP 503: service unavailable" >&2
+    exit 1
+    ;;
+  transport-failure)
+    echo "tracker transport failed for $3" >&2
+    exit 23
+    ;;
+  hang)
+    exec sleep 120
+    ;;
+  timeout)
+    echo "request timed out while resolving $3" >&2
+    exit 1
+    ;;
+  *)
+    echo "unexpected tracker mode: $CHAIN_TRACKER_MODE" >&2
+    exit 1
+    ;;
+esac
+
+case "$5" in
+  number)
+    case "${CHAIN_TARGET_RESPONSE:-valid}" in
+      valid) printf '{"number":1}\n' ;;
+      string-number) printf '{"number":"1"}\n' ;;
+      malformed-json) printf '{not-json}\n' ;;
+      non-utf8) printf '{"number":1,"title":"\xff"}\n' ;;
+      *)
+        echo "unexpected target response: $CHAIN_TARGET_RESPONSE" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+  comments)
+    case "${CHAIN_COMMENT_RESPONSE:-valid}" in
+      valid)
+        if [ "${CHAIN_EVIDENCE:-}" = "published" ]; then
+          printf '%s\n' '{"comments":[{"createdAt":"2026-08-22T00:10:00Z","body":"Evidence comment"}]}'
+        else
+          printf '%s\n' '{"comments":[]}'
+        fi
+        ;;
+      invalid-entry) printf '%s\n' '{"comments":["not-an-object"]}' ;;
+      invalid-timestamp) printf '%s\n' '{"comments":[{"createdAt":"not-a-time"}]}' ;;
+      non-utf8) printf '{"comments":[{"createdAt":"2026-08-22T00:10:00Z","body":"\xff"}]}\n' ;;
+      *)
+        echo "unexpected comment response: $CHAIN_COMMENT_RESPONSE" >&2
+        exit 1
+        ;;
+    esac
+    ;;
+  *)
+    echo "unexpected gh invocation: $*" >&2
+    exit 1
+    ;;
+esac
+SH
+chmod +x "$fake_bin/gh"
+export PATH="$fake_bin:$PATH"
+
+PYTHONPATH="$REPO/skills/next" python3 - <<'PY'
+import subprocess
+from unittest.mock import patch
+
+from tracker_failure import classify_tracker_failure, run_tracker
+
+for message in (
+    "HTTP 403: API rate limit exceeded for user.",
+    "HTTP 429: too many requests",
+    "HTTP 503: service unavailable",
+    "HTTP 404: resource not found",
+    "dial tcp: lookup github.com: no such host",
+    "request timed out",
+):
+    assert classify_tracker_failure(message) == "transient", message
+
+for message in (
+    "GraphQL: Could not resolve to an issue or pull request with the number of 99999. (repository.issue)",
+    "malformed target: issue-?",
+):
+    assert classify_tracker_failure(message) == "permanent", message
+
+_, error, exit_status, failure_kind = run_tracker(
+    ["/definitely-missing-git-loopy-tracker"],
+    "/",
+)
+assert error and error.startswith("could not run tracker:")
+assert exit_status == 1
+assert failure_kind == "transient"
+
+with patch(
+    "tracker_failure.subprocess.run",
+    side_effect=subprocess.TimeoutExpired("gh", 30),
+) as tracker_run:
+    _, error, exit_status, failure_kind = run_tracker(["gh"], "/")
+assert error == "tracker timed out after 30 seconds"
+assert exit_status == 124
+assert failure_kind == "transient"
+assert tracker_run.call_args.kwargs["timeout"] == 30
+PY
+
 timezone_stable_start="$(TZ=UTC ps -o lstart= -p "$$" | xargs)"
 if [ "$(TZ=America/Denver python3 "$REPO/skills/next/claim-recovery.py" owner-gone "$$" "$timezone_stable_start")" != "false" ]; then
   err "claim recovery treated a live parent as gone after a timezone change"
 fi
 
+claim_ps_bin="$tmp_dir/claim-ps-bin"
+mkdir -p "$claim_ps_bin"
+cat > "$claim_ps_bin/ps" <<'SH'
+#!/usr/bin/env bash
+set -euo pipefail
+
+case "$CLAIM_PS_MODE" in
+  failure) exit 1 ;;
+  empty) exit 0 ;;
+  malformed) echo "not a valid process start" ;;
+  impossible) echo "Foo Bar 99 99:99:99 9999" ;;
+  inconsistent) echo "Tue Jan 01 00:00:00 2001" ;;
+  *)
+    echo "unexpected ps mode: $CLAIM_PS_MODE" >&2
+    exit 2
+    ;;
+esac
+SH
+chmod +x "$claim_ps_bin/ps"
+
+for claim_ps_mode in failure empty malformed impossible inconsistent; do
+  if [ "$(
+    PATH="$claim_ps_bin:$PATH" CLAIM_PS_MODE="$claim_ps_mode" \
+      python3 "$REPO/skills/next/claim-recovery.py" \
+        owner-gone "$$" "$timezone_stable_start"
+  )" != "false" ]; then
+    err "claim recovery treated a live parent as gone after a $claim_ps_mode ps result"
+  fi
+done
+
+if [ "$(
+  python3 "$REPO/skills/next/claim-recovery.py" \
+    owner-gone "$$" "not a recorded process start"
+)" != "false" ]; then
+  err "claim recovery treated a malformed recorded parent identity as pid reuse"
+fi
+
+if [ "$(
+  python3 "$REPO/skills/next/claim-recovery.py" \
+    owner-gone "$$" "Tue Jan 01 00:00:00 2001"
+)" != "false" ]; then
+  err "claim recovery treated an inconsistent recorded parent identity as pid reuse"
+fi
+
+# The routing agent owns the background `task` call between these two commands.
+# This exercises chain.sh's durable CLI seam: reserve happens before launch and
+# bind accepts the runtime identity the launch returns.
 reserve_and_bind() {
   local route="" target="" session_id="" agent_id="" agent_type="" agent_name=""
   local spawn_time="" worktree="" chain_depth="" ledger_path=""
@@ -66,6 +317,154 @@ reserve_and_bind() {
 
 if [ -e "$ledger" ]; then
   err "ledger exists before the first record"
+fi
+
+unresolvable_reserve_ledger="$tmp_dir/.git-loopy/unresolvable-reserve.jsonl"
+unresolvable_reserve_worktree="$tmp_dir/worktree-unresolvable-reserve"
+unresolvable_reserve_error="$tmp_dir/unresolvable-reserve.err"
+if (
+  cd "$tmp_dir"
+  CHAIN_TRACKER_MODE=unresolvable "$CHAIN" reserve --parent-pid "$$" \
+    --ledger "$unresolvable_reserve_ledger" \
+    --route implement \
+    --target issue-unresolvable-reserve \
+    --spawn-time 2026-08-22T00:00:00Z \
+    --worktree "$unresolvable_reserve_worktree" \
+    --chain-depth 1 \
+    2>"$unresolvable_reserve_error"
+)
+then
+  err "reserve accepted an unresolvable target"
+fi
+if ! grep -q \
+  "target-unresolvable: issue-unresolvable-reserve: GraphQL: Could not resolve to an issue or pull request with the number of issue-unresolvable-reserve. (repository.issue)" \
+  "$unresolvable_reserve_error"
+then
+  err "reserve did not report the rejected target and cause"
+fi
+if [ -e "$unresolvable_reserve_ledger" ]; then
+  err "reserve wrote a ledger row for an unresolvable target"
+fi
+if [ -e "$unresolvable_reserve_worktree" ]; then
+  err "reserve created a worktree for an unresolvable target"
+fi
+
+rate_limit_reserve_ledger="$tmp_dir/.git-loopy/rate-limit-reserve.jsonl"
+rate_limit_reserve_worktree="$tmp_dir/worktree-rate-limit-reserve"
+rate_limit_reserve_error="$tmp_dir/rate-limit-reserve.err"
+if (
+  cd "$tmp_dir"
+  CHAIN_TRACKER_MODE=rate-limit "$CHAIN" reserve --parent-pid "$$" \
+    --ledger "$rate_limit_reserve_ledger" \
+    --route implement \
+    --target issue-rate-limit-reserve \
+    --spawn-time 2026-08-22T00:00:00Z \
+    --worktree "$rate_limit_reserve_worktree" \
+    --chain-depth 1 \
+    2>"$rate_limit_reserve_error"
+)
+then
+  err "reserve accepted a target while the tracker was unavailable"
+fi
+if ! grep -q \
+  "tracker-unavailable: issue-rate-limit-reserve: HTTP 403: API rate limit exceeded for user." \
+  "$rate_limit_reserve_error"
+then
+  err "reserve misclassified a rate limit as an unresolvable target"
+fi
+if [ -e "$rate_limit_reserve_ledger" ]; then
+  err "reserve wrote a ledger row while the tracker was unavailable"
+fi
+if [ -e "$rate_limit_reserve_worktree" ]; then
+  err "reserve created a worktree while the tracker was unavailable"
+fi
+
+missing_tracker_reserve_ledger="$tmp_dir/.git-loopy/missing-tracker-reserve.jsonl"
+missing_tracker_reserve_worktree="$tmp_dir/worktree-missing-tracker-reserve"
+missing_tracker_reserve_error="$tmp_dir/missing-tracker-reserve.err"
+if (
+  cd "$tmp_dir"
+  CHAIN_TRACKER_BIN=/definitely-missing-git-loopy-tracker \
+    "$CHAIN" reserve --parent-pid "$$" \
+    --ledger "$missing_tracker_reserve_ledger" \
+    --route implement \
+    --target issue-missing-tracker-reserve \
+    --spawn-time 2026-08-22T00:00:00Z \
+    --worktree "$missing_tracker_reserve_worktree" \
+    --chain-depth 1 \
+    2>"$missing_tracker_reserve_error"
+)
+then
+  err "reserve accepted a target when the tracker executable was missing"
+fi
+if ! grep -q \
+  "tracker-unavailable: issue-missing-tracker-reserve: could not run tracker:" \
+  "$missing_tracker_reserve_error"
+then
+  err "reserve did not classify a missing tracker executable as transient"
+fi
+if [ -e "$missing_tracker_reserve_ledger" ]; then
+  err "reserve wrote a ledger row when the tracker executable was missing"
+fi
+if [ -e "$missing_tracker_reserve_worktree" ]; then
+  err "reserve created a worktree when the tracker executable was missing"
+fi
+
+malformed_target_reserve_ledger="$tmp_dir/.git-loopy/malformed-target-reserve.jsonl"
+malformed_target_reserve_worktree="$tmp_dir/worktree-malformed-target-reserve"
+malformed_target_reserve_error="$tmp_dir/malformed-target-reserve.err"
+if (
+  cd "$tmp_dir"
+  CHAIN_TARGET_RESPONSE=string-number "$CHAIN" reserve --parent-pid "$$" \
+    --ledger "$malformed_target_reserve_ledger" \
+    --route implement \
+    --target issue-malformed-target-reserve \
+    --spawn-time 2026-08-22T00:00:00Z \
+    --worktree "$malformed_target_reserve_worktree" \
+    --chain-depth 1 \
+    2>"$malformed_target_reserve_error"
+)
+then
+  err "reserve accepted malformed successful target data"
+fi
+if ! grep -q \
+  "tracker-unavailable: issue-malformed-target-reserve: tracker returned target data without a positive integer number" \
+  "$malformed_target_reserve_error"
+then
+  err "reserve did not classify malformed successful target data as transient"
+fi
+if [ -e "$malformed_target_reserve_ledger" ]; then
+  err "reserve wrote a ledger row for malformed successful target data"
+fi
+if [ -e "$malformed_target_reserve_worktree" ]; then
+  err "reserve created a worktree for malformed successful target data"
+fi
+
+non_utf8_reserve_ledger="$tmp_dir/.git-loopy/non-utf8-reserve.jsonl"
+non_utf8_reserve_worktree="$tmp_dir/worktree-non-utf8-reserve"
+non_utf8_reserve_error="$tmp_dir/non-utf8-reserve.err"
+if (
+  cd "$tmp_dir"
+  CHAIN_TARGET_RESPONSE=non-utf8 "$CHAIN" reserve --parent-pid "$$" \
+    --ledger "$non_utf8_reserve_ledger" \
+    --route implement \
+    --target issue-non-utf8-reserve \
+    --spawn-time 2026-08-22T00:00:00Z \
+    --worktree "$non_utf8_reserve_worktree" \
+    --chain-depth 1 \
+    2>"$non_utf8_reserve_error"
+)
+then
+  err "reserve accepted non-UTF-8 tracker output"
+fi
+if ! grep -q \
+  "tracker-unavailable: issue-non-utf8-reserve: tracker output was not valid UTF-8" \
+  "$non_utf8_reserve_error"
+then
+  err "reserve did not report non-UTF-8 tracker output as a transient failure"
+fi
+if [ -e "$non_utf8_reserve_ledger" ] || [ -e "$non_utf8_reserve_worktree" ]; then
+  err "reserve consumed a ledger row or worktree for non-UTF-8 tracker output"
 fi
 
 (
@@ -393,6 +792,94 @@ then
   err "bind did not attach the runtime identity to the reservation"
 fi
 
+missing_session_ledger="$tmp_dir/.git-loopy/missing-session-subagents.jsonl"
+if (
+  cd "$tmp_dir"
+  "$CHAIN" reserve --parent-pid "$$" \
+    --ledger "$missing_session_ledger" \
+    --route code-review \
+    --target issue-missing-session \
+    --spawn-time 2026-08-22T00:02:00Z \
+    --worktree "$tmp_dir" \
+    --chain-depth 1 \
+    --in-place \
+    2>/dev/null
+)
+then
+  err "in-place reserve accepted a missing deterministic session"
+fi
+if [ -e "$missing_session_ledger" ]; then
+  err "in-place reserve wrote a row without a deterministic session"
+fi
+
+in_place_ledger="$tmp_dir/.git-loopy/in-place-subagents.jsonl"
+worktree_count_before_in_place="$(
+  worktree_count "$tmp_dir"
+)"
+(
+  cd "$tmp_dir"
+  "$CHAIN" reserve --parent-pid "$$" \
+    --ledger "$in_place_ledger" \
+    --route code-review \
+    --target issue-serial-hop \
+    --spawn-time 2026-08-22T00:02:00Z \
+    --worktree "$tmp_dir" \
+    --chain-depth 1 \
+    --session-id session-serial-hop \
+    --in-place
+)
+if ! python3 - "$in_place_ledger" "$$" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger]
+
+# The reserving parent's identity is recorded on every reservation; its values vary by run.
+assert len(rows) == 1
+assert rows[0].pop("parent_pid") == int(sys.argv[2])
+assert rows[0].pop("parent_start")
+assert rows == [{
+    "route": "code-review",
+    "target": "issue-serial-hop",
+    "spawn_time": "2026-08-22T00:02:00Z",
+    "worktree": sys.argv[1].replace("/.git-loopy/in-place-subagents.jsonl", ""),
+    "chain_depth": 1,
+    "finish_time": "",
+    "outcome": "",
+    "session_id": "session-serial-hop",
+    "in_place": True,
+}]
+PY
+then
+  err "in-place reserve did not persist the deterministic session before spawn"
+fi
+if [ "$(worktree_count "$tmp_dir")" -ne "$worktree_count_before_in_place" ]; then
+  err "in-place reserve created a linked worktree"
+fi
+cp "$in_place_ledger" "$in_place_ledger.before-mismatched-bind"
+if "$CHAIN" bind \
+  --ledger "$in_place_ledger" \
+  --worktree "$tmp_dir" \
+  --session-id session-wrong \
+  --agent-id agent-serial-hop \
+  --agent-type code-review-agent \
+  --agent-name code-review-agent \
+  2>/dev/null
+then
+  err "bind accepted a session identity different from the reservation"
+fi
+if ! cmp -s "$in_place_ledger.before-mismatched-bind" "$in_place_ledger"; then
+  err "mismatched session binding modified the reservation"
+fi
+"$CHAIN" bind \
+  --ledger "$in_place_ledger" \
+  --worktree "$tmp_dir" \
+  --session-id session-serial-hop \
+  --agent-id agent-serial-hop \
+  --agent-type code-review-agent \
+  --agent-name code-review-agent
+
 reserve_and_bind \
   --ledger "$ledger" \
   --route code-review \
@@ -527,6 +1014,131 @@ assert_plan "no ready action" "$exhausted_output" \
   '{"decision":"exhausted","reason":"no-ready-action"}'
 if [ -e "$exhausted_ledger" ]; then
   err "no ready action created a ledger or retried a route"
+fi
+
+unresolvable_plan_worktree="$tmp_dir/worktree-unresolvable-plan"
+unresolvable_plan="$(
+  CHAIN_TRACKER_MODE=unresolvable "$CHAIN" plan \
+    --ledger "$plan_ledger" \
+    --route /implement \
+    --target issue-unresolvable-plan \
+    --safety AFK-safe \
+    --agent implement-agent \
+    --model gpt-5.6-terra \
+    --effort high \
+    --context-tier default \
+    --worktree "$unresolvable_plan_worktree"
+)"
+assert_plan "unresolvable target" "$unresolvable_plan" \
+  '{"decision":"decline","reason":"target-unresolvable","route":"/implement","target":"issue-unresolvable-plan","error":"GraphQL: Could not resolve to an issue or pull request with the number of issue-unresolvable-plan. (repository.issue)"}'
+if [ -e "$plan_ledger" ]; then
+  err "plan wrote a ledger row for an unresolvable target"
+fi
+if [ -e "$unresolvable_plan_worktree" ]; then
+  err "plan created a worktree for an unresolvable target"
+fi
+
+ambiguous_404_plan="$(
+  CHAIN_TRACKER_MODE=ambiguous-404 "$CHAIN" plan \
+    --ledger "$plan_ledger" \
+    --route /implement \
+    --target issue-ambiguous-404 \
+    --safety AFK-safe \
+    --agent implement-agent \
+    --model gpt-5.6-terra \
+    --effort high \
+    --context-tier default \
+    --worktree "$tmp_dir/worktree-ambiguous-404"
+)"
+assert_plan "ambiguous 404" "$ambiguous_404_plan" \
+  '{"decision":"decline","reason":"tracker-unavailable","route":"/implement","target":"issue-ambiguous-404","error":"HTTP 404: resource not found"}'
+
+rate_limit_plan_worktree="$tmp_dir/worktree-rate-limit-plan"
+rate_limit_plan="$(
+  CHAIN_TRACKER_MODE=rate-limit "$CHAIN" plan \
+    --ledger "$plan_ledger" \
+    --route /implement \
+    --target issue-rate-limit-plan \
+    --safety AFK-safe \
+    --agent implement-agent \
+    --model gpt-5.6-terra \
+    --effort high \
+    --context-tier default \
+    --worktree "$rate_limit_plan_worktree"
+)"
+assert_plan "tracker-unavailable target" "$rate_limit_plan" \
+  '{"decision":"decline","reason":"tracker-unavailable","route":"/implement","target":"issue-rate-limit-plan","error":"HTTP 403: API rate limit exceeded for user."}'
+if [ -e "$plan_ledger" ]; then
+  err "plan wrote a ledger row while the tracker was unavailable"
+fi
+if [ -e "$rate_limit_plan_worktree" ]; then
+  err "plan created a worktree while the tracker was unavailable"
+fi
+
+missing_tracker_plan_worktree="$tmp_dir/worktree-missing-tracker-plan"
+missing_tracker_plan="$(
+  CHAIN_TRACKER_BIN=/definitely-missing-git-loopy-tracker "$CHAIN" plan \
+    --ledger "$plan_ledger" \
+    --route /implement \
+    --target issue-missing-tracker-plan \
+    --safety AFK-safe \
+    --agent implement-agent \
+    --model gpt-5.6-terra \
+    --effort high \
+    --context-tier default \
+    --worktree "$missing_tracker_plan_worktree"
+)"
+if ! python3 - "$missing_tracker_plan" <<'PY'
+import json
+import sys
+
+decision = json.loads(sys.argv[1])
+assert decision["decision"] == "decline"
+assert decision["reason"] == "tracker-unavailable"
+assert decision["target"] == "issue-missing-tracker-plan"
+assert decision["error"].startswith("could not run tracker:")
+PY
+then
+  err "plan did not fail closed when the tracker executable was missing"
+fi
+if [ -e "$plan_ledger" ]; then
+  err "plan wrote a ledger row when the tracker executable was missing"
+fi
+if [ -e "$missing_tracker_plan_worktree" ]; then
+  err "plan created a worktree when the tracker executable was missing"
+fi
+
+malformed_target_plan_worktree="$tmp_dir/worktree-malformed-target-plan"
+malformed_target_plan="$(
+  CHAIN_TARGET_RESPONSE=malformed-json "$CHAIN" plan \
+    --ledger "$plan_ledger" \
+    --route /implement \
+    --target issue-malformed-target-plan \
+    --safety AFK-safe \
+    --agent implement-agent \
+    --model gpt-5.6-terra \
+    --effort high \
+    --context-tier default \
+    --worktree "$malformed_target_plan_worktree"
+)"
+if ! python3 - "$malformed_target_plan" <<'PY'
+import json
+import sys
+
+decision = json.loads(sys.argv[1])
+assert decision["decision"] == "decline"
+assert decision["reason"] == "tracker-unavailable"
+assert decision["target"] == "issue-malformed-target-plan"
+assert decision["error"].startswith("tracker returned invalid target data:")
+PY
+then
+  err "plan did not classify malformed successful target JSON as transient"
+fi
+if [ -e "$plan_ledger" ]; then
+  err "plan wrote a ledger row for malformed successful target JSON"
+fi
+if [ -e "$malformed_target_plan_worktree" ]; then
+  err "plan created a worktree for malformed successful target JSON"
 fi
 
 collision_ledger="$tmp_dir/.git-loopy/collision-subagents.jsonl"
@@ -776,11 +1388,116 @@ other_candidate="$(plan /code-review issue-7 AFK-safe code-review-agent gpt-5.6-
 assert_plan "other candidate after collision" "$other_candidate" \
   '{"decision":"spawn","route":"/code-review","target":"issue-7","agent":"code-review-agent","model":"gpt-5.6-sol","effort":"xhigh","context_tier":"default","worktree":"'"$tmp_dir"'/plan-other-candidate"}'
 
-fake_bin="$tmp_dir/bin"
-mkdir -p "$fake_bin"
-cat > "$fake_bin/gh" <<'SH'
+gate_bin="$tmp_dir/gate-bin"
+mkdir -p "$gate_bin"
+gate_head="0123456789abcdef0123456789abcdef01234567"
+stale_gate_head="fedcba9876543210fedcba9876543210fedcba98"
+cat > "$gate_bin/gh" <<'SH'
 #!/usr/bin/env bash
 set -euo pipefail
+
+if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
+  case "${CHAIN_GATE_CASE:-allow}" in
+    allow|no-review|malformed-review|stale-review|malformed-ticket-json|non-object-ticket|malformed-ticket-schema|ticket-unavailable)
+      printf '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"%s","statusCheckRollup":[{"name":"tests","state":"COMPLETED","conclusion":"SUCCESS"}]}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    draft)
+      printf '{"mergeable":"MERGEABLE","isDraft":true,"headRefOid":"%s","statusCheckRollup":[{"name":"tests","state":"COMPLETED","conclusion":"SUCCESS"}]}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    missing-draft)
+      printf '{"mergeable":"MERGEABLE","headRefOid":"%s","statusCheckRollup":[{"name":"tests","state":"COMPLETED","conclusion":"SUCCESS"}]}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    null-draft)
+      printf '{"mergeable":"MERGEABLE","isDraft":null,"headRefOid":"%s","statusCheckRollup":[{"name":"tests","state":"COMPLETED","conclusion":"SUCCESS"}]}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    not-mergeable)
+      printf '{"mergeable":"CONFLICTING","isDraft":false,"headRefOid":"%s","statusCheckRollup":[{"name":"tests","state":"COMPLETED","conclusion":"SUCCESS"}]}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    red-check)
+      printf '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"%s","statusCheckRollup":[{"name":"tests","state":"COMPLETED","conclusion":"FAILURE"}]}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    red-state)
+      printf '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"%s","statusCheckRollup":[{"name":"tests","state":"FAILURE"}]}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    pending-check)
+      printf '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"%s","statusCheckRollup":[{"name":"tests","state":"IN_PROGRESS","conclusion":""}]}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    requested-check)
+      printf '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"%s","statusCheckRollup":[{"name":"tests","status":"REQUESTED","conclusion":""}]}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    waiting-check)
+      printf '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"%s","statusCheckRollup":[{"name":"tests","status":"WAITING","conclusion":""}]}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    missing-checks)
+      printf '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"%s"}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    null-checks)
+      printf '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"%s","statusCheckRollup":null}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    empty-checks)
+      printf '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"%s","statusCheckRollup":[]}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    malformed-checks)
+      printf '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"%s","statusCheckRollup":{"name":"tests","state":"COMPLETED","conclusion":"SUCCESS"}}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    malformed-pr-json)
+      printf '%s\n' '{'
+      ;;
+    non-object-pr)
+      printf '%s\n' '[]'
+      ;;
+    missing-head)
+      printf '%s\n' '{"mergeable":"MERGEABLE","isDraft":false,"statusCheckRollup":[{"name":"tests","state":"COMPLETED","conclusion":"SUCCESS"}]}'
+      ;;
+    invalid-head)
+      printf '%s\n' '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"not-a-sha","statusCheckRollup":[{"name":"tests","state":"COMPLETED","conclusion":"SUCCESS"}]}'
+      ;;
+    *)
+      echo "unknown gate case" >&2
+      exit 1
+      ;;
+  esac
+  exit 0
+fi
+
+if [ "$1" = "issue" ] && [ "$2" = "view" ] && [ "${CHAIN_GATE_CASE:-}" != "" ]; then
+  case "${CHAIN_GATE_CASE}" in
+    ticket-unavailable)
+      exit 1
+      ;;
+    malformed-ticket-json)
+      printf '%s\n' '{'
+      ;;
+    non-object-ticket)
+      printf '%s\n' '[]'
+      ;;
+    malformed-ticket-schema)
+      printf '%s\n' '{"comments":{}}'
+      ;;
+    no-review)
+      printf '%s\n' '{"comments":[]}'
+      ;;
+    malformed-review)
+      printf '%s\n' '{"comments":[{"body":"Review evidence is malformed.\nSuccessor: /merge"}]}'
+      ;;
+    *)
+      evidence_head="$CHAIN_GATE_HEAD"
+      [ "${CHAIN_GATE_CASE}" != "stale-review" ] || evidence_head="$CHAIN_STALE_GATE_HEAD"
+      record="$(python3 "$CHAIN_REVIEW_RECORD" emit "$evidence_head")"
+      python3 - "$record" <<'PY'
+import json
+import sys
+
+print(json.dumps({
+    "comments": [{
+        "body": "Review passed for this candidate.\nSuccessor: /merge\n" + sys.argv[1],
+    }],
+}, separators=(",", ":")))
+PY
+      ;;
+  esac
+  exit 0
+fi
 
 if [ "$1" != "issue" ] || [ "$2" != "view" ] || [ "$4" != "--json" ] || [ "$5" != "comments" ]; then
   echo "unexpected gh invocation: $*" >&2
@@ -793,7 +1510,569 @@ else
   printf '%s\n' '{"comments":[]}'
 fi
 SH
-chmod +x "$fake_bin/gh"
+chmod +x "$gate_bin/gh"
+
+assert_gate() {
+  local case_name="$1" gate_case="$2" expected_status="$3" expected_json="$4"
+  local output status
+  set +e
+  output="$(
+    PATH="$gate_bin:$PATH" \
+      CHAIN_GATE_CASE="$gate_case" \
+      CHAIN_GATE_HEAD="$gate_head" \
+      CHAIN_STALE_GATE_HEAD="$stale_gate_head" \
+      CHAIN_REVIEW_RECORD="$RECORD" \
+      "$CHAIN" gate --pull-request 50 --ticket 50 2>/dev/null
+  )"
+  status=$?
+  set -e
+  if [ "$status" -ne "$expected_status" ]; then
+    err "$case_name returned status $status instead of $expected_status"
+  fi
+  assert_plan "$case_name" "$output" "$expected_json"
+}
+
+assert_gate "merge gate allows complete evidence" allow 0 \
+  '{"decision":"allow","pull_request":"50","headRefOid":"'"$gate_head"'","reason":"merge-evidence-complete"}'
+assert_gate "merge gate refuses draft pull request" draft 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["pull-request-not-draft"],"reason":"pull-request-not-draft"}'
+assert_gate "merge gate refuses missing draft evidence" missing-draft 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["pull-request-not-draft"],"reason":"pull-request-not-draft"}'
+assert_gate "merge gate refuses null draft evidence" null-draft 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["pull-request-not-draft"],"reason":"pull-request-not-draft"}'
+assert_gate "merge gate refuses non-mergeable pull request" not-mergeable 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["pull-request-mergeable"],"reason":"pull-request-mergeable"}'
+assert_gate "merge gate refuses missing review evidence" no-review 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["review-clean-evidence-comment"],"reason":"review-clean-evidence-comment"}'
+assert_gate "merge gate refuses malformed review evidence" malformed-review 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["review-clean-evidence-comment"],"reason":"review-clean-evidence-comment"}'
+assert_gate "merge gate refuses review evidence for an earlier head" stale-review 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["review-clean-evidence-comment"],"reason":"review-clean-evidence-comment"}'
+assert_gate "merge gate refuses red check" red-check 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["checks-green"],"reason":"checks-green"}'
+assert_gate "merge gate refuses state-based red check" red-state 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["checks-green"],"reason":"checks-green"}'
+assert_gate "merge gate refuses pending check" pending-check 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["checks-complete"],"reason":"checks-complete"}'
+assert_gate "merge gate refuses requested check as pending" requested-check 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["checks-complete"],"reason":"checks-complete"}'
+assert_gate "merge gate refuses waiting check as pending" waiting-check 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["checks-complete"],"reason":"checks-complete"}'
+assert_gate "merge gate refuses an absent check rollup" missing-checks 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["checks-present"],"reason":"checks-present"}'
+assert_gate "merge gate refuses a null check rollup" null-checks 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["checks-present"],"reason":"checks-present"}'
+assert_gate "merge gate refuses an empty check rollup" empty-checks 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["checks-present"],"reason":"checks-present"}'
+assert_gate "merge gate refuses a malformed check rollup" malformed-checks 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["checks-valid"],"reason":"checks-valid"}'
+assert_gate "merge gate identifies malformed pull request JSON" malformed-pr-json 2 \
+  '{"decision":"refuse","pull_request":"50","reason":"pull-request-evidence-invalid"}'
+assert_gate "merge gate identifies non-object pull request JSON" non-object-pr 2 \
+  '{"decision":"refuse","pull_request":"50","reason":"pull-request-evidence-invalid"}'
+assert_gate "merge gate refuses a missing pull request head" missing-head 2 \
+  '{"decision":"refuse","pull_request":"50","reason":"pull-request-evidence-invalid"}'
+assert_gate "merge gate refuses an invalid pull request head" invalid-head 2 \
+  '{"decision":"refuse","pull_request":"50","reason":"pull-request-evidence-invalid"}'
+assert_gate "merge gate identifies malformed ticket JSON" malformed-ticket-json 2 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","reason":"ticket-evidence-invalid"}'
+assert_gate "merge gate identifies non-object ticket JSON" non-object-ticket 2 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","reason":"ticket-evidence-invalid"}'
+assert_gate "merge gate identifies malformed ticket schema" malformed-ticket-schema 2 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","reason":"ticket-evidence-invalid"}'
+assert_gate "merge gate identifies unavailable ticket evidence" ticket-unavailable 2 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","reason":"ticket-evidence-unavailable"}'
+
+canonical_open_ledger="$tmp_dir/.git-loopy/canonical-open-subagents.jsonl"
+python3 - "$canonical_open_ledger" <<'PY'
+import json
+import os
+import sys
+
+ledger_path = sys.argv[1]
+os.makedirs(os.path.dirname(ledger_path), exist_ok=True)
+row = {
+    "route": "resolving-merge-conflicts",
+    "target": "60",
+    "session_id": "session-canonical-open",
+    "agent_id": "agent-canonical-open",
+    "agent_type": "resolving-merge-conflicts-agent",
+    "agent_name": "resolving-merge-conflicts-agent",
+    "spawn_time": "2026-08-22T00:00:00Z",
+    "worktree": "/tmp/canonical-open",
+    "chain_depth": 1,
+    "finish_time": "",
+    "outcome": "",
+}
+with open(ledger_path, "w", encoding="utf-8") as ledger:
+    ledger.write(json.dumps(row, separators=(",", ":")) + "\n")
+PY
+cp "$canonical_open_ledger" "$canonical_open_ledger.before"
+canonical_lookup_log="$tmp_dir/canonical-lookups.log"
+
+plan_ledger="$canonical_open_ledger"
+for equivalent_target in 15 issue-15 60; do
+  canonical_in_flight="$(
+    PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+      CHAIN_GH_LOG="$canonical_lookup_log" \
+      plan /code-review "$equivalent_target" AFK-safe code-review-agent \
+        gpt-5.6-sol high default "$tmp_dir/plan-canonical-$equivalent_target"
+  )"
+  assert_plan "canonical in-flight target $equivalent_target" "$canonical_in_flight" \
+    '{"decision":"decline","reason":"target-in-flight","route":"/code-review","target":"'"$equivalent_target"'"}'
+done
+if [ "$(wc -l < "$canonical_lookup_log" | tr -d ' ')" -ne 3 ]; then
+  err "canonical target checks repeated GitHub lookups within one plan"
+fi
+
+canonical_unrelated="$(
+  PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+    plan /code-review 16 AFK-safe code-review-agent gpt-5.6-sol high default \
+      "$tmp_dir/plan-canonical-unrelated"
+)"
+assert_plan "unrelated canonical target" "$canonical_unrelated" \
+  '{"decision":"spawn","route":"/code-review","target":"16","agent":"code-review-agent","model":"gpt-5.6-sol","effort":"high","context_tier":"default","worktree":"'"$tmp_dir"'/plan-canonical-unrelated"}'
+
+if PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+  "$CHAIN" reserve --parent-pid "$$" \
+    --ledger "$canonical_open_ledger" \
+    --route code-review \
+    --target issue-15 \
+    --spawn-time 2026-08-22T00:01:00Z \
+    --worktree "$tmp_dir/worktree-canonical-duplicate" \
+    --chain-depth 2 \
+    2>"$tmp_dir/canonical-duplicate.err"
+then
+  err "reserve accepted an equivalent target that was already in flight"
+fi
+if ! grep -q "target-in-flight: issue-15" "$tmp_dir/canonical-duplicate.err"; then
+  err "reserve did not report the equivalent in-flight target"
+fi
+if [ -e "$tmp_dir/worktree-canonical-duplicate" ]; then
+  err "equivalent target reservation created a worktree"
+fi
+if ! cmp -s "$canonical_open_ledger.before" "$canonical_open_ledger"; then
+  err "matching an existing target spelling rewrote the legacy ledger row"
+fi
+
+canonical_halt_ledger="$tmp_dir/.git-loopy/canonical-halt-subagents.jsonl"
+python3 - "$canonical_halt_ledger" <<'PY'
+import json
+import os
+import sys
+
+ledger_path = sys.argv[1]
+os.makedirs(os.path.dirname(ledger_path), exist_ok=True)
+row = {
+    "route": "code-review",
+    "target": "60",
+    "session_id": "session-canonical-halt",
+    "agent_id": "agent-canonical-halt",
+    "agent_type": "code-review-agent",
+    "agent_name": "code-review-agent",
+    "spawn_time": "2026-08-22T00:00:00Z",
+    "worktree": "/tmp/canonical-halt",
+    "chain_depth": 1,
+    "finish_time": "2026-08-22T00:10:00Z",
+    "outcome": "no-evidence",
+    "halt_reason": "no-evidence",
+    "halted_at": "2026-08-22T00:10:00Z",
+}
+with open(ledger_path, "w", encoding="utf-8") as ledger:
+    ledger.write(json.dumps(row, separators=(",", ":")) + "\n")
+PY
+
+plan_ledger="$canonical_halt_ledger"
+canonical_halted="$(
+  PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+    plan /implement 15 AFK-safe implement-agent gpt-5.6-terra high default \
+      "$tmp_dir/plan-canonical-halted"
+)"
+assert_plan "canonical halted target" "$canonical_halted" \
+  '{"decision":"decline","reason":"target-halted","halt_reason":"no-evidence","route":"/implement","target":"15"}'
+
+canonical_failed_ledger="$tmp_dir/.git-loopy/canonical-failed-subagents.jsonl"
+python3 - "$canonical_failed_ledger" <<'PY'
+import json
+import os
+import sys
+
+ledger_path = sys.argv[1]
+os.makedirs(os.path.dirname(ledger_path), exist_ok=True)
+row = {
+    "route": "implement",
+    "target": "60",
+    "session_id": "session-canonical-failed",
+    "agent_id": "agent-canonical-failed",
+    "agent_type": "implement-agent",
+    "agent_name": "implement-agent",
+    "spawn_time": "2026-08-22T00:00:00Z",
+    "worktree": "/tmp/canonical-failed",
+    "chain_depth": 1,
+    "finish_time": "2026-08-22T00:10:00Z",
+    "outcome": "failed",
+}
+with open(ledger_path, "w", encoding="utf-8") as ledger:
+    ledger.write(json.dumps(row, separators=(",", ":")) + "\n")
+PY
+
+plan_ledger="$canonical_failed_ledger"
+canonical_failed="$(
+  PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+    plan /implement issue-15 AFK-safe implement-agent gpt-5.6-terra high default \
+      "$tmp_dir/plan-canonical-failed"
+)"
+assert_plan "canonical failed target" "$canonical_failed" \
+  '{"decision":"decline","reason":"target-failed","route":"/implement","target":"issue-15"}'
+
+if PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+  "$CHAIN" reserve --parent-pid "$$" \
+    --ledger "$canonical_failed_ledger" \
+    --route implement \
+    --target 15 \
+    --spawn-time 2026-08-22T00:11:00Z \
+    --worktree "$tmp_dir/worktree-canonical-failed" \
+    --chain-depth 2 \
+    2>"$tmp_dir/canonical-failed.err"
+then
+  err "reserve accepted an equivalent target that had failed"
+fi
+if ! grep -q "target-failed: 15" "$tmp_dir/canonical-failed.err"; then
+  err "reserve did not report the equivalent failed target"
+fi
+if [ -e "$tmp_dir/worktree-canonical-failed" ]; then
+  err "failed target reservation created a worktree"
+fi
+
+canonical_guard_ledger="$tmp_dir/.git-loopy/canonical-guard-subagents.jsonl"
+python3 - "$canonical_guard_ledger" <<'PY'
+import json
+import os
+import sys
+
+ledger_path = sys.argv[1]
+os.makedirs(os.path.dirname(ledger_path), exist_ok=True)
+
+def bound(target, route, depth, identifier):
+    return {
+        "route": route,
+        "target": target,
+        "session_id": f"session-{identifier}",
+        "agent_id": f"agent-{identifier}",
+        "agent_type": f"{route}-agent",
+        "agent_name": f"{route}-agent",
+        "spawn_time": "2026-08-22T00:00:00Z",
+        "worktree": f"/tmp/{identifier}",
+        "chain_depth": depth,
+        "finish_time": "2026-08-22T00:10:00Z",
+        "outcome": "published",
+    }
+
+rows = [
+    bound("60", "code-review", 1, "canonical-repeat-pr"),
+    bound("15", "code-review", 2, "canonical-repeat-bare"),
+    bound("issue-15", "code-review", 3, "canonical-repeat-prefixed"),
+]
+with open(ledger_path, "w", encoding="utf-8") as ledger:
+    for row in rows:
+        ledger.write(json.dumps(row, separators=(",", ":")) + "\n")
+PY
+
+plan_ledger="$canonical_guard_ledger"
+canonical_repetition="$(
+  PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+    plan /code-review issue-15 AFK-safe code-review-agent gpt-5.6-sol high default \
+      "$tmp_dir/plan-canonical-repetition"
+)"
+assert_plan "canonical route repetition budget" "$canonical_repetition" \
+  '{"decision":"decline","reason":"target-halted","halt_reason":"route-repetition-limit","route":"/code-review","target":"issue-15"}'
+
+canonical_depth_ledger="$tmp_dir/.git-loopy/canonical-depth-subagents.jsonl"
+python3 - "$canonical_depth_ledger" <<'PY'
+import json
+import os
+import sys
+
+ledger_path = sys.argv[1]
+os.makedirs(os.path.dirname(ledger_path), exist_ok=True)
+rows = []
+for depth in range(1, 9):
+    route = (
+        "implement",
+        "code-review",
+        "research",
+        "push",
+        "resolving-merge-conflicts",
+    )[(depth - 1) % 5]
+    rows.append({
+        "route": route,
+        "target": ("60", "15", "issue-15")[(depth - 1) % 3],
+        "session_id": f"session-canonical-depth-{depth}",
+        "agent_id": f"agent-canonical-depth-{depth}",
+        "agent_type": f"{route}-agent",
+        "agent_name": f"{route}-agent",
+        "spawn_time": "2026-08-22T00:00:00Z",
+        "worktree": f"/tmp/canonical-depth-{depth}",
+        "chain_depth": depth,
+        "finish_time": "2026-08-22T00:10:00Z",
+        "outcome": "published",
+    })
+
+with open(ledger_path, "w", encoding="utf-8") as ledger:
+    for row in rows:
+        ledger.write(json.dumps(row, separators=(",", ":")) + "\n")
+PY
+
+plan_ledger="$canonical_depth_ledger"
+canonical_depth="$(
+  PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+    plan /research 15 AFK-safe research-agent claude-opus-5 high default \
+      "$tmp_dir/plan-canonical-depth"
+)"
+assert_plan "canonical lineage depth budget" "$canonical_depth" \
+  '{"decision":"decline","reason":"target-halted","halt_reason":"chain-depth-limit","route":"/research","target":"15"}'
+
+canonical_reserve_ledger="$tmp_dir/.git-loopy/canonical-reserve-subagents.jsonl"
+PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+  "$CHAIN" reserve --parent-pid "$$" \
+    --ledger "$canonical_reserve_ledger" \
+    --route implement \
+    --target 60 \
+    --spawn-time 2026-08-22T00:00:00Z \
+    --worktree "$tmp_dir/worktree-canonical-reserve" \
+    --chain-depth 1
+
+if ! python3 - "$canonical_reserve_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger if line.strip()]
+
+assert len(rows) == 1, rows
+assert rows[0]["target"] == "issue-15", rows
+PY
+then
+  err "reserve did not write the canonical target identity"
+fi
+
+"$CHAIN" bind \
+  --ledger "$canonical_reserve_ledger" \
+  --worktree "$tmp_dir/worktree-canonical-reserve" \
+  --session-id session-canonical-reserve \
+  --agent-id agent-canonical-reserve \
+  --agent-type implement-agent \
+  --agent-name implement-agent
+canonical_completion="$(
+  PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published CHAIN_EXPECT_ISSUE=15 \
+    "$CHAIN" complete --ledger "$canonical_reserve_ledger" \
+      <<< '{"sessionId":"session-canonical-reserve","timestamp":"2026-08-22T00:11:00Z","cwd":"'"$tmp_dir"'","agentId":"agent-canonical-reserve","agentType":"implement-agent","agentName":"implement-agent"}'
+)"
+assert_plan "canonical target completion" "$canonical_completion" \
+  '{"continue":true,"outcome":"published","target":"issue-15"}'
+
+legacy_completion_ledger="$tmp_dir/.git-loopy/legacy-completion-subagents.jsonl"
+"$CHAIN" reserve --parent-pid "$$" \
+  --ledger "$legacy_completion_ledger" \
+  --route implement \
+  --target issue-15 \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$tmp_dir/worktree-legacy-completion" \
+  --chain-depth 1
+"$CHAIN" bind \
+  --ledger "$legacy_completion_ledger" \
+  --worktree "$tmp_dir/worktree-legacy-completion" \
+  --session-id session-legacy-completion \
+  --agent-id agent-legacy-completion \
+  --agent-type implement-agent \
+  --agent-name implement-agent
+python3 - "$legacy_completion_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger if line.strip()]
+rows[0]["target"] = "60"
+with open(sys.argv[1], "w", encoding="utf-8") as ledger:
+    for row in rows:
+        ledger.write(json.dumps(row, separators=(",", ":")) + "\n")
+PY
+
+legacy_completion="$(
+  PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+    CHAIN_EVIDENCE=published CHAIN_EXPECT_ISSUE=15 \
+    "$CHAIN" complete --ledger "$legacy_completion_ledger" \
+      <<< '{"sessionId":"session-legacy-completion","timestamp":"2026-08-22T00:11:00Z","cwd":"'"$tmp_dir"'","agentId":"agent-legacy-completion","agentType":"implement-agent","agentName":"implement-agent"}'
+)"
+assert_plan "legacy target completion" "$legacy_completion" \
+  '{"continue":true,"outcome":"published","target":"60"}'
+if ! python3 - "$legacy_completion_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    row = json.loads(ledger.readline())
+assert row["target"] == "60", row
+assert row["outcome"] == "published", row
+PY
+then
+  err "legacy target completion rewrote or failed the existing row"
+fi
+
+resolution_failure_ledger="$tmp_dir/.git-loopy/resolution-failure-completion-subagents.jsonl"
+reserve_and_bind \
+  --ledger "$resolution_failure_ledger" \
+  --route implement \
+  --target issue-15 \
+  --session-id session-resolution-failure-completion \
+  --agent-id agent-resolution-failure-completion \
+  --agent-type implement-agent \
+  --agent-name implement-agent \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$tmp_dir/worktree-resolution-failure-completion" \
+  --chain-depth 1
+python3 - "$resolution_failure_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger if line.strip()]
+rows[0]["target"] = "60"
+with open(sys.argv[1], "w", encoding="utf-8") as ledger:
+    for row in rows:
+        ledger.write(json.dumps(row, separators=(",", ":")) + "\n")
+PY
+
+resolution_failure_status=0
+resolution_failure_output="$(
+  PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+    CHAIN_TARGET_LOOKUP=unavailable \
+    "$CHAIN" complete --ledger "$resolution_failure_ledger" \
+      <<< '{"sessionId":"session-resolution-failure-completion","timestamp":"2026-08-22T00:11:00Z","cwd":"'"$tmp_dir"'","agentId":"agent-resolution-failure-completion","agentType":"implement-agent","agentName":"implement-agent"}' \
+      2>/dev/null
+)" || resolution_failure_status=$?
+if [ "$resolution_failure_status" -ne 1 ]; then
+  err "completion with an unresolvable canonical target returned $resolution_failure_status instead of 1"
+fi
+assert_plan "completion with an unresolvable canonical target" "$resolution_failure_output" \
+  '{"continue":false,"outcome":"tracker-failed","target":"60","failure_kind":"transient","error":"target-resolution-failed: gh unavailable","exit_status":1}'
+if ! python3 - "$resolution_failure_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    row = json.loads(ledger.readline())
+assert row["finish_time"] == "2026-08-22T00:11:00Z", row
+assert row["outcome"] == "tracker-failed", row
+assert row["tracker_failure_kind"] == "transient", row
+assert "halt_reason" not in row, row
+PY
+then
+  err "completion with an unresolvable canonical target left the row open or halted it"
+fi
+if [ -e "$tmp_dir/worktree-resolution-failure-completion" ]; then
+  err "completion with an unresolvable canonical target left its clean worktree on disk"
+fi
+
+plan_ledger="$tmp_dir/.git-loopy/canonical-resolution-failure.jsonl"
+for resolution_failure in rate-limited unavailable; do
+  case "$resolution_failure" in
+    rate-limited) resolution_detail="API rate limit exceeded" ;;
+    unavailable) resolution_detail="gh unavailable" ;;
+  esac
+  canonical_resolution_failure="$(
+    PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+      CHAIN_TARGET_LOOKUP="$resolution_failure" \
+      plan /implement 60 AFK-safe implement-agent gpt-5.6-terra high default \
+        "$tmp_dir/plan-canonical-resolution-$resolution_failure"
+  )"
+  assert_plan "target resolution $resolution_failure" "$canonical_resolution_failure" \
+    '{"decision":"decline","reason":"target-resolution-failed","route":"/implement","target":"60","error":"'"$resolution_detail"'"}'
+done
+
+non_utf8_resolution="$(
+  PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+    CHAIN_TARGET_LOOKUP=non-utf8 \
+    plan /implement 60 AFK-safe implement-agent gpt-5.6-terra high default \
+      "$tmp_dir/plan-canonical-resolution-non-utf8"
+)"
+if ! python3 - "$non_utf8_resolution" <<'PY'
+import json
+import sys
+
+decision = json.loads(sys.argv[1])
+assert decision["decision"] == "decline", decision
+assert decision["reason"] == "target-resolution-failed", decision
+assert decision["error"].startswith("could not run gh:"), decision
+PY
+then
+  err "plan did not decline cleanly when the canonical lookup returned non-UTF-8 output"
+fi
+
+legacy_unresolvable_ledger="$tmp_dir/.git-loopy/legacy-unresolvable-subagents.jsonl"
+python3 - "$legacy_unresolvable_ledger" <<'PY'
+import json
+import os
+import sys
+
+ledger_path = sys.argv[1]
+os.makedirs(os.path.dirname(ledger_path), exist_ok=True)
+row = {
+    "route": "code-review",
+    "target": "7",
+    "session_id": "session-legacy-unresolvable",
+    "agent_id": "agent-legacy-unresolvable",
+    "agent_type": "code-review-agent",
+    "agent_name": "code-review-agent",
+    "spawn_time": "2026-08-22T00:00:00Z",
+    "worktree": "/tmp/legacy-unresolvable",
+    "chain_depth": 1,
+    "finish_time": "2026-08-22T00:10:00Z",
+    "outcome": "published",
+}
+with open(ledger_path, "w", encoding="utf-8") as ledger:
+    ledger.write(json.dumps(row, separators=(",", ":")) + "\n")
+PY
+plan_ledger="$legacy_unresolvable_ledger"
+unrelated_beside_legacy="$(
+  PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+    plan /code-review issue-unrelated-legacy AFK-safe code-review-agent \
+      gpt-5.6-sol high default "$tmp_dir/plan-unrelated-legacy"
+)"
+assert_plan "unrelated target beside an unresolvable legacy row" "$unrelated_beside_legacy" \
+  '{"decision":"spawn","route":"/code-review","target":"issue-unrelated-legacy","agent":"code-review-agent","model":"gpt-5.6-sol","effort":"high","context_tier":"default","worktree":"'"$tmp_dir"'/plan-unrelated-legacy"}'
+requested_unresolvable="$(
+  PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+    plan /code-review 7 AFK-safe code-review-agent \
+      gpt-5.6-sol high default "$tmp_dir/plan-requested-unresolvable"
+)"
+assert_plan "requested pull request without exactly one closing issue" "$requested_unresolvable" \
+  '{"decision":"decline","reason":"target-resolution-failed","route":"/code-review","target":"7","error":"pull request #7 does not close exactly one issue"}'
+
+resolution_reserve_ledger="$tmp_dir/.git-loopy/resolution-reserve.jsonl"
+resolution_reserve_worktree="$tmp_dir/worktree-resolution-reserve"
+resolution_reserve_error="$tmp_dir/resolution-reserve.err"
+if (
+  cd "$tmp_dir"
+  PATH="$fake_bin:$PATH" GH_REPO=bradcstevens/git-loopy-skills \
+    CHAIN_TARGET_LOOKUP=unavailable "$CHAIN" reserve --parent-pid "$$" \
+    --ledger "$resolution_reserve_ledger" \
+    --route implement \
+    --target 60 \
+    --spawn-time 2026-08-22T00:00:00Z \
+    --worktree "$resolution_reserve_worktree" \
+    --chain-depth 1 \
+    2>"$resolution_reserve_error"
+)
+then
+  err "reserve accepted a target whose canonical lookup failed"
+fi
+if ! grep -q "target-resolution-failed: 60: gh unavailable" "$resolution_reserve_error"; then
+  err "reserve did not name the target and cause of a failed canonical lookup"
+fi
+if [ -e "$resolution_reserve_ledger" ] || [ -e "$resolution_reserve_worktree" ]; then
+  err "reserve consumed a ledger row or worktree for a failed canonical lookup"
+fi
 
 complete_ledger="$tmp_dir/.git-loopy/complete-subagents.jsonl"
 reserve_and_bind \
@@ -822,6 +2101,60 @@ completion_payload() {
   printf '%s' '{"sessionId":"'"$session_id"'","timestamp":'"$timestamp_json"',"cwd":"'"$cwd"'","transcriptPath":"'"$tmp_dir"'/transcript.jsonl","agentId":"'"$agent_id"'","agentType":"'"$agent_type"'","agentName":"'"$agent_name"'","agentDisplayName":"Implement agent","response":"Completed the route.","stopReason":"end_turn"}'
 }
 
+serial_repo="$tmp_dir/serial-reentry-repository"
+git init --quiet "$serial_repo"
+git -C "$serial_repo" -c user.name=test -c user.email=test@example.com \
+  commit --quiet --allow-empty -m initial
+(
+  cd "$serial_repo"
+  "$CHAIN" reserve --parent-pid "$$" \
+    --route code-review \
+    --target issue-serial-hop \
+    --spawn-time 2026-08-22T00:02:00Z \
+    --worktree "$serial_repo" \
+    --chain-depth 1 \
+    --session-id session-serial-hop \
+    --in-place
+  "$CHAIN" bind \
+    --worktree "$serial_repo" \
+    --session-id session-serial-hop \
+    --agent-id agent-serial-hop \
+    --agent-type code-review-agent \
+    --agent-name code-review-agent
+)
+serial_ledger="$serial_repo/.git-loopy/subagents.jsonl"
+serial_completion_output="$(
+  cd "$serial_repo"
+  PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete \
+    <<< "$(completion_payload agent-serial-hop 2026-08-22T00:11:00Z code-review-agent code-review-agent session-serial-hop "$serial_repo")"
+)"
+assert_plan "serial in-place completion" "$serial_completion_output" \
+  '{"continue":true,"outcome":"published","target":"issue-serial-hop"}'
+if [ ! -d "$serial_repo/.git" ] && [ ! -f "$serial_repo/.git" ]; then
+  err "in-place completion removed the spawning worktree"
+fi
+serial_reentry="$(
+  python3 "$REPO/skills/setup-git-loopy-skills/git-loopy-agent-stop.py" \
+    <<< '{"cwd":"'"$serial_repo"'","timestamp":"2026-08-22T00:12:00Z","stop_hook_active":false}'
+)"
+if [ "$serial_reentry" != '{"decision":"block","reason":"A completed run is unrouted. Run /next now.","targets":["issue-serial-hop"]}' ]; then
+  err "serial completion did not re-enter /next through agentStop"
+fi
+if ! python3 - "$serial_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    row = json.loads(ledger.readline())
+
+assert row["finish_time"] == "2026-08-22T00:11:00Z", row
+assert row["outcome"] == "published", row
+assert row["routed"] is True, row
+assert row["routed_at"] == "2026-08-22T00:12:00Z", row
+PY
+then
+  err "serial hop did not close and route its ledger row"
+fi
 "$CHAIN" bind \
   --ledger "$fan_out_ledger" \
   --worktree "$tmp_dir/worktree-fan-out-1" \
@@ -940,6 +2273,69 @@ if [ -e "$default_worktree" ]; then
   err "completion from a linked worktree did not remove its worktree"
 fi
 
+separate_git_dir="$tmp_dir/vault-gitdir"
+separate_working_tree="$tmp_dir/vault"
+separate_worktree="$tmp_dir/vault-run-1"
+separate_ledger="$separate_working_tree/.git-loopy/subagents.jsonl"
+git init --quiet --separate-git-dir="$separate_git_dir" "$separate_working_tree"
+git -C "$separate_working_tree" -c user.name=test -c user.email=test@example.com \
+  commit --quiet --allow-empty -m initial
+(
+  cd "$separate_working_tree"
+  reserve_and_bind \
+    --route implement \
+    --target issue-separate-git-dir \
+    --session-id session-separate-git-dir \
+    --agent-id agent-separate-git-dir \
+    --agent-type implement-agent \
+    --agent-name implement-agent \
+    --spawn-time 2026-08-22T00:00:00Z \
+    --worktree "$separate_worktree" \
+    --chain-depth 1
+)
+
+if [ ! -f "$separate_ledger" ]; then
+  err "reserve from a separate-git-dir repository did not use the main working tree ledger"
+fi
+if [ -e "$separate_git_dir/.git-loopy/subagents.jsonl" ]; then
+  err "reserve from a separate-git-dir repository wrote the ledger into the gitdir"
+fi
+if [ -e "$separate_worktree/.git-loopy/subagents.jsonl" ]; then
+  err "reserve from a separate-git-dir repository created a linked worktree ledger"
+fi
+
+separate_completion_output="$(
+  cd "$separate_worktree"
+  PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete \
+    <<< "$(completion_payload agent-separate-git-dir 2026-08-22T00:11:00Z implement-agent implement-agent session-separate-git-dir "$separate_worktree")"
+)"
+assert_plan "separate-git-dir linked worktree completion" "$separate_completion_output" \
+  '{"continue":true,"outcome":"published","target":"issue-separate-git-dir"}'
+
+if ! python3 - "$separate_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger]
+
+assert len(rows) == 1
+assert rows[0]["session_id"] == "session-separate-git-dir"
+assert rows[0]["finish_time"] == "2026-08-22T00:11:00Z"
+assert rows[0]["outcome"] == "published"
+PY
+then
+  err "completion from a separate-git-dir linked worktree did not close the main ledger row"
+fi
+
+if [ -e "$separate_worktree" ]; then
+  err "completion from a separate-git-dir linked worktree did not remove its worktree"
+fi
+if git -C "$separate_working_tree" worktree list --porcelain |
+  grep -qxF "worktree $separate_worktree"; then
+  err "completion from a separate-git-dir linked worktree leaked its worktree registration"
+fi
+
 reserve_and_bind \
   --ledger "$complete_ledger" \
   --route code-review \
@@ -958,6 +2354,9 @@ no_evidence_output="$(
 )"
 assert_plan "no-evidence completion" "$no_evidence_output" \
   '{"continue":false,"outcome":"no-evidence","target":"issue-no-evidence"}'
+if [ -e "$tmp_dir/worktree-no-evidence" ]; then
+  err "no-evidence completion left its clean worktree on disk"
+fi
 
 if ! python3 - "$complete_ledger" <<'PY'
 import json
@@ -980,6 +2379,442 @@ plan_ledger="$complete_ledger"
 no_evidence_target="$(plan /implement issue-no-evidence AFK-safe implement-agent gpt-5.6-terra high default "$tmp_dir/plan-no-evidence")"
 assert_plan "no-evidence target" "$no_evidence_target" \
   '{"decision":"decline","reason":"target-halted","halt_reason":"no-evidence","route":"/implement","target":"issue-no-evidence"}'
+
+reserve_and_bind \
+  --ledger "$complete_ledger" \
+  --route push \
+  --target issue-clean-transient-tracker-failure \
+  --session-id session-clean-transient-tracker-failure \
+  --agent-id agent-clean-transient-tracker-failure \
+  --agent-type push-agent \
+  --agent-name push-agent \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$tmp_dir/worktree-clean-transient-tracker-failure" \
+  --chain-depth 3
+
+clean_transient_tracker_failure_status=0
+if clean_transient_tracker_failure_output="$(
+  CHAIN_TRACKER_MODE=transport-failure "$CHAIN" complete --ledger "$complete_ledger" \
+    <<< "$(completion_payload agent-clean-transient-tracker-failure 2026-08-22T00:11:00Z push-agent push-agent session-clean-transient-tracker-failure)" \
+    2>"$tmp_dir/clean-transient-tracker-failure.err"
+)"
+then
+  err "clean transient tracker failure returned success"
+else
+  clean_transient_tracker_failure_status=$?
+fi
+if [ "$clean_transient_tracker_failure_status" -ne 23 ]; then
+  err "clean transient tracker failure did not preserve its exit status"
+fi
+if ! python3 - "$clean_transient_tracker_failure_output" <<'PY'
+import json
+import sys
+
+result = json.loads(sys.argv[1])
+assert result["outcome"] == "tracker-failed"
+assert result["failure_kind"] == "transient"
+assert "retained_worktree" not in result
+PY
+then
+  err "clean transient tracker failure was not reported as removed"
+fi
+if [ -e "$tmp_dir/worktree-clean-transient-tracker-failure" ]; then
+  err "clean transient tracker failure left its worktree on disk"
+fi
+
+reserve_and_bind \
+  --ledger "$complete_ledger" \
+  --route push \
+  --target issue-transient-tracker-failure \
+  --session-id session-transient-tracker-failure \
+  --agent-id agent-transient-tracker-failure \
+  --agent-type push-agent \
+  --agent-name push-agent \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$tmp_dir/worktree-transient-tracker-failure" \
+  --chain-depth 3
+
+printf 'uncommitted work\n' > "$tmp_dir/worktree-transient-tracker-failure/uncommitted.txt"
+transient_tracker_failure_error="$tmp_dir/transient-tracker-failure.err"
+transient_tracker_failure_status=0
+if transient_tracker_failure_output="$(
+  CHAIN_TRACKER_MODE=transport-failure "$CHAIN" complete --ledger "$complete_ledger" \
+    <<< "$(completion_payload agent-transient-tracker-failure 2026-08-22T00:11:00Z push-agent push-agent session-transient-tracker-failure)" \
+    2>"$transient_tracker_failure_error"
+)"
+then
+  err "tracker transport failure returned success"
+else
+  transient_tracker_failure_status=$?
+fi
+if [ "$transient_tracker_failure_status" -ne 23 ]; then
+  err "tracker transport failure did not preserve its exit status"
+fi
+assert_plan "transient tracker failure" "$transient_tracker_failure_output" \
+  '{"continue":false,"outcome":"tracker-failed","target":"issue-transient-tracker-failure","failure_kind":"transient","error":"tracker transport failed for issue-transient-tracker-failure","exit_status":23,"retained_worktree":"'"$tmp_dir"'/worktree-transient-tracker-failure"}'
+if ! grep -q \
+  "tracker lookup failed for issue-transient-tracker-failure: tracker transport failed for issue-transient-tracker-failure" \
+  "$transient_tracker_failure_error"
+then
+  err "tracker transport failure did not report its target and cause"
+fi
+if ! python3 - "$complete_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger]
+
+row = next(
+    row
+    for row in rows
+    if row["session_id"] == "session-transient-tracker-failure"
+)
+assert row["finish_time"] == "2026-08-22T00:11:00Z"
+assert row["outcome"] == "tracker-failed"
+assert row["tracker_error"] == (
+    "tracker transport failed for issue-transient-tracker-failure"
+)
+assert row["tracker_failure_kind"] == "transient"
+assert "halt_reason" not in row
+assert "halted_at" not in row
+PY
+then
+  err "transient tracker failure did not close the row without halting the target"
+fi
+if [ ! -f "$tmp_dir/worktree-transient-tracker-failure/uncommitted.txt" ]; then
+  err "transient tracker failure removed uncommitted work"
+fi
+if ! grep -q \
+  "worktree has uncommitted changes and was retained: $tmp_dir/worktree-transient-tracker-failure" \
+  "$transient_tracker_failure_error"
+then
+  err "transient tracker failure did not report its retained dirty worktree"
+fi
+
+plan_ledger="$complete_ledger"
+transient_retry="$(plan /push issue-transient-tracker-failure AFK-safe push-agent gpt-5.6-terra high default "$tmp_dir/plan-transient-retry")"
+assert_plan "transient tracker retry" "$transient_retry" \
+  '{"decision":"spawn","route":"/push","target":"issue-transient-tracker-failure","agent":"push-agent","model":"gpt-5.6-terra","effort":"high","context_tier":"default","worktree":"'"$tmp_dir"'/plan-transient-retry"}'
+
+reserve_and_bind \
+  --ledger "$complete_ledger" \
+  --route push \
+  --target issue-missing-tracker-complete \
+  --session-id session-missing-tracker-complete \
+  --agent-id agent-missing-tracker-complete \
+  --agent-type push-agent \
+  --agent-name push-agent \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$tmp_dir/worktree-missing-tracker-complete" \
+  --chain-depth 3
+
+printf 'uncommitted launch failure work\n' > "$tmp_dir/worktree-missing-tracker-complete/uncommitted.txt"
+missing_tracker_complete_error="$tmp_dir/missing-tracker-complete.err"
+missing_tracker_complete_status=0
+if missing_tracker_complete_output="$(
+  CHAIN_TRACKER_BIN=/definitely-missing-git-loopy-tracker \
+    "$CHAIN" complete --ledger "$complete_ledger" \
+    <<< "$(completion_payload agent-missing-tracker-complete 2026-08-22T00:11:00Z push-agent push-agent session-missing-tracker-complete)" \
+    2>"$missing_tracker_complete_error"
+)"
+then
+  err "missing tracker executable during complete returned success"
+else
+  missing_tracker_complete_status=$?
+fi
+if [ "$missing_tracker_complete_status" -ne 1 ]; then
+  err "missing tracker executable during complete did not return failure"
+fi
+if ! python3 - "$missing_tracker_complete_output" "$tmp_dir/worktree-missing-tracker-complete" <<'PY'
+import json
+import sys
+
+result = json.loads(sys.argv[1])
+assert result["continue"] is False
+assert result["outcome"] == "tracker-failed"
+assert result["target"] == "issue-missing-tracker-complete"
+assert result["failure_kind"] == "transient"
+assert result["error"].startswith("could not run tracker:")
+assert result["exit_status"] == 1
+assert result["retained_worktree"] == sys.argv[2]
+PY
+then
+  err "complete did not record a missing tracker executable as transient"
+fi
+if ! grep -q \
+  "tracker lookup failed for issue-missing-tracker-complete: could not run tracker:" \
+  "$missing_tracker_complete_error"
+then
+  err "complete did not report the missing tracker executable"
+fi
+if ! python3 - "$complete_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger]
+
+row = next(
+    row
+    for row in rows
+    if row["session_id"] == "session-missing-tracker-complete"
+)
+assert row["finish_time"] == "2026-08-22T00:11:00Z"
+assert row["outcome"] == "tracker-failed"
+assert row["tracker_failure_kind"] == "transient"
+assert row["tracker_error"].startswith("could not run tracker:")
+assert "halt_reason" not in row
+assert "halted_at" not in row
+PY
+then
+  err "missing tracker executable left the completion row open or halted"
+fi
+if [ ! -f "$tmp_dir/worktree-missing-tracker-complete/uncommitted.txt" ]; then
+  err "missing tracker executable removed the completion worktree"
+fi
+
+reserve_and_bind \
+  --ledger "$complete_ledger" \
+  --route push \
+  --target issue-malformed-comment-complete \
+  --session-id session-malformed-comment-complete \
+  --agent-id agent-malformed-comment-complete \
+  --agent-type push-agent \
+  --agent-name push-agent \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$tmp_dir/worktree-malformed-comment-complete" \
+  --chain-depth 3
+
+printf 'uncommitted malformed response work\n' > "$tmp_dir/worktree-malformed-comment-complete/uncommitted.txt"
+malformed_comment_complete_error="$tmp_dir/malformed-comment-complete.err"
+malformed_comment_complete_status=0
+if malformed_comment_complete_output="$(
+  CHAIN_COMMENT_RESPONSE=invalid-timestamp \
+    "$CHAIN" complete --ledger "$complete_ledger" \
+    <<< "$(completion_payload agent-malformed-comment-complete 2026-08-22T00:11:00Z push-agent push-agent session-malformed-comment-complete)" \
+    2>"$malformed_comment_complete_error"
+)"
+then
+  err "malformed successful comment data during complete returned success"
+else
+  malformed_comment_complete_status=$?
+fi
+if [ "$malformed_comment_complete_status" -ne 2 ]; then
+  err "malformed successful comment data did not return protocol failure"
+fi
+if ! python3 - "$malformed_comment_complete_output" "$tmp_dir/worktree-malformed-comment-complete" <<'PY'
+import json
+import sys
+
+result = json.loads(sys.argv[1])
+assert result["continue"] is False
+assert result["outcome"] == "tracker-failed"
+assert result["target"] == "issue-malformed-comment-complete"
+assert result["failure_kind"] == "transient"
+assert result["error"].startswith("tracker returned invalid comment timestamp at index 0:")
+assert result["exit_status"] == 2
+assert result["retained_worktree"] == sys.argv[2]
+PY
+then
+  err "complete did not classify malformed successful comment data as transient"
+fi
+if ! grep -q \
+  "tracker lookup failed for issue-malformed-comment-complete: tracker returned invalid comment timestamp at index 0:" \
+  "$malformed_comment_complete_error"
+then
+  err "complete did not report malformed successful comment data"
+fi
+if ! python3 - "$complete_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger]
+
+row = next(
+    row
+    for row in rows
+    if row["session_id"] == "session-malformed-comment-complete"
+)
+assert row["finish_time"] == "2026-08-22T00:11:00Z"
+assert row["outcome"] == "tracker-failed"
+assert row["tracker_failure_kind"] == "transient"
+assert row["tracker_error"].startswith(
+    "tracker returned invalid comment timestamp at index 0:"
+)
+assert "halt_reason" not in row
+assert "halted_at" not in row
+PY
+then
+  err "malformed successful comment data left the row open or halted"
+fi
+if [ ! -f "$tmp_dir/worktree-malformed-comment-complete/uncommitted.txt" ]; then
+  err "malformed successful comment data removed the completion worktree"
+fi
+
+reserve_and_bind \
+  --ledger "$complete_ledger" \
+  --route push \
+  --target issue-permanent-tracker-failure \
+  --session-id session-permanent-tracker-failure \
+  --agent-id agent-permanent-tracker-failure \
+  --agent-type push-agent \
+  --agent-name push-agent \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$tmp_dir/worktree-permanent-tracker-failure" \
+  --chain-depth 3
+
+printf 'uncommitted permanent-failure work\n' > "$tmp_dir/worktree-permanent-tracker-failure/uncommitted.txt"
+permanent_tracker_failure_error="$tmp_dir/permanent-tracker-failure.err"
+permanent_tracker_failure_status=0
+if permanent_tracker_failure_output="$(
+  CHAIN_TRACKER_MODE=not-found "$CHAIN" complete --ledger "$complete_ledger" \
+    <<< "$(completion_payload agent-permanent-tracker-failure 2026-08-22T00:11:00Z push-agent push-agent session-permanent-tracker-failure)" \
+    2>"$permanent_tracker_failure_error"
+)"
+then
+  err "permanent tracker failure returned success"
+else
+  permanent_tracker_failure_status=$?
+fi
+if [ "$permanent_tracker_failure_status" -ne 1 ]; then
+  err "permanent tracker failure did not preserve its exit status"
+fi
+assert_plan "permanent tracker failure" "$permanent_tracker_failure_output" \
+  '{"continue":false,"outcome":"tracker-failed","target":"issue-permanent-tracker-failure","failure_kind":"permanent","error":"GraphQL: Could not resolve to an issue or pull request with the number of issue-permanent-tracker-failure. (repository.issue)","exit_status":1,"retained_worktree":"'"$tmp_dir"'/worktree-permanent-tracker-failure"}'
+if ! grep -q \
+  "tracker lookup failed for issue-permanent-tracker-failure: GraphQL: Could not resolve to an issue or pull request with the number of issue-permanent-tracker-failure. (repository.issue)" \
+  "$permanent_tracker_failure_error"
+then
+  err "permanent tracker failure did not report its target and cause"
+fi
+if ! python3 - "$complete_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger]
+
+row = next(
+    row
+    for row in rows
+    if row["session_id"] == "session-permanent-tracker-failure"
+)
+assert row["finish_time"] == "2026-08-22T00:11:00Z"
+assert row["outcome"] == "tracker-failed"
+assert row["tracker_error"] == (
+    "GraphQL: Could not resolve to an issue or pull request with the number of issue-permanent-tracker-failure. (repository.issue)"
+)
+assert row["tracker_failure_kind"] == "permanent"
+assert row["halt_reason"] == "tracker-failed"
+assert row["halted_at"] == "2026-08-22T00:11:00Z"
+PY
+then
+  err "permanent tracker failure did not close and halt the target"
+fi
+if [ ! -f "$tmp_dir/worktree-permanent-tracker-failure/uncommitted.txt" ]; then
+  err "permanent tracker failure removed uncommitted work"
+fi
+if ! grep -q \
+  "worktree has uncommitted changes and was retained: $tmp_dir/worktree-permanent-tracker-failure" \
+  "$permanent_tracker_failure_error"
+then
+  err "permanent tracker failure did not report its retained dirty worktree"
+fi
+
+permanent_retry="$(plan /push issue-permanent-tracker-failure AFK-safe push-agent gpt-5.6-terra high default "$tmp_dir/plan-permanent-retry")"
+assert_plan "permanent tracker halt" "$permanent_retry" \
+  '{"decision":"decline","reason":"target-halted","halt_reason":"tracker-failed","route":"/push","target":"issue-permanent-tracker-failure"}'
+
+# Each transient tracker failure must still close the row, leave the target retryable,
+# and remove a clean worktree. The hang case waits out the real 30-second tracker timeout.
+transient_tracker_cases=(
+  "rate-limit:HTTP 403: API rate limit exceeded for user."
+  "http-429:HTTP 429: too many requests"
+  "server-failure:HTTP 503: service unavailable"
+  "ambiguous-404:HTTP 404: resource not found"
+  "timeout:request timed out while resolving issue-tracker-case-timeout"
+  "hang:tracker timed out after 30 seconds"
+  "non-utf8:tracker output was not valid UTF-8"
+)
+for transient_tracker_case in "${transient_tracker_cases[@]}"; do
+  IFS=: read -r case_mode case_message <<< "$transient_tracker_case"
+  case_slug="tracker-case-$case_mode"
+  case_worktree="$tmp_dir/worktree-$case_slug"
+
+  reserve_and_bind \
+    --ledger "$complete_ledger" \
+    --route push \
+    --target "issue-$case_slug" \
+    --session-id "session-$case_slug" \
+    --agent-id "agent-$case_slug" \
+    --agent-type push-agent \
+    --agent-name push-agent \
+    --spawn-time 2026-08-22T00:00:00Z \
+    --worktree "$case_worktree" \
+    --chain-depth 3
+
+  case_status=0
+  case_output="$(
+    if [ "$case_mode" = non-utf8 ]; then
+      CHAIN_COMMENT_RESPONSE=non-utf8
+      export CHAIN_COMMENT_RESPONSE
+    else
+      CHAIN_TRACKER_MODE="$case_mode"
+      export CHAIN_TRACKER_MODE
+    fi
+    "$CHAIN" complete --ledger "$complete_ledger" \
+      <<< "$(completion_payload "agent-$case_slug" 2026-08-22T00:11:00Z push-agent push-agent "session-$case_slug")" \
+      2>/dev/null
+  )" || case_status=$?
+
+  case "$case_mode" in
+    hang) expected_status=124 ;;
+    non-utf8) expected_status=2 ;;
+    *) expected_status=1 ;;
+  esac
+  if [ "$case_status" -ne "$expected_status" ]; then
+    err "$case_mode tracker failure returned $case_status instead of $expected_status"
+  fi
+  if ! python3 - "$case_output" "$case_message" "$expected_status" "issue-$case_slug" <<'PY'
+import json
+import sys
+
+output, message, expected_status, target = sys.argv[1:]
+result = json.loads(output)
+assert result["continue"] is False
+assert result["outcome"] == "tracker-failed"
+assert result["target"] == target
+assert result["failure_kind"] == "transient"
+assert result["exit_status"] == int(expected_status)
+assert result["error"].startswith(message), result["error"]
+assert "retained_worktree" not in result
+PY
+  then
+    err "$case_mode tracker failure did not report a transient tracker-failed result"
+  fi
+  if ! python3 - "$complete_ledger" "session-$case_slug" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger]
+
+row = next(row for row in rows if row["session_id"] == sys.argv[2])
+assert row["finish_time"] == "2026-08-22T00:11:00Z"
+assert row["outcome"] == "tracker-failed"
+assert row["tracker_failure_kind"] == "transient"
+assert "halt_reason" not in row
+assert "halted_at" not in row
+PY
+  then
+    err "$case_mode tracker failure left the row open or halted the target"
+  fi
+  if [ -e "$case_worktree" ]; then
+    err "$case_mode tracker failure left its clean worktree on disk"
+  fi
+done
 
 reserve_and_bind \
   --ledger "$complete_ledger" \
@@ -1143,11 +2978,11 @@ if [ -e "$tmp_dir/worktree-repeat-limit" ]; then
   err "repetition guard created a worktree"
 fi
 
-depth_below="$(plan /research issue-depth-below AFK-safe research-agent claude-opus-5 high default "$tmp_dir/plan-depth-below")"
+depth_below="$(plan /research issue-depth-below AFK-safe research-agent gpt-6.1-sol high default "$tmp_dir/plan-depth-below")"
 assert_plan "eighth lineage hop" "$depth_below" \
-  '{"decision":"spawn","route":"/research","target":"issue-depth-below","agent":"research-agent","model":"claude-opus-5","effort":"high","context_tier":"default","worktree":"'"$tmp_dir"'/plan-depth-below"}'
+  '{"decision":"spawn","route":"/research","target":"issue-depth-below","agent":"research-agent","model":"gpt-6.1-sol","effort":"high","context_tier":"default","worktree":"'"$tmp_dir"'/plan-depth-below"}'
 
-depth_limit="$(plan /research issue-depth-limit AFK-safe research-agent claude-opus-5 high default "$tmp_dir/plan-depth-limit")"
+depth_limit="$(plan /research issue-depth-limit AFK-safe research-agent gpt-6.1-sol high default "$tmp_dir/plan-depth-limit")"
 assert_plan "ninth lineage hop" "$depth_limit" \
   '{"decision":"decline","reason":"target-halted","halt_reason":"chain-depth-limit","route":"/research","target":"issue-depth-limit"}'
 
@@ -1191,21 +3026,151 @@ reserve_and_bind \
 cp "$complete_ledger" "$complete_ledger.before-unmatched"
 unmatched_output="$(
   PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete --ledger "$complete_ledger" \
-    <<< "$(completion_payload agent-unmatched 2026-08-22T00:11:00Z wrong-agent implement-agent session-unmatched)"
+    <<< "$(completion_payload agent-from-another-run 2026-08-22T00:11:00Z implement-agent implement-agent session-unmatched)"
 )"
 assert_plan "unmatched completion" "$unmatched_output" \
+  '{"continue":false,"reason":"unmatched-payload","agent_id":"agent-from-another-run"}'
+
+# Agents this chain never spawned reach the same hook, so identity still has to
+# decline them. Each of these differs from the bound row in exactly one field
+# the match reads.
+other_session_output="$(
+  PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete --ledger "$complete_ledger" \
+    <<< "$(completion_payload agent-unmatched 2026-08-22T00:11:00Z implement-agent implement-agent session-from-another-run)"
+)"
+assert_plan "completion from another session" "$other_session_output" \
+  '{"continue":false,"reason":"unmatched-payload","agent_id":"agent-unmatched"}'
+
+other_type_output="$(
+  PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete --ledger "$complete_ledger" \
+    <<< "$(completion_payload agent-unmatched 2026-08-22T00:11:00Z code-review code-review session-unmatched)"
+)"
+assert_plan "completion from another agent type" "$other_type_output" \
   '{"continue":false,"reason":"unmatched-payload","agent_id":"agent-unmatched"}'
 
 if ! cmp -s "$complete_ledger.before-unmatched" "$complete_ledger"; then
   err "unmatched completion modified the ledger"
 fi
 
+# A row bound with a descriptive agent name must be closed by the payload the
+# runtime actually sends. The runtime sets `agentName` to the agent *type* and
+# carries no field at all for the name the caller chose, so a match that read
+# the bound name could never close such a row and every hop leaked one (#67).
+#
+# The payload below is captured, not constructed: it is the verbatim
+# `subagentStop` hook input recorded in a real session's events.jsonl, and that
+# very invocation is recorded returning `unmatched-payload` against a live
+# ledger. A payload built from the same variables the test passes to `bind` is
+# self-consistent by construction and cannot observe this bug at all.
+captured_fixture="$REPO/scripts/fixtures/subagent-stop-hook-invocation.json"
+captured_ledger="$tmp_dir/.git-loopy/captured-subagents.jsonl"
+captured_worktree="$tmp_dir/worktree-captured"
+# The name a caller binds after launching a descriptively named background
+# agent. Taken from a row this bug left open in this repo's own ledger.
+captured_bound_name="Confirm route before marking routed"
+
+IFS=$'\t' read -r captured_session_id captured_agent_id captured_agent_type captured_agent_name <<<"$(
+  python3 - "$captured_fixture" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as fixture:
+    event = json.load(fixture)
+assert event["data"]["hookType"] == "subagentStop", event["data"]["hookType"]
+payload = event["data"]["input"]
+print("\t".join([
+    payload["sessionId"],
+    payload["agentId"],
+    payload["agentType"],
+    payload["agentName"],
+]))
+PY
+)"
+
+# Without this the test could be quietly rewritten into the self-consistent
+# shape it exists to rule out.
+if [ "$captured_agent_name" = "$captured_bound_name" ]; then
+  err "the captured payload carries the bound name, so it cannot distinguish the two payload shapes"
+fi
+
+# The runtime reports a run under the session that launched it, so a real
+# payload's session id is never the agent's own id. A capture where the two
+# agreed would close the row no matter which of them `bind` recorded, and the
+# documented rule that `--session-id` takes the routing session would go
+# unexercised.
+if [ "$captured_session_id" = "$captured_agent_id" ]; then
+  err "the captured payload's session id equals its agent id, so it cannot exercise the documented bind path"
+fi
+
+reserve_and_bind \
+  --ledger "$captured_ledger" \
+  --route implement \
+  --target issue-captured \
+  --session-id "$captured_session_id" \
+  --agent-id "$captured_agent_id" \
+  --agent-type "$captured_agent_type" \
+  --agent-name "$captured_bound_name" \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$captured_worktree" \
+  --chain-depth 1
+
+captured_payload="$(
+  python3 - "$captured_fixture" "$tmp_dir" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as fixture:
+    payload = json.load(fixture)["data"]["input"]
+# `cwd` is the only captured value rewritten, because the recorded absolute path
+# belongs to the machine that produced the capture. It is repointed at this
+# test's repository and not at the row's worktree, because that is the
+# relationship the capture recorded: the runtime reports the launching session's
+# own directory, never the reserved worktree the run worked in. A payload whose
+# `cwd` were the row's worktree could be matched by directory instead of by
+# identity, which is exactly what this test must not allow. Every field the
+# match reads reaches `complete` exactly as the runtime sent it.
+payload["cwd"] = sys.argv[2]
+print(json.dumps(payload, separators=(",", ":")))
+PY
+)"
+
+captured_output="$(
+  PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete --ledger "$captured_ledger" \
+    <<< "$captured_payload"
+)"
+assert_plan "captured payload completion" "$captured_output" \
+  '{"continue":true,"outcome":"published","target":"issue-captured"}'
+
+if ! python3 - "$captured_ledger" "$captured_bound_name" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger if line.strip()]
+
+assert len(rows) == 1, rows
+assert rows[0]["finish_time"] == "2026-08-22T23:22:11Z", rows
+assert rows[0]["outcome"] == "published", rows
+# The bound name stays on the row: it is still what a human reads to tell one
+# hop from another, it just no longer decides which row a payload closes.
+assert rows[0]["agent_name"] == sys.argv[2], rows
+PY
+then
+  err "the captured subagentStop payload did not close the row bound with a descriptive agent name"
+fi
+
+if [ -e "$captured_worktree" ]; then
+  err "captured payload completion did not remove its worktree"
+fi
+
 # Real payloads from built-in agent types carry only what the runtime chooses to
 # send. `complete` must require nothing beyond the fields it reads: requiring an
 # unread one rejected every live completion, and the chain went silent (#41).
+# `agentName` is absent below because nothing reads it any more (#67), so this
+# also fails if it ever creeps back into required_fields.
 minimal_payload() {
-  local agent_id="$1" agent_type="$2" agent_name="$3" session_id="$4" payload_cwd="$5"
-  printf '%s' '{"sessionId":"'"$session_id"'","timestamp":"2026-08-22T00:11:00Z","cwd":"'"$payload_cwd"'","agentId":"'"$agent_id"'","agentType":"'"$agent_type"'","agentName":"'"$agent_name"'"}'
+  local agent_id="$1" agent_type="$2" session_id="$3" payload_cwd="$4"
+  printf '%s' '{"sessionId":"'"$session_id"'","timestamp":"2026-08-22T00:11:00Z","cwd":"'"$payload_cwd"'","agentId":"'"$agent_id"'","agentType":"'"$agent_type"'"}'
 }
 
 minimal_ledger="$tmp_dir/.git-loopy/minimal-subagents.jsonl"
@@ -1223,7 +3188,7 @@ reserve_and_bind \
 
 minimal_output="$(
   PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete --ledger "$minimal_ledger" \
-    <<< "$(minimal_payload agent-minimal code-review code-review session-minimal "$tmp_dir")"
+    <<< "$(minimal_payload agent-minimal code-review session-minimal "$tmp_dir")"
 )"
 assert_plan "minimal completion" "$minimal_output" \
   '{"continue":true,"outcome":"published","target":"issue-minimal"}'
@@ -1294,7 +3259,7 @@ print(json.dumps(payload, separators=(",", ":")))
 }
 
 required_payload="$(completion_payload agent-required 2026-08-22T00:11:00Z implement-agent implement-agent session-required)"
-for required_field in sessionId timestamp cwd agentId agentType agentName; do
+for required_field in sessionId timestamp cwd agentId agentType; do
   missing_error="$tmp_dir/missing-$required_field.err"
   if PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete \
     --ledger "$required_ledger" \
@@ -1338,7 +3303,7 @@ git -C "$reentry_repo" -c user.name=test -c user.email=test@example.com \
 reentry_output="$(
   cd "$reentry_repo"
   PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete \
-    <<< "$(minimal_payload agent-reentry code-review code-review session-reentry "$reentry_repo")"
+    <<< "$(minimal_payload agent-reentry code-review session-reentry "$reentry_repo")"
 )"
 assert_plan "re-entry completion" "$reentry_output" \
   '{"continue":true,"outcome":"published","target":"issue-reentry"}'
@@ -1362,7 +3327,7 @@ reserve_and_bind \
   --agent-id agent-stale \
   --agent-type implement-agent \
   --agent-name implement-agent \
-  --spawn-time 2026-08-22T00:00:00Z \
+  --spawn-time 2015-01-01T00:00:00Z \
   --worktree "$stale_worktree" \
   --chain-depth 4
 
@@ -1374,12 +3339,16 @@ stale_target="$(plan /implement issue-stale AFK-safe implement-agent gpt-5.6-ter
 assert_plan "stale target before recovery" "$stale_target" \
   '{"decision":"decline","reason":"target-in-flight","route":"/implement","target":"issue-stale"}'
 
-recovery_output="$("$CHAIN" recover --ledger "$recovery_ledger" --stale-after-seconds 60 --now 2026-08-22T00:05:00Z)"
-assert_plan "bound run recovery" "$recovery_output" \
+recovery_output="$("$CHAIN" recover --ledger "$recovery_ledger" --stale-after-seconds 1 --now 2026-08-22T00:05:00Z)"
+assert_plan "old in-flight run recovery" "$recovery_output" \
+  '{"recovered":0,"targets":[]}'
+
+aggressive_recovery_output="$("$CHAIN" recover --ledger "$recovery_ledger" --stale-after-seconds 0 --now 2026-08-22T00:05:00Z)"
+assert_plan "zero-threshold in-flight run recovery" "$aggressive_recovery_output" \
   '{"recovered":0,"targets":[]}'
 
 if [ ! -e "$stale_worktree" ]; then
-  err "recovery disturbed the bound run worktree"
+  err "recovery disturbed an in-flight run whose parent is alive"
 fi
 
 if ! python3 - "$recovery_ledger" <<'PY'
@@ -1395,12 +3364,154 @@ assert row["outcome"] == ""
 assert "reclaimed_at" not in row
 PY
 then
-  err "recovery modified a bound run"
+  err "recovery modified an in-flight run whose parent is alive"
 fi
 
 recovered_target="$(plan /implement issue-stale AFK-safe implement-agent gpt-5.6-terra high default "$tmp_dir/plan-recovered")"
 assert_plan "target after recovery" "$recovered_target" \
   '{"decision":"decline","reason":"target-in-flight","route":"/implement","target":"issue-stale"}'
+
+abandoned_run_ledger="$tmp_dir/.git-loopy/abandoned-run-subagents.jsonl"
+abandoned_run_worktree="$tmp_dir/worktree-abandoned-run"
+bash -c '
+  "$1" reserve --ledger "$2" --route implement --target issue-abandoned-run \
+    --spawn-time 2026-08-22T00:00:00Z --worktree "$3" --chain-depth 1 --parent-pid "$$"
+  "$1" bind --ledger "$2" --worktree "$3" --session-id session-abandoned-run \
+    --agent-id agent-abandoned-run --agent-type implement-agent --agent-name implement-agent
+' bash "$CHAIN" "$abandoned_run_ledger" "$abandoned_run_worktree"
+
+abandoned_run_output="$("$CHAIN" recover --ledger "$abandoned_run_ledger" \
+  --stale-after-seconds 86400 --now 2026-08-22T00:00:01Z)"
+assert_plan "abandoned run recovery" "$abandoned_run_output" \
+  '{"recovered":1,"targets":["issue-abandoned-run"]}'
+if [ -e "$abandoned_run_worktree" ]; then
+  err "recovery did not release an abandoned run's worktree"
+fi
+if ! python3 - "$abandoned_run_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    row = json.loads(ledger.readline())
+
+assert row["agent_id"] == "agent-abandoned-run"
+assert row["finish_time"] == "2026-08-22T00:00:01Z"
+assert row["outcome"] == "reclaimed"
+assert row["reclaimed_at"] == "2026-08-22T00:00:01Z"
+PY
+then
+  err "abandoned run recovery was not recorded as reclaimed"
+fi
+
+reused_pid_run_ledger="$tmp_dir/.git-loopy/reused-pid-run-subagents.jsonl"
+reused_pid_run_worktree="$tmp_dir/worktree-reused-pid-run"
+reserve_and_bind \
+  --ledger "$reused_pid_run_ledger" \
+  --route implement \
+  --target issue-reused-pid-run \
+  --session-id session-reused-pid-run \
+  --agent-id agent-reused-pid-run \
+  --agent-type implement-agent \
+  --agent-name implement-agent \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$reused_pid_run_worktree" \
+  --chain-depth 1
+python3 - "$reused_pid_run_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    row = json.loads(ledger.readline())
+row["parent_start"] = "Mon Jan 01 00:00:00 2001"
+with open(sys.argv[1], "w", encoding="utf-8") as ledger:
+    ledger.write(json.dumps(row, separators=(",", ":")) + "\n")
+PY
+
+reused_pid_output="$("$CHAIN" recover --ledger "$reused_pid_run_ledger" \
+  --stale-after-seconds 999999999 --now 2026-08-22T00:00:01Z)"
+assert_plan "reused parent pid abandoned run recovery" "$reused_pid_output" \
+  '{"recovered":1,"targets":["issue-reused-pid-run"]}'
+if [ -e "$reused_pid_run_worktree" ]; then
+  err "recovery did not reclaim an abandoned run after parent pid reuse"
+fi
+
+unknown_parent_run_ledger="$tmp_dir/.git-loopy/unknown-parent-run-subagents.jsonl"
+unknown_parent_run_worktree="$tmp_dir/worktree-unknown-parent-run"
+reserve_and_bind \
+  --ledger "$unknown_parent_run_ledger" \
+  --route implement \
+  --target issue-unknown-parent-run \
+  --session-id session-unknown-parent-run \
+  --agent-id agent-unknown-parent-run \
+  --agent-type implement-agent \
+  --agent-name implement-agent \
+  --spawn-time 2015-01-01T00:00:00Z \
+  --worktree "$unknown_parent_run_worktree" \
+  --chain-depth 1
+python3 - "$unknown_parent_run_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    row = json.loads(ledger.readline())
+del row["parent_pid"]
+del row["parent_start"]
+with open(sys.argv[1], "w", encoding="utf-8") as ledger:
+    ledger.write(json.dumps(row, separators=(",", ":")) + "\n")
+PY
+
+unknown_parent_output="$("$CHAIN" recover --ledger "$unknown_parent_run_ledger" \
+  --stale-after-seconds 0 --now 2026-08-22T00:00:01Z)"
+assert_plan "unknown-parent run recovery" "$unknown_parent_output" \
+  '{"recovered":0,"targets":[]}'
+if [ ! -e "$unknown_parent_run_worktree" ]; then
+  err "recovery reclaimed a run without proof its parent was gone"
+fi
+
+dirty_abandoned_run_ledger="$tmp_dir/.git-loopy/dirty-abandoned-run-subagents.jsonl"
+dirty_abandoned_run_worktree="$tmp_dir/worktree-dirty-abandoned-run"
+bash -c '
+  "$1" reserve --ledger "$2" --route implement --target issue-dirty-abandoned-run \
+    --spawn-time 2026-08-22T00:00:00Z --worktree "$3" --chain-depth 1 --parent-pid "$$"
+  "$1" bind --ledger "$2" --worktree "$3" --session-id session-dirty-abandoned-run \
+    --agent-id agent-dirty-abandoned-run --agent-type implement-agent --agent-name implement-agent
+' bash "$CHAIN" "$dirty_abandoned_run_ledger" "$dirty_abandoned_run_worktree"
+printf 'uncommitted recovery work\n' > "$dirty_abandoned_run_worktree/uncommitted.txt"
+
+dirty_abandoned_run_error="$tmp_dir/dirty-abandoned-run.err"
+dirty_abandoned_run_output="$("$CHAIN" recover --ledger "$dirty_abandoned_run_ledger" \
+  --stale-after-seconds 999999999 --now 2026-08-22T00:00:01Z \
+  2>"$dirty_abandoned_run_error")"
+assert_plan "dirty abandoned run recovery" "$dirty_abandoned_run_output" \
+  '{"recovered":1,"targets":["issue-dirty-abandoned-run"],"retained_worktrees":["'"$dirty_abandoned_run_worktree"'"]}'
+if [ ! -f "$dirty_abandoned_run_worktree/uncommitted.txt" ]; then
+  err "recovery destroyed an uncommitted file in a reclaimed worktree"
+fi
+if ! grep -q \
+  "worktree has uncommitted changes and was retained: $dirty_abandoned_run_worktree" \
+  "$dirty_abandoned_run_error"
+then
+  err "recovery did not report the retained dirty worktree"
+fi
+if ! python3 - "$dirty_abandoned_run_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    row = json.loads(ledger.readline())
+
+assert row["finish_time"] == "2026-08-22T00:00:01Z"
+assert row["outcome"] == "reclaimed"
+assert row["reclaimed_at"] == "2026-08-22T00:00:01Z"
+PY
+then
+  err "dirty worktree recovery did not release the ledger slot"
+fi
+
+plan_ledger="$abandoned_run_ledger"
+reclaimed_abandoned_target="$(plan /implement issue-abandoned-run AFK-safe implement-agent gpt-5.6-terra high default "$tmp_dir/plan-abandoned-run")"
+assert_plan "reclaimed abandoned run target" "$reclaimed_abandoned_target" \
+  '{"decision":"spawn","route":"/implement","target":"issue-abandoned-run","agent":"implement-agent","model":"gpt-5.6-terra","effort":"high","context_tier":"default","worktree":"'"$tmp_dir"'/plan-abandoned-run"}'
 
 orphan_ledger="$tmp_dir/.git-loopy/orphan-subagents.jsonl"
 orphan_worktree="$tmp_dir/worktree-orphan"
@@ -1577,7 +3688,7 @@ if [ -e "$concurrent_worktree" ]; then
 fi
 
 reservation_ledger="$tmp_dir/.git-loopy/reservation-crash.jsonl"
-CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE=1 "$CHAIN" reserve --parent-pid "$$" \
+CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE=30 "$CHAIN" reserve --parent-pid "$$" \
   --ledger "$reservation_ledger" \
   --route implement \
   --target issue-reservation-crash \
@@ -1585,15 +3696,20 @@ CHAIN_RESERVE_PAUSE_BEFORE_WORKTREE=1 "$CHAIN" reserve --parent-pid "$$" \
   --worktree "$tmp_dir/worktree-reservation-crash" \
   --chain-depth 1 &
 reservation_crash_pid=$!
-for _ in $(seq 1 500); do
-  [ -f "$reservation_ledger.pending" ] && break
+reservation_recorded=0
+reservation_deadline=$((SECONDS + 30))
+while [ "$SECONDS" -lt "$reservation_deadline" ]; do
+  if [ -f "$reservation_ledger.pending" ]; then
+    reservation_recorded=1
+    break
+  fi
+  kill -0 "$reservation_crash_pid" 2>/dev/null || break
   sleep 0.01
 done
-if [ ! -f "$reservation_ledger.pending" ]; then
+kill -KILL "$reservation_crash_pid" 2>/dev/null || true
+wait "$reservation_crash_pid" 2>/dev/null || true
+if [ "$reservation_recorded" -eq 0 ]; then
   err "reservation crash fixture did not record its pending reservation"
-else
-  kill -KILL "$reservation_crash_pid"
-  wait "$reservation_crash_pid" 2>/dev/null || true
 fi
 
 if [ -e "$reservation_ledger" ]; then

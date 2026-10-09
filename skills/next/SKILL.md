@@ -10,6 +10,19 @@ current state and return one recommendation. Leave source files and the issue
 tracker unchanged. A chain spawn may write its ledger and create its reserved
 branch and worktree; the spawned subagent owns work inside that worktree.
 
+The merge gate's `review-clean` evidence uses the canonical producer/matcher in
+[`scripts/review-clean-record.py`](../../scripts/review-clean-record.py). Do not
+reimplement its record shape in the gate; match the comment against the exact
+head being gated through that script.
+
+A successful gate decision returns the exact evaluated `headRefOid`. Treat that
+value as a merge precondition, not as diagnostic output: an unattended merge
+consumer must pass the same value to
+`gh pr merge --match-head-commit "$headRefOid"`. If the pull request advances
+after the gate decision, the merge must refuse rather than substitute the new
+head. Until `/merge` is implemented by issue #52, `chain.sh gate` owns this
+decision contract but does not execute a merge.
+
 ## 1. Refresh the durable state
 
 Locate `docs/agents/issue-tracker.md` and `.github/hooks/git-loopy-chain.json`. If either is
@@ -121,44 +134,41 @@ shares with work in flight is named.
 
 ## 4. Size the runtime
 
-Every recommendation names the **pair** that carries it — a model and a
-reasoning effort — plus a context tier.
+Every recommendation names the **runtime** that carries it — an entitlement-aware
+model selector, an auto-routing tier, and a context tier.
 
 Name the **task type** of the chosen route from git-loopy's closed taxonomy:
 `planning`, `review`, `implementation`, `test`, `docs`, `chore`, `bugfix`.
 
-Read the pair from the project's own calibration rather than deciding it:
+Read the quality target from the project's own calibration rather than
+hard-coding a model name:
 
 ```bash
 git-loopy config list
 ```
 
-Use the `task-type:<key>` line matching the route's task type. A key the map
-leaves unset falls back to the `model` and `reasoning_effort` the same output
-prints. Read the map even when it reports itself inert — that note is about
-git-loopy's own serial iterations, while this pair carries a Copilot CLI
-session the user launches.
+Use the `task-type:<key>` line matching the route's task type to choose the
+Auto tier. Ignore its exact model and reasoning-effort values when constructing
+a Copilot CLI command: organization policy and subscription availability can
+change independently of the repository calibration.
 
-A repository without git-loopy, or a command that fails, falls back to this
-table, which balances speed against quality per task type:
+Use `--model auto` for every recommendation. Copilot CLI's Auto model selection
+chooses only models available to the user's plan and administrator policy, so
+the recommendation remains valid when the organization's model catalog changes.
+Set `--auto-tier intelligence` for `planning` and `review`, `balance` for
+`implementation`, `bugfix`, and `test`, and `efficiency` for `docs` and
+`chore`. The tier is a preference, not a promise of a particular model.
+Do not combine `--model auto` with `--reasoning-effort`; Auto routing owns that
+choice.
 
-| Task type | Model | `--effort` |
-| --- | --- | --- |
-| `planning` | strongest reasoning model available (`claude-opus-5`) | `xhigh` |
-| `review` | strongest reasoning model available (`gpt-5.6-sol`) | `xhigh` |
-| `bugfix` | strong general model (`claude-sonnet-5`, `gpt-5.6-terra`) | `high` |
-| `implementation` | strong general model (`gpt-5.6-terra`) | `high` |
-| `test` | strong general model (`gpt-5.6-terra`) | `medium` |
-| `docs` | strong general model (`gpt-5.6-luna`) | `low` |
-| `chore` | fast model (`claude-haiku-4.5`) | `none` |
+If a human explicitly asks for a named model, select it from Copilot CLI's
+`/model` list first and use that exact identifier; never infer entitlement from
+the repository's calibration or from a model name in this skill.
 
 Mark the action `AFK-safe` only when its target is fully specified and requires
-no new human judgment; otherwise mark it `HITL`. Raise an `AFK-safe` action's
-effort one level, capped at `xhigh`, **only when the pair came from the fallback
-table** — a configured route is already calibrated against unattended runs, so
-raising it counts the same allowance twice. Reserve `max` for a route an `xhigh`
-pass has already failed. When the running CLI does not offer the named model,
-use `auto` and let the effort level carry the demand.
+no new human judgment; otherwise mark it `HITL`. Use the `intelligence` Auto
+tier for AFK-safe work whose quality target is not already `intelligence`;
+otherwise preserve the calibrated tier.
 
 Set `--context long_context` when the run must hold more at once than one
 default window holds — a repo-wide survey, a review over a large diff, a map or
@@ -167,8 +177,9 @@ judgment stays the skill's own; it bills at a higher tier, so `default` carries
 every other run.
 
 This step is complete when the action is marked `HITL` or `AFK-safe` and the
-task type, model, effort, and context tier are each named, with the pair traced
-either to a `task-type:` line in the routing map or to the fallback table.
+task type, `auto` model selector, auto tier, and context tier are each named,
+with the tier traced either to a `task-type:` line in the routing map or to the
+task-type defaults above.
 
 ## 5. Apply the phase-boundary procedure and chain gate
 
@@ -207,12 +218,14 @@ round again.
 
 The chain stops and asks a human before an unexplained runaway: it permits a route at most **three**
 times for one target and a target lineage at most **eight** hops deep. A fourth repeat or ninth hop
-is declined. `subagentStop` closes the finished run's ledger row; `agentStop`, not `subagentStop`,
-carries re-entry into `/next`.
+is declined. Bare issue numbers, `issue-N`, and pull request numbers that close that issue share
+those guards, including ledger rows written with an older spelling. `subagentStop` closes the
+finished run's ledger row; `agentStop`, not `subagentStop`, carries re-entry into `/next`.
 
 The chain and `/handoff` have different lifetimes. The chain runs an in-session subagent alongside
 this session and ends with it. `/handoff` launches detached work that outlives this session. Keep
-`/handoff` separate; never use it as the chain's launcher.
+`/wayfinder`, `/grilling`, `/grill-with-docs`, and `/grill-me` in this session: return their route
+directly, never `/handoff`. Keep `/handoff` separate; never use it as the chain's launcher.
 
 This step is complete when the first applicable phase-boundary choice is known, every `Subagent`
 outcome has a `plan` decision, every decline carries its reason, every fill that stopped short of
@@ -227,7 +240,7 @@ Use this shape:
 Target: <linked issue, PR, map, spec, branch, document, or current conversation>
 State: <Ready | Blocked by ...>
 Context: <Continue here | Fresh session | Fresh session in a new worktree | Subagent>
-Runtime: `--model <model> --effort <level> --context <default | long_context>`
+Runtime: `--model auto --auto-tier <efficiency | balance | intelligence> --context <default | long_context>`
 Why now: <one sentence grounded in live state>
 
 Prompt:
@@ -241,7 +254,7 @@ PROMPT=$(cat <<'PROMPT_EOF'
 /<route> <concise imperative naming the target and desired outcome>
 PROMPT_EOF
 )
-co -n "<descriptive name>" --model "<model>" --effort "<level>" --context "<default | long_context>" --no-mouse -p "$PROMPT"
+copilot -n "<descriptive name>" --model auto --auto-tier "<tier>" --context "<default | long_context>" -p "$PROMPT"
 ```
 ````
 
@@ -280,7 +293,7 @@ target; what this session learned travels only in the prompt.
 The `Command` block is the whole recommendation as one selection the user can
 copy and run. Repeat the prompt inside it byte for byte between the quoted
 heredoc markers, which carry its `#` and spacing through to `-p "$PROMPT"` as
-one argument, and splice the same three runtime flags in verbatim. Name the
+one argument, and splice the same runtime flags in verbatim. Name the
 session with `-n` in a few words drawn from the action, because a launched
 session has no terminal to identify it and that name is how the user returns to
 it with `copilot --yolo --resume="<descriptive name>"`. The command
@@ -297,7 +310,7 @@ opens with the `chain.sh claim` that makes the worktree and moves the agent
 before it writes.
 
 For `/handoff`, use `Continue here` and say that its output opens the fresh
-session. Give `Runtime` as the three flags verbatim, so a launcher such as
+session. Give `Runtime` as the runtime flags verbatim, so a launcher such as
 `/handoff` splices them straight into its background agent.
 
 For a terminal workstream, return:
@@ -313,24 +326,40 @@ user-launched fresh session.
 ## 7. Spawn a chain-approved route
 
 Set `Context: Subagent` only for the `spawn` decision from step 5. Reserve the target in the
-decision's new worktree before launching the returned custom agent in background mode. The routing
+decision's new worktree before launching the returned custom agent in background mode. For the
+serial first hop, reserve the current working directory instead with `chain.sh reserve --in-place`
+and record `COPILOT_AGENT_SESSION_ID` with `--session-id` on that reservation: it is the
+deterministic parent-session value the completion payload will carry, so the transcript can be
+correlated even before the runtime returns the agent identity. An in-place reservation never
+creates, and `complete` and `recover` never remove, the working directory it names. The routing
 agent performs the background custom-agent `task` invocation; `chain.sh` deliberately owns only
 the durable reserve, bind, complete, and guard operations. Each reservation records the process
 identity of its reserving parent, which is this routing session and never the shell that runs the
 command: pass `--parent-pid "$PPID"` from that shell, whose own parent is the session. Recovery
-reclaims an unbound orphan as soon as that parent is gone, or after the configured timeout if the
-parent has lost track of it. `plan` runs that recovery before
+reclaims an unbound orphan when that parent is gone, with the configured timeout as a backstop. It
+reclaims a bound abandoned run only when that parent is proven gone. `plan` runs that recovery before
 it evaluates concurrency, so an orphan cannot make a later candidate appear to be at the ceiling.
-Bind the identity returned by that invocation immediately after launch, then carry the
-recommendation's paste-safe prompt and runtime into the agent. Do not launch a declined action, an
-action that reaches the checkpoint boundary, or an action whose phase-boundary choice is anything
-other than `Subagent`.
+Bind the run immediately after launch, then carry the recommendation's paste-safe prompt and
+runtime into the agent. Do not launch a declined action, an action that reaches the checkpoint
+boundary, or an action whose phase-boundary choice is anything other than `Subagent`.
 
-When a run completes, `subagentStop` frees its reservation and `agentStop` re-enters `/next`. Every
-completion frees one slot, and a re-entry can carry several at once: fan-out finishes in batches, so
-`agentStop` routes the whole batch in a single block and names every freed target in its reason.
-Begin the same one-recommendation fill again and it refills all of them, rather than waiting for the
-other in-flight runs to finish.
+Three of the four `bind` arguments decide whether the row ever closes, and only one of them comes
+back from the `task` invocation. `--agent-id` takes the agent id it returned and `--agent-type` the
+custom agent it ran, but `--session-id` takes **this routing session's own id**, the same session
+whose process is passed as `--parent-pid`, and never that returned agent id: `subagentStop` reports
+a run under the session that launched it, so a row bound with the agent id there matches no payload
+and stays open forever.
+
+`--agent-name` is decorative — it is recorded on the row so a human reading the ledger can tell one
+hop from another, and nothing matches on it. Do not treat a descriptive name as identity: the
+`subagentStop` payload carries no field holding it, so a name is never what a completion finds its
+row by.
+
+When a run completes, `subagentStop` frees its reservation and `agentStop` re-enters `/next`. Each
+completion frees one slot, and a re-entry may carry several completed runs at once: fan-out finishes
+in batches, so `agentStop` routes the whole batch in a single block and names every freed target in
+its reason. Begin the same one-recommendation fill again and refill every freed slot while ready work
+remains, rather than waiting for the other in-flight runs to finish.
 
 Every other route ends at step 6 and leaves a user-launched fresh session, continued session, or
 `/handoff` transition to its own documented behavior.
