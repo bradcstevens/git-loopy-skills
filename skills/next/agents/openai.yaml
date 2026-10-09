@@ -1,3 +1,3 @@
 interface:
   display_name: "Next"
-  short_description: "Route the next workflow action"
+  short_description: "Choose a skill or next workflow action"

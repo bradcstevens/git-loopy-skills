@@ -1,11 +1,11 @@
 ---
 name: next
-description: Route the engineering workflow from live project state. Use when a workflow skill concludes or the user asks what to do next.
+description: Route the engineering workflow or choose a skill for the current situation. Use when a workflow skill concludes, the user asks what to do next, or needs help choosing a skill or flow.
 ---
 
 # Route the Workflow
 
-This skill is the model-invoked router for the engineering flow. Inspect the
+This skill is the model-invoked router for the skills and engineering flow. Inspect the
 current state and return one recommendation. Leave source files and the issue
 tracker unchanged. A chain spawn may write its ledger and create its reserved
 branch and worktree; the spawned subagent owns work inside that worktree.
@@ -25,8 +25,15 @@ decision contract but does not execute a merge.
 
 ## 1. Refresh the durable state
 
+For a **skill-selection** question, read [`SKILL-SELECTION.md`](SKILL-SELECTION.md)
+and identify the desired outcome from the conversation. A standalone request
+uses that conversation as its target; refresh only the files or configuration
+the chosen branch needs. An engineering workstream follows the full refresh
+below. Outside a repository, route a general idea to `/grill-me` and standalone
+requests to their matching skill.
+
 Locate `docs/agents/issue-tracker.md` and `.github/hooks/git-loopy-chain.json`. If either is
-missing, the repository is not configured for these skills: make `/setup-git-loopy-skills` the sole
+missing, the repository is not configured for the engineering flow: make `/setup-git-loopy-skills` the sole
 candidate. In particular, a missing hook means the repository is not configured. Otherwise read the
 file and refresh the
 workstream referenced by the conversation from its configured tracker: issue or PR state,
@@ -44,14 +51,17 @@ or agent process holding one. A git-loopy run names the issue it bound in the
 newest `.git-loopy/logs/` file and works in the worktree it was started from.
 Work recommended into a directory another agent is writing collides with it.
 
-This step is complete when every candidate action has current state and blocker
-information from its durable source, and every worktree is accounted for by the
-process that holds it.
+This step is complete when a standalone request has a concrete outcome and its
+branch's required context, or every engineering candidate has current state and
+blocker information from its durable source and every worktree is accounted for
+by the process that holds it.
 
 ## 2. Find the earliest unresolved gate
 
 The workflow is composable, not a fixed checklist. For each active workstream,
-choose the first matching transition:
+choose the first matching transition. For a standalone request, choose the
+matching branch in `SKILL-SELECTION.md` instead; a completed delivery workstream
+does not make an explicit standalone request complete.
 
 | Current state | Next route |
 | --- | --- |
@@ -76,7 +86,7 @@ choose the first matching transition:
 | Reviewed work remains local or the current branch lacks its PR | `/push` |
 | No delivery work is active and codebase health needs a survey | `/improve-codebase-architecture` |
 | The user wants a stateful learning path | `/teach` |
-| The task is to write or revise an agent skill | `/writing-for-agents` |
+| The task is to write or revise a document an agent consumes | `/writing-for-agents` |
 | The accepted work is closed, reviewed, and published | No next route: report completion |
 
 Apply these flow rules:
@@ -147,7 +157,8 @@ hard-coding a model name:
 git-loopy config list
 ```
 
-Use the `task-type:<key>` line matching the route's task type to choose the
+If git-loopy is unavailable, name that limitation and use the task-type defaults
+below. Otherwise use the `task-type:<key>` line matching the route's task type to choose the
 Auto tier. Ignore its exact model and reasoning-effort values when constructing
 a Copilot CLI command: organization policy and subscription availability can
 change independently of the repository calibration.
@@ -184,8 +195,8 @@ task-type defaults above.
 ## 5. Apply the phase-boundary procedure and chain gate
 
 At every intentional phase boundary, apply the full ordered procedure in the co-installed
-[`PHASE-BOUNDARIES.md`](PHASE-BOUNDARIES.md); its first yes wins. The procedure belongs in this
-skill's directory so an installation of `/next` carries it without `/skill-router`.
+[`PHASE-BOUNDARIES.md`](PHASE-BOUNDARIES.md); its first yes wins. The procedure is
+co-installed with `/next`, so a standalone installation carries the full reference.
 
 The procedure's fourth question, “Can the task be done AFK?”, is the reasoning behind the chain's
 spawn gate. Only when it is the first yes does the procedure select `Subagent`. That action is

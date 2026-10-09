@@ -163,7 +163,7 @@ Not everything belongs in a subagent. A subagent starts with a fresh context and
 user, which rules out two whole families.
 
 **Human-in-the-loop.** `/grilling`, `/grill-me`, `/batch-grill-me`, `/grill-with-docs`, `/loop-me`,
-`/teach`, `/to-questionnaire`, `/skill-router`, `/triage` in its interactive roles. Each works in
+`/teach`, `/to-questionnaire`, `/triage` in its interactive roles. Each works in
 rounds of question and answer; the decisions are the user's. Delegate the fact-finding *inside*
 them, never the interview.
 
@@ -213,7 +213,6 @@ are read into whatever session needs them rather than dispatched anywhere.
 | `/research` | `research`; `research-agent` when chain-spawned | Background |
 | `/resolving-merge-conflicts` | `resolving-merge-conflicts-agent`, via the `/next` chain only | Background when AFK-safe, else main session |
 | `/setup-git-loopy-skills` | — | Main session |
-| `/skill-router` | — | Main session |
 | `/tdd` | `task` | Sync, per red/green step |
 | `/teach` | — | Main session |
 | `/to-questionnaire` | — | Main session |

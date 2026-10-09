@@ -85,7 +85,7 @@ situation matches. The rest you invoke by name.
 | microsoft-foundry | automatic | Deploy, evaluate, and manage Foundry agents end-to-end: Docker build, ACR push, hosted/prompt agent create, container start, batch eval, continuous eval, prompt optimizer workflows, agent.yaml, dataset curation from traces. |
 | model-fit | `/model-fit` | Research licensed Copilot models and synchronize model, effort, context, and enforcement across Copilot built-ins and git-loopy task routing. |
 | narrow-react-prop-types | automatic | narrow React component prop types to match live code paths |
-| [next](docs/next.md) | automatic | Route the engineering workflow from live project state. |
+| [next](docs/next.md) | automatic | Route the engineering workflow or choose a skill for the current situation. |
 | playwright-cli | automatic | Automates browser interactions for web testing, form filling, screenshots, and data extraction. |
 | [prototype](docs/prototype.md) | automatic | Build a throwaway prototype to answer a design question. |
 | push | `/push` | Publish current work by staging intended changes, committing, pushing, and opening a pull request when needed. |
@@ -94,7 +94,6 @@ situation matches. The rest you invoke by name.
 | [resolving-merge-conflicts](docs/resolving-merge-conflicts.md) | automatic | Use when you need to resolve an in-progress git merge/rebase conflict. |
 | [setup-git-loopy-skills](docs/setup-git-loopy-skills.md) | `/setup-git-loopy-skills` | Configure this repo for the engineering skills — set up its issue tracker, triage label vocabulary, and domain doc layout. |
 | show-me | automatic | Help the user understand the current topic visually with concise diagrams, code-shape sketches, and focused HTML artifacts. |
-| skill-router | `/skill-router` | Ask which skill or flow fits your situation. |
 | [sync-model-roster](docs/sync-model-roster.md) | `/sync-model-roster` | Reconcile git-loopy's pinned model roster and one config.toml scope with authenticated harness evidence. |
 | [tdd](docs/tdd.md) | automatic | Test-driven development. |
 | [teach](docs/teach.md) | `/teach` | Teach the user a new skill or concept, within this workspace. |

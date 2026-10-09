@@ -1,5 +1,11 @@
 # `PHASE-BOUNDARIES.md` is duplicated into `/next`, not shared with `/skill-router`
 
+**Superseded:** `/skill-router` is merged into `/next`. The sole authoritative
+phase-boundary reference is now `skills/next/PHASE-BOUNDARIES.md`, co-installed
+with the router. Validation checks that reference and `SKILL-SELECTION.md` are
+present; the duplicate-copy comparison is retired. The decision below records
+why the former two-router layout required duplication.
+
 `skills/next/` and `skills/skill-router/` each carry their own full copy of `PHASE-BOUNDARIES.md`.
 Duplication normally reads as an error, so the reason is recorded here: skills install
 individually. `npx skills add bradcstevens/git-loopy-skills --skill=next` copies only
