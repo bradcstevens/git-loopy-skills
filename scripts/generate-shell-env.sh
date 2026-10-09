@@ -87,7 +87,7 @@ _git_loopy_skill() {
 
     "\$cli" \\
         --agent "\$skill" \\
-        --model "\${GIT_LOOPY_MODEL:-claude-gpt-6.1-sol}" \\
+        --model "\${GIT_LOOPY_MODEL:-gpt-6.1-sol}" \\
         --effort "\${GIT_LOOPY_EFFORT:-xhigh}" \\
         --context "\${GIT_LOOPY_CONTEXT:-long_context}" \\
         -i "\$prompt"

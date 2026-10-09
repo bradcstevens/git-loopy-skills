@@ -39,7 +39,7 @@ EOF
 
 rejected_stub="$(stub rejected <<'EOF'
 #!/usr/bin/env bash
-echo "error: unknown option '--effort'"
+echo "error: unknown option '--auto-tier'"
 exit 1
 EOF
 )"
@@ -68,6 +68,16 @@ run() {
     "${@:2}"
 }
 
+run_auto() {
+  HANDOFF_COPILOT_BIN="$1" "$HANDOFF" \
+    --name "Fix login bug" \
+    --model auto \
+    --auto-tier balance \
+    --context default \
+    --prompt-file "$prompt_file" \
+    "${@:2}"
+}
+
 field() {
   python3 -c 'import json,sys; print(json.loads(sys.argv[1])[sys.argv[2]])' "$1" "$2"
 }
@@ -77,9 +87,18 @@ set +e
 missing_status=$?
 "$HANDOFF" --name n --model m --effort e --context c --prompt-file "$tmp_dir/absent.txt" >/dev/null 2>&1
 absent_status=$?
+# A regression in these two would launch the binary, so they run against a stub.
+HANDOFF_COPILOT_BIN="$exited_stub" "$HANDOFF" --name n --model m --effort e --auto-tier t \
+  --context c --prompt-file "$prompt_file" >/dev/null 2>&1
+both_status=$?
+HANDOFF_COPILOT_BIN="$exited_stub" "$HANDOFF" --name n --model m \
+  --context c --prompt-file "$prompt_file" >/dev/null 2>&1
+neither_status=$?
 set -e
 [ "$missing_status" -eq 2 ] || err "an incomplete call exited $missing_status rather than 2"
 [ "$absent_status" -eq 2 ] || err "a missing prompt file exited $absent_status rather than 2"
+[ "$both_status" -eq 2 ] || err "both --auto-tier and --effort exited $both_status rather than 2"
+[ "$neither_status" -eq 2 ] || err "neither --auto-tier nor --effort exited $neither_status rather than 2"
 
 log="$tmp_dir/launched.log"
 set +e
@@ -100,7 +119,7 @@ kill -0 "$launched_pid" 2>/dev/null || err "the reported pid is not a running pr
 expected_argv="$tmp_dir/expected-argv"
 {
   printf '%s\n' --yolo --no-ask-user -n "Fix login bug" --model gpt-5.6-terra
-  printf '%s\n' --effort high --context default -p
+  printf '%s\n' --reasoning-effort high --context default -p
   cat "$prompt_file"
 } > "$expected_argv"
 # cat strips the prompt's trailing newline, which printf then restores.
@@ -108,12 +127,40 @@ if ! diff -q "$expected_argv" "$HANDOFF_ARGV" >/dev/null; then
   err "the session did not receive the runtime flags and the prompt as one argument each"
   diff "$expected_argv" "$HANDOFF_ARGV" >&2 || true
 fi
+[ "$(field "$launched_json" effort)" = "high" ] || err "the result does not report the effort it launched with"
+[ "$(field "$launched_json" auto_tier)" = "" ] || err "an effort launch reported an auto tier"
+
+kill "$launched_pid" 2>/dev/null || true
+launched_pid=""
+
+auto_log="$tmp_dir/auto.log"
+set +e
+auto_json="$(run_auto "$alive_stub" --log "$auto_log")"
+auto_status=$?
+set -e
+[ "$auto_status" -eq 0 ] || err "a live auto-tier session exited $auto_status rather than 0"
+[ "$(field "$auto_json" status)" = "launched" ] ||
+  err "a live auto-tier session reported $(field "$auto_json" status) rather than launched"
+launched_pid="$(field "$auto_json" pid)"
+[ "$(field "$auto_json" auto_tier)" = "balance" ] || err "the result does not report the auto tier it launched with"
+[ "$(field "$auto_json" effort)" = "" ] || err "an auto-tier launch reported an effort"
+
+expected_auto_argv="$tmp_dir/expected-auto-argv"
+{
+  printf '%s\n' --yolo --no-ask-user -n "Fix login bug" --model auto
+  printf '%s\n' --auto-tier balance --context default -p
+  cat "$prompt_file"
+} > "$expected_auto_argv"
+if ! diff -q "$expected_auto_argv" "$HANDOFF_ARGV" >/dev/null; then
+  err "the auto-tier session did not receive the runtime flags and the prompt as one argument each"
+  diff "$expected_auto_argv" "$HANDOFF_ARGV" >&2 || true
+fi
 
 kill "$launched_pid" 2>/dev/null || true
 launched_pid=""
 
 set +e
-rejected_json="$(run "$rejected_stub" --log "$tmp_dir/rejected.log")"
+rejected_json="$(run_auto "$rejected_stub" --log "$tmp_dir/rejected.log")"
 rejected_status=$?
 exited_json="$(run "$exited_stub" --log "$tmp_dir/exited.log")"
 exited_status=$?
