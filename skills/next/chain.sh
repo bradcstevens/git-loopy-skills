@@ -1398,8 +1398,9 @@ def resolve_tracker_target():
     if not isinstance(canonical, dict):
         return None, "target resolver returned invalid data"
     if canonical.get("error"):
+        failure = canonical["error"]
         detail = canonical.get("detail")
-        return None, f"{canonical['error']}: {detail}" if detail else str(canonical["error"])
+        return None, f"{failure}: {detail}" if detail else str(failure)
     tracker_target = canonical.get("tracker_target")
     if not isinstance(tracker_target, str) or not tracker_target:
         return None, "target resolver returned no tracker target"
