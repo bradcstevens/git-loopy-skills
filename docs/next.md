@@ -55,12 +55,13 @@ liveness check proves its reserving parent is gone; age alone never reclaims an 
 Reclaiming releases the row's slot, but a worktree with tracked or untracked changes is retained and
 reported rather than force-removed. Every `plan` runs recovery before checking capacity, so
 reclaimed slots immediately become available to the next candidate. It stops at a checkpoint
-boundary rather than spawning when the route is HITL or not allowlisted, a route repeats four times
-for a target, or a target would take its ninth hop. `subagentStop` closes the completed ledger row;
-if its tracker lookup fails, the row closes as `tracker-failed` and records whether the failure was
-transient or permanent. A transient rate limit, server error, network failure, or timeout leaves the
-target retryable and retains the worktree. A permanent missing or malformed target halts the target,
-force-removes the worktree, and returns the cause instead of being mistaken for `no-evidence`.
+boundary rather than spawning when the route is HITL or not allowlisted, a route would take its
+fourth repeat for a target, or a target would take its ninth hop. `subagentStop` closes the completed
+ledger row; if its tracker lookup fails, the row closes as `tracker-failed` and records whether the
+failure was transient or permanent. A transient rate limit, server error, network failure, or timeout
+leaves the target retryable. A clean worktree is removed; a worktree with uncommitted changes, or one
+whose state cannot be inspected, is retained and reported. A permanent missing or malformed target
+halts the target and uses the same safe cleanup rule instead of being mistaken for `no-evidence`.
 `agentStop` re-enters `/next` for the batch of completed, unrouted runs, allowing one fill to replace
 every slot that batch freed.
 AFK-safe and allowlisted are the two eligibility conditions for consulting `chain.sh plan`, not a

@@ -70,14 +70,19 @@ _Avoid_: Caller, spawner
 
 **Orphaned reservation**:
 A reservation that never got bound, because the spawn failed or its parent died in between. It
-holds a slot no agent will ever release, so it is reclaimed by checking whether the parent is still
-alive, with a timeout as backstop — the intent of `chain.sh recover`, which is the timeout alone
-until #64 adds the liveness check.
+holds a slot no agent will ever release, so `chain.sh recover` reclaims it when its reserving parent
+is gone, with the stale timeout as a backstop for unbound rows without usable parent identity.
 _Avoid_: Stale row, dangling row
 
 **Completed chain reservation**:
-A ledger row whose run has finished. `chain.sh complete` removes its worktree inside the ledger
-lock, in the same step that releases its concurrency slot, so it is never a sweep's to reclaim.
+A ledger row whose run has finished. `chain.sh complete` releases its slot inside the ledger lock
+and removes its worktree only when it is clean; uncommitted changes or an inspection failure retain
+the worktree and are reported rather than force-removed.
+
+**Tracker-failed completion**:
+A completed run whose tracker lookup failed, distinct from `no-evidence` because the tracker did not
+answer. The cause is recorded; a transient failure leaves the target retryable, while a permanent
+missing target halts it.
 
 **Abandoned run**:
 A bound reservation whose reserving parent ended before the run completed. Chain runs live inside

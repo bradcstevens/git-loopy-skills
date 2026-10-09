@@ -7,11 +7,8 @@ from typing import Optional, Sequence, Tuple
 
 
 PERMANENT_FAILURE_PATTERNS = (
-    r"\bcould not resolve to an issue\b",
+    r"\bcould not resolve to an issue(?: or pull request)? with the number of\b",
     r"\bdoes not resolve\b",
-    r"\bhttp(?: status)?\s*404\b",
-    r"\bstatus(?: code)?\s*404\b",
-    r"\b404\s+not found\b",
     r"\b(?:invalid|malformed)\s+(?:issue(?: number)?|target)\b",
     r"\bissue(?: number)?\s+(?:is|was)\s+(?:invalid|malformed)\b",
 )

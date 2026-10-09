@@ -246,23 +246,23 @@ remove_worktree() {
   local ledger_root
 
   if [ -e "$worktree" ]; then
-    git -C "$worktree" worktree remove --force "$worktree"
+    git -C "$worktree" worktree remove "$worktree"
   else
     ledger_root="$(repository_root)"
     git -C "$ledger_root" worktree prune
   fi
 }
 
-recovered_worktree_can_be_removed() {
+worktree_can_be_removed() {
   local worktree="$1" status
 
   [ -e "$worktree" ] || return 0
   if ! status="$(git -C "$worktree" status --porcelain=v1 --untracked-files=all)"; then
-    echo "error: could not inspect reclaimed worktree: $worktree" >&2
+    echo "error: could not inspect worktree; retaining it: $worktree" >&2
     return 1
   fi
   if [ -n "$status" ]; then
-    echo "warning: reclaimed worktree has uncommitted changes and was retained: $worktree" >&2
+    echo "warning: worktree has uncommitted changes and was retained: $worktree" >&2
     return 1
   fi
   return 0
@@ -951,7 +951,7 @@ complete() {
     ledger="$(repository_root)/.git-loopy/subagents.jsonl"
   fi
 
-  local ledger_dir result exit_status tracker_failure_kind
+  local ledger_dir result exit_status tracker_failure_kind retained_worktree worktree
   ledger_dir="$(dirname "$ledger")"
   mkdir -p "$ledger_dir"
   lock_dir="$ledger.lock"
@@ -1224,8 +1224,6 @@ if tracker_error is not None:
     result["failure_kind"] = tracker_failure_kind
     result["error"] = tracker_error
     result["exit_status"] = exit_status
-    if tracker_failure_kind == "transient":
-        result["retained_worktree"] = worktree
 print(json.dumps(result, separators=(",", ":")))
 if tracker_error is not None:
     print(
@@ -1252,10 +1250,28 @@ import sys
 
 raise SystemExit(0 if json.load(sys.stdin).get("reason") is None else 1)
 ' <<< "$result"; then
-    if [ "$tracker_failure_kind" != "transient" ]; then
-      remove_worktree "$(cat "$metadata")"
+  retained_worktree=""
+  worktree="$(cat "$metadata")"
+  if worktree_can_be_removed "$worktree"; then
+    if ! remove_worktree "$worktree"; then
+      echo "warning: could not remove clean worktree; retaining it: $worktree" >&2
+      retained_worktree="$worktree"
     fi
-    mv "$tmp" "$ledger"
+  else
+    retained_worktree="$worktree"
+  fi
+  if [ -n "$retained_worktree" ]; then
+    result="$(python3 - "$result" "$retained_worktree" <<'PY'
+import json
+import sys
+
+result = json.loads(sys.argv[1])
+result["retained_worktree"] = sys.argv[2]
+print(json.dumps(result, separators=(",", ":")))
+PY
+)"
+  fi
+  mv "$tmp" "$ledger"
   else
     rm -f "$tmp"
   fi
@@ -1413,8 +1429,11 @@ print(json.dumps({
   local worktree
   local -a retained_worktrees=()
   while IFS= read -r worktree; do
-    if recovered_worktree_can_be_removed "$worktree"; then
-      remove_worktree "$worktree"
+    if worktree_can_be_removed "$worktree"; then
+      if ! remove_worktree "$worktree"; then
+        echo "warning: could not remove clean worktree; retaining it: $worktree" >&2
+        retained_worktrees+=("$worktree")
+      fi
     else
       retained_worktrees+=("$worktree")
     fi

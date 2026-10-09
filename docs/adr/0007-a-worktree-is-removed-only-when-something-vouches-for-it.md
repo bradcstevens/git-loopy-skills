@@ -71,42 +71,28 @@ as its own question rather than leaving it implied here.
 
 Four kinds of worktree exist in this workflow, and the sweeper owns two of them.
 
-A **completed chain reservation** is removed by `chain.sh complete`, inside the ledger lock, in the
-same step that releases the concurrency slot. That cannot move. Deferring it to a skill run would
-leave slots held between the run finishing and the next sweep, starving the chain — a regression
-wearing the clothes of a decoupling.
+A **completed chain reservation** releases its slot inside `chain.sh complete`'s ledger lock.
+`complete` removes the worktree in that same step when it is clean; uncommitted changes or an
+inspection failure retain and report it rather than risk deleting work that exists nowhere else.
+That cannot move. Deferring slot release to a skill run would leave slots held between the run
+finishing and the next sweep, starving the chain — a regression wearing the clothes of a decoupling.
 
-An **orphaned reservation** is a ledger row, and `CONTEXT.md` already names it. `chain.sh recover` is
-written for it and #28 owns wiring it up, with the explicit instruction to reuse the existing
-stale-lock recovery rather than invent a second mechanism. The sweeper calls `recover`; it does not
+An **orphaned reservation** is a ledger row, and `CONTEXT.md` names it. `chain.sh recover` reuses the
+existing stale-lock recovery machinery to verify the reserving parent's process identity. It
+reclaims an unbound reservation when its parent is gone, with age as a backstop, and reclaims a
+bound **abandoned run** only when its parent is proven gone. The sweeper calls `recover`; it does not
 reimplement it.
-
-That delegation is to a mechanism which does not yet honour this record. `recover` as written closes
-every open row older than its stale threshold and then force-removes the worktree, with no liveness
-check anywhere in that path — the pid and start-time check lives only in stale-lock recovery and
-never looks at ledger rows. It is exactly the timer rejected above. The objection does not stop
-applying at a delegation boundary, so #64 owes `recover` that liveness check before the sweeper
-leans on it; until then, a sweep that calls `recover` inherits the failure mode instead of escaping
-it.
 
 That leaves the sweeper the worktrees **no ledger tracks**: those the `git-loopy --parallel` runner
 creates, and those an agent creates itself because a `/next` prompt told it to. This is where the
 clutter actually is, and it is the only region with no owner at all.
 
-A fifth kind nearly exists, and is designed out rather than owned. `reserve` accepts any `--target`
-string, while `complete` resolves that target against the tracker and exits before closing the row
-if it does not resolve. A row bound to a target that never existed therefore holds a slot and a
-worktree it can never release, and it fits none of the four: it is bound, so it is not an orphaned
-reservation, and it is ledger-tracked, so it is not the sweeper's. The answer is to stop creating it
-— `reserve` and `plan` validate the target when the row is written, at the same boundary `complete`
-already validates it — rather than to admit it as a fifth kind with an owner to match.
-
-Validating at the write boundary is necessary and not sufficient. `complete` resolves the target
-over the network, so a target that was perfectly valid when reserved still strands its row on any
-transient `gh` failure, and a network blip is the common case rather than the exotic one. `complete`
-must therefore fail safe: a tracker it cannot reach is a tracker whose answer is unknown, and an
-unknown answer is not grounds for holding a concurrency slot and a worktree forever. Every open row
-being closable is a property the four kinds assume, and #63 owes both halves of it.
+A fifth kind nearly existed and is designed out rather than owned. `reserve` and `plan` validate a
+target before writing a row or creating a worktree, so a target that does not resolve cannot claim a
+slot. `complete` still resolves the target over the network: if the tracker cannot answer, it
+closes the row as `tracker-failed` rather than treating the failure as `no-evidence`. It removes a
+clean worktree and retains and reports one with uncommitted changes or an uninspectable state.
+Issue #63 implements both boundaries, so a failed lookup no longer leaves an open row.
 
 ## Consequences
 

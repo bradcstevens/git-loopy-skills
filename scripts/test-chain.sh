@@ -37,11 +37,15 @@ fi
 case "${CHAIN_TRACKER_MODE:-resolved}" in
   resolved) ;;
   unresolvable)
-    echo "target $3 does not resolve" >&2
+    echo "GraphQL: Could not resolve to an issue or pull request with the number of $3. (repository.issue)" >&2
     exit 1
     ;;
   not-found)
-    echo "HTTP 404: target $3 was not found" >&2
+    echo "GraphQL: Could not resolve to an issue or pull request with the number of $3. (repository.issue)" >&2
+    exit 1
+    ;;
+  ambiguous-404)
+    echo "HTTP 404: resource not found" >&2
     exit 1
     ;;
   malformed-target)
@@ -119,14 +123,14 @@ for message in (
     "HTTP 403: API rate limit exceeded for user.",
     "HTTP 429: too many requests",
     "HTTP 503: service unavailable",
+    "HTTP 404: resource not found",
     "dial tcp: lookup github.com: no such host",
     "request timed out",
 ):
     assert classify_tracker_failure(message) == "transient", message
 
 for message in (
-    "could not resolve to an Issue with the number of 99999",
-    "HTTP 404: not found",
+    "GraphQL: Could not resolve to an issue or pull request with the number of 99999. (repository.issue)",
     "malformed target: issue-?",
 ):
     assert classify_tracker_failure(message) == "permanent", message
@@ -247,7 +251,7 @@ then
   err "reserve accepted an unresolvable target"
 fi
 if ! grep -q \
-  "target-unresolvable: issue-unresolvable-reserve: target issue-unresolvable-reserve does not resolve" \
+  "target-unresolvable: issue-unresolvable-reserve: GraphQL: Could not resolve to an issue or pull request with the number of issue-unresolvable-reserve. (repository.issue)" \
   "$unresolvable_reserve_error"
 then
   err "reserve did not report the rejected target and cause"
@@ -573,13 +577,28 @@ unresolvable_plan="$(
     --worktree "$unresolvable_plan_worktree"
 )"
 assert_plan "unresolvable target" "$unresolvable_plan" \
-  '{"decision":"decline","reason":"target-unresolvable","route":"/implement","target":"issue-unresolvable-plan","error":"target issue-unresolvable-plan does not resolve"}'
+  '{"decision":"decline","reason":"target-unresolvable","route":"/implement","target":"issue-unresolvable-plan","error":"GraphQL: Could not resolve to an issue or pull request with the number of issue-unresolvable-plan. (repository.issue)"}'
 if [ -e "$plan_ledger" ]; then
   err "plan wrote a ledger row for an unresolvable target"
 fi
 if [ -e "$unresolvable_plan_worktree" ]; then
   err "plan created a worktree for an unresolvable target"
 fi
+
+ambiguous_404_plan="$(
+  CHAIN_TRACKER_MODE=ambiguous-404 "$CHAIN" plan \
+    --ledger "$plan_ledger" \
+    --route /implement \
+    --target issue-ambiguous-404 \
+    --safety AFK-safe \
+    --agent implement-agent \
+    --model gpt-5.6-terra \
+    --effort high \
+    --context-tier default \
+    --worktree "$tmp_dir/worktree-ambiguous-404"
+)"
+assert_plan "ambiguous 404" "$ambiguous_404_plan" \
+  '{"decision":"decline","reason":"tracker-unavailable","route":"/implement","target":"issue-ambiguous-404","error":"HTTP 404: resource not found"}'
 
 rate_limit_plan_worktree="$tmp_dir/worktree-rate-limit-plan"
 rate_limit_plan="$(
@@ -1168,6 +1187,48 @@ assert_plan "no-evidence target" "$no_evidence_target" \
 reserve_and_bind \
   --ledger "$complete_ledger" \
   --route push \
+  --target issue-clean-transient-tracker-failure \
+  --session-id session-clean-transient-tracker-failure \
+  --agent-id agent-clean-transient-tracker-failure \
+  --agent-type push-agent \
+  --agent-name push-agent \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$tmp_dir/worktree-clean-transient-tracker-failure" \
+  --chain-depth 3
+
+clean_transient_tracker_failure_status=0
+if clean_transient_tracker_failure_output="$(
+  CHAIN_TRACKER_MODE=transport-failure "$CHAIN" complete --ledger "$complete_ledger" \
+    <<< "$(completion_payload agent-clean-transient-tracker-failure 2026-08-22T00:11:00Z push-agent push-agent session-clean-transient-tracker-failure)" \
+    2>"$tmp_dir/clean-transient-tracker-failure.err"
+)"
+then
+  err "clean transient tracker failure returned success"
+else
+  clean_transient_tracker_failure_status=$?
+fi
+if [ "$clean_transient_tracker_failure_status" -ne 23 ]; then
+  err "clean transient tracker failure did not preserve its exit status"
+fi
+if ! python3 - "$clean_transient_tracker_failure_output" <<'PY'
+import json
+import sys
+
+result = json.loads(sys.argv[1])
+assert result["outcome"] == "tracker-failed"
+assert result["failure_kind"] == "transient"
+assert "retained_worktree" not in result
+PY
+then
+  err "clean transient tracker failure was not reported as removed"
+fi
+if [ -e "$tmp_dir/worktree-clean-transient-tracker-failure" ]; then
+  err "clean transient tracker failure left its worktree on disk"
+fi
+
+reserve_and_bind \
+  --ledger "$complete_ledger" \
+  --route push \
   --target issue-transient-tracker-failure \
   --session-id session-transient-tracker-failure \
   --agent-id agent-transient-tracker-failure \
@@ -1227,6 +1288,12 @@ then
 fi
 if [ ! -f "$tmp_dir/worktree-transient-tracker-failure/uncommitted.txt" ]; then
   err "transient tracker failure removed uncommitted work"
+fi
+if ! grep -q \
+  "worktree has uncommitted changes and was retained: $tmp_dir/worktree-transient-tracker-failure" \
+  "$transient_tracker_failure_error"
+then
+  err "transient tracker failure did not report its retained dirty worktree"
 fi
 
 plan_ledger="$complete_ledger"
@@ -1402,7 +1469,7 @@ reserve_and_bind \
   --worktree "$tmp_dir/worktree-permanent-tracker-failure" \
   --chain-depth 3
 
-printf 'discarded by maintainer ruling\n' > "$tmp_dir/worktree-permanent-tracker-failure/uncommitted.txt"
+printf 'uncommitted permanent-failure work\n' > "$tmp_dir/worktree-permanent-tracker-failure/uncommitted.txt"
 permanent_tracker_failure_error="$tmp_dir/permanent-tracker-failure.err"
 permanent_tracker_failure_status=0
 if permanent_tracker_failure_output="$(
@@ -1419,9 +1486,9 @@ if [ "$permanent_tracker_failure_status" -ne 1 ]; then
   err "permanent tracker failure did not preserve its exit status"
 fi
 assert_plan "permanent tracker failure" "$permanent_tracker_failure_output" \
-  '{"continue":false,"outcome":"tracker-failed","target":"issue-permanent-tracker-failure","failure_kind":"permanent","error":"HTTP 404: target issue-permanent-tracker-failure was not found","exit_status":1}'
+  '{"continue":false,"outcome":"tracker-failed","target":"issue-permanent-tracker-failure","failure_kind":"permanent","error":"GraphQL: Could not resolve to an issue or pull request with the number of issue-permanent-tracker-failure. (repository.issue)","exit_status":1,"retained_worktree":"'"$tmp_dir"'/worktree-permanent-tracker-failure"}'
 if ! grep -q \
-  "tracker lookup failed for issue-permanent-tracker-failure: HTTP 404: target issue-permanent-tracker-failure was not found" \
+  "tracker lookup failed for issue-permanent-tracker-failure: GraphQL: Could not resolve to an issue or pull request with the number of issue-permanent-tracker-failure. (repository.issue)" \
   "$permanent_tracker_failure_error"
 then
   err "permanent tracker failure did not report its target and cause"
@@ -1441,7 +1508,7 @@ row = next(
 assert row["finish_time"] == "2026-08-22T00:11:00Z"
 assert row["outcome"] == "tracker-failed"
 assert row["tracker_error"] == (
-    "HTTP 404: target issue-permanent-tracker-failure was not found"
+    "GraphQL: Could not resolve to an issue or pull request with the number of issue-permanent-tracker-failure. (repository.issue)"
 )
 assert row["tracker_failure_kind"] == "permanent"
 assert row["halt_reason"] == "tracker-failed"
@@ -1450,9 +1517,14 @@ PY
 then
   err "permanent tracker failure did not close and halt the target"
 fi
-if [ -e "$tmp_dir/worktree-permanent-tracker-failure" ]; then
-  err "permanent tracker failure did not force-remove its worktree"
-  git -C "$tmp_dir" worktree remove --force "$tmp_dir/worktree-permanent-tracker-failure"
+if [ ! -f "$tmp_dir/worktree-permanent-tracker-failure/uncommitted.txt" ]; then
+  err "permanent tracker failure removed uncommitted work"
+fi
+if ! grep -q \
+  "worktree has uncommitted changes and was retained: $tmp_dir/worktree-permanent-tracker-failure" \
+  "$permanent_tracker_failure_error"
+then
+  err "permanent tracker failure did not report its retained dirty worktree"
 fi
 
 permanent_retry="$(plan /push issue-permanent-tracker-failure AFK-safe push-agent gpt-5.6-terra high default "$tmp_dir/plan-permanent-retry")"
@@ -2131,7 +2203,7 @@ if [ ! -f "$dirty_abandoned_run_worktree/uncommitted.txt" ]; then
   err "recovery destroyed an uncommitted file in a reclaimed worktree"
 fi
 if ! grep -q \
-  "reclaimed worktree has uncommitted changes and was retained: $dirty_abandoned_run_worktree" \
+  "worktree has uncommitted changes and was retained: $dirty_abandoned_run_worktree" \
   "$dirty_abandoned_run_error"
 then
   err "recovery did not report the retained dirty worktree"
