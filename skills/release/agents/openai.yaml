@@ -1,0 +1,5 @@
+interface:
+  display_name: "Release"
+  short_description: "Release all completed, unreleased git-loopy issues"
+policy:
+  allow_implicit_invocation: false

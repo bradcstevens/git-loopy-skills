@@ -18,9 +18,19 @@ If the code refers to any Microsoft technologies, run the `/microsoft-code-refer
 
 ### 1. Pin the fixed point
 
+Immediately after entering the review, capture the exact candidate being reviewed:
+
+```bash
+reviewed_head="$(git rev-parse HEAD)"
+```
+
+Keep this value unchanged for the whole review. Use it, rather than a later `HEAD`, for the
+diff (`git diff <fixed-point>..."$reviewed_head"`) and commit list
+(`git log <fixed-point>.."$reviewed_head"`) and for the evidence record.
+
 Whatever the user said is the fixed point — a commit SHA, branch name, tag, `main`, `HEAD~5`, etc. If they didn't specify one, ask for it.
 
-Capture the diff command once: `git diff <fixed-point>...HEAD` (three-dot, so the comparison is against the merge-base). Also note the list of commits via `git log <fixed-point>..HEAD --oneline`.
+Capture the diff command once: `git diff <fixed-point>..."$reviewed_head"` (three-dot, so the comparison is against the merge-base). Also note the list of commits via `git log <fixed-point>.."$reviewed_head" --oneline`.
 
 Before going further, confirm the fixed point resolves (`git rev-parse <fixed-point>`) and the diff is non-empty. A bad ref or empty diff should fail here — not inside two parallel sub-agents.
 
@@ -96,15 +106,21 @@ it so the next session — human or agent — reads the same answer you did.
 **Only record once the review's own evidence is durable**, and always about **one exact
 head**:
 
-1. Resolve the reviewed head with `git rev-parse HEAD` and confirm it is durable
+1. Before publishing any evidence, refuse to publish if the worktree moved:
+   `current_head="$(git rev-parse HEAD)"`; it must equal the captured `reviewed_head`.
+   Also confirm the durable PR head still equals `reviewed_head`:
+   `gh pr view <pr-number> --json headRefOid --jq .headRefOid`. A mismatch means the review
+   is stale and requires a fresh review.
+2. Resolve `reviewed_head` and confirm it is durable
    (`gh api repos/<owner>/<repo>/commits/<candidate-head> --jq .sha`). A head only your
    worktree can see is not reviewable, and its review is not recordable.
-2. Post the findings as one durable comment on the ticket when the review found anything
+3. Post the findings as one durable comment on the ticket when the review found anything
    (`gh issue comment <ticket-issue> --body-file <report>`). The HTML report is a session
    artifact; the findings a later session remediates from must be on the tracker.
-3. When the review finds no blocking defects, post one short evidence comment recording that
+4. When the review finds no blocking defects, post one short evidence comment recording that
    this exact head was reviewed and passed. Include the output of
-   `python3 scripts/review-clean-record.py emit "$(git rev-parse HEAD)"` as its own line.
+   `python3 scripts/review-clean-record.py emit "$reviewed_head"` as its own line, and name
+   `/push` as the succeeding skill.
    That script is the single source of truth for the matchable record shape; the merge gate
    matches it through the same script. A review that finds blocking defects posts the findings
    comment but does not emit a `review-clean` record.

@@ -26,12 +26,6 @@ Eligible issues are worked **oldest first**, by creation date. A newly filed iss
 
 What it does is **reorder**, and only reorder. An issue carrying `priority` is selected ahead of older ones, and two `priority` issues order oldest-first against each other. What it does **not** do is change eligibility: a `priority` issue still needs `ready-for-agent` to enter the pool, still has to pass the AFK-ready body discriminator (`## What to build` plus `## Acceptance criteria`), and still needs `parallel-safe` to be worked concurrently.
 
-## Intentional label
-
-`intentional` is the human assertion that every `/loose-ends` finding on this issue is deliberate. Like `parallel-safe` and `priority` it is not one of the five canonical triage roles, is not in the table above, and is **not renameable** — the audit reads that exact string. No skill ever applies it or infers the intent behind it.
-
-What it does is **suppress every finding**, and only for the issue carrying the label. Its granularity is **per-issue rather than per-finding-class**: it does not suppress selected classes while leaving others visible. It changes neither the issue's tracker state nor its eligibility for other workflows.
-
 ## Idea label
 
 `idea` is the human assertion that an issue is an anchor created from a concluded grilling session. Like `parallel-safe` and `priority` it is not one of the five canonical triage roles, is not in the table above, and is **not renameable** — the tracker readers use that exact string. No skill ever applies it or infers that an issue is an idea.
@@ -79,8 +73,6 @@ gh label create priority --force --color b60205 \
   --description "Human assertion: worked ahead of older issues. git-loopy never infers it. Eligibility unchanged."
 gh label create parallel-safe --force --color 5319e7 \
   --description "Human assertion alongside ready-for-agent: safe in its own Lane. git-loopy never infers it."
-gh label create intentional --force --color fbca04 \
-  --description "Human assertion: suppress all /loose-ends findings. Never inferred by git-loopy."
 gh label create idea --force --color cfd3d7 \
   --description "Human assertion: concluded grilling anchor. Never inferred by git-loopy."
 ```

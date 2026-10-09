@@ -31,4 +31,17 @@ grep -Fq 'scripts/review-clean-record.py' "$PRODUCER" ||
   { echo "error: producer does not cite the canonical record source" >&2; exit 1; }
 grep -Fq 'scripts/review-clean-record.py' "$CONSUMER" ||
   { echo "error: merge gate does not cite the canonical record source" >&2; exit 1; }
+
+capture_line="$(grep -nF 'reviewed_head="$(git rev-parse HEAD)"' "$PRODUCER" | cut -d: -f1)"
+guard_line="$(grep -nF 'current_head="$(git rev-parse HEAD)"' "$PRODUCER" | cut -d: -f1)"
+[ -n "$capture_line" ] && [ -n "$guard_line" ] && [ "$capture_line" -lt "$guard_line" ] ||
+  { echo "error: producer does not pin the reviewed head before its change guard" >&2; exit 1; }
+grep -Fq 'it must equal the captured `reviewed_head`' "$PRODUCER" ||
+  { echo "error: producer does not refuse a changed worktree head" >&2; exit 1; }
+grep -Fq 'gh pr view <pr-number> --json headRefOid --jq .headRefOid' "$PRODUCER" ||
+  { echo "error: producer does not guard against a moved durable PR head" >&2; exit 1; }
+grep -Fq 'emit "$reviewed_head"' "$PRODUCER" ||
+  { echo "error: producer does not emit the pinned reviewed head" >&2; exit 1; }
+grep -Fq '`/push` as the succeeding skill' "$PRODUCER" ||
+  { echo "error: producer does not name its succeeding skill" >&2; exit 1; }
 echo "ok: review-clean producer and matcher agree"
