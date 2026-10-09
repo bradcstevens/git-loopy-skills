@@ -12,6 +12,7 @@ PERMANENT_FAILURE_PATTERNS = (
     r"\b(?:invalid|malformed)\s+(?:issue(?: number)?|target)\b",
     r"\bissue(?: number)?\s+(?:is|was)\s+(?:invalid|malformed)\b",
 )
+TRACKER_TIMEOUT_SECONDS = 30
 
 
 def classify_tracker_failure(message: str) -> str:
@@ -30,7 +31,11 @@ def run_tracker(
             capture_output=True,
             cwd=cwd,
             text=True,
+            timeout=TRACKER_TIMEOUT_SECONDS,
         )
+    except subprocess.TimeoutExpired as error:
+        message = f"tracker timed out after {error.timeout} seconds"
+        return "", message, 124, "transient"
     except OSError as error:
         message = f"could not run tracker: {error}"
         return "", message, 1, "transient"

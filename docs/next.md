@@ -58,10 +58,11 @@ reclaimed slots immediately become available to the next candidate. It stops at 
 boundary rather than spawning when the route is HITL or not allowlisted, a route would take its
 fourth repeat for a target, or a target would take its ninth hop. `subagentStop` closes the completed
 ledger row; if its tracker lookup fails, the row closes as `tracker-failed` and records whether the
-failure was transient or permanent. A transient rate limit, server error, network failure, or timeout
-leaves the target retryable. A clean worktree is removed; a worktree with uncommitted changes, or one
-whose state cannot be inspected, is retained and reported. A permanent missing or malformed target
-halts the target and uses the same safe cleanup rule instead of being mistaken for `no-evidence`.
+failure was transient or permanent. A transient rate limit, server error, network failure, or
+30-second tracker timeout leaves the target retryable. A clean worktree is removed; a worktree with
+uncommitted changes, or one whose state cannot be inspected, is retained and reported. A permanent
+missing or malformed target halts the target and uses the same safe cleanup rule instead of being
+mistaken for `no-evidence`.
 `agentStop` re-enters `/next` for the batch of completed, unrouted runs, allowing one fill to replace
 every slot that batch freed.
 AFK-safe and allowlisted are the two eligibility conditions for consulting `chain.sh plan`, not a

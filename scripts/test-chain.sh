@@ -117,6 +117,9 @@ chmod +x "$fake_bin/gh"
 export PATH="$fake_bin:$PATH"
 
 PYTHONPATH="$REPO/skills/next" python3 - <<'PY'
+import subprocess
+from unittest.mock import patch
+
 from tracker_failure import classify_tracker_failure, run_tracker
 
 for message in (
@@ -142,6 +145,16 @@ _, error, exit_status, failure_kind = run_tracker(
 assert error and error.startswith("could not run tracker:")
 assert exit_status == 1
 assert failure_kind == "transient"
+
+with patch(
+    "tracker_failure.subprocess.run",
+    side_effect=subprocess.TimeoutExpired("gh", 30),
+) as tracker_run:
+    _, error, exit_status, failure_kind = run_tracker(["gh"], "/")
+assert error == "tracker timed out after 30 seconds"
+assert exit_status == 124
+assert failure_kind == "transient"
+assert tracker_run.call_args.kwargs["timeout"] == 30
 PY
 
 timezone_stable_start="$(TZ=UTC ps -o lstart= -p "$$" | xargs)"

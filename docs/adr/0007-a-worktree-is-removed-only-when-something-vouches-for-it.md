@@ -124,13 +124,14 @@ Issue #63 implements both boundaries, so a failed lookup no longer leaves an ope
   only a branch a sweep can still see holding a worktree, and on the chain's mainline `/implement` →
   `/code-review` → `/push` → `/merge` path no such sweep ever happens. Every reservation is given a
   branch of its own — `chain.sh` names it `git-loopy/reservation-<pid>-<random>` as it creates the
-  worktree — `complete` then removes that worktree, and no `git branch -d` appears anywhere in
-  `chain.sh`. The branch therefore outlives the only thing that would have made it visible to a
-  sweep, by construction rather than by accident. So a sweep classifies a branch with no worktree
-  too, and what vouches for one is the answer ADR-0006 already forces: ancestry proves nothing under
-  squash, so the sweeper asks GitHub whether that branch's pull request merged. A merged branch is
-  removable; an unmerged or never-pushed one is reported and never removed, because it may be the
-  only copy. #65 implements it.
+  worktree — `complete` removes that worktree when it is clean and retains it when it has
+  uncommitted changes or cannot be inspected. No `git branch -d` appears anywhere in `chain.sh`.
+  A retained worktree keeps its branch visible to a sweep; once a clean worktree is removed, its
+  branch has no worktree and is no longer visible that way. So a sweep classifies a branch with no
+  worktree too, and what vouches for one is the answer ADR-0006 already forces: ancestry proves
+  nothing under squash, so the sweeper asks GitHub whether that branch's pull request merged. A
+  merged branch is removable; an unmerged or never-pushed one is reported and never removed,
+  because it may be the only copy. #65 implements it.
 - **The marker narrows #47 rather than closing it.** `/next` step 1 attributes an in-flight worktree
   through `.git-loopy/logs/`, a path that does not exist. Three producers need three different
   answers. Worktrees the chain created are already attributable and always were — `chain.sh reserve`
