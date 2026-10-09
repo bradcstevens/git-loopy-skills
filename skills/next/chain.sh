@@ -44,7 +44,8 @@ lock_dir=""
 tmp=""
 metadata=""
 lock_acquired=0
-outer_lock_dir=""
+repository_lock_dir=""
+repository_lock_acquired=0
 pending=""
 repo_root=""
 
@@ -57,9 +58,9 @@ cleanup() {
     rm -f "$lock_dir/pid"
     rmdir "$lock_dir" 2>/dev/null || true
   fi
-  if [ -n "$outer_lock_dir" ]; then
-    rm -f "$outer_lock_dir/pid"
-    rmdir "$outer_lock_dir" 2>/dev/null || true
+  if [ "$repository_lock_acquired" -eq 1 ]; then
+    rm -f "$repository_lock_dir/pid"
+    rmdir "$repository_lock_dir" 2>/dev/null || true
   fi
   [ -z "$tmp" ] || rm -f "$tmp"
   [ -z "$metadata" ] || rm -f "$metadata"
@@ -83,20 +84,20 @@ process_start() {
 }
 
 remove_stale_lock() {
-  local stale claim_dir recovery_dir
-  recovery_dir="$lock_dir.recovery"
+  local stale claim_dir recovery_dir directory="${1:-$lock_dir}"
+  recovery_dir="$directory.recovery"
   mkdir "$recovery_dir" 2>/dev/null || return 0
   printf '%s\t%s\n' "$$" "$(process_start "$$")" > "$recovery_dir/pid"
 
-  if ! stale="$(python3 "$claim_recovery" claim-stale "$lock_dir" "${CHAIN_LOCK_STALE_SECONDS:-300}")"; then
+  if ! stale="$(python3 "$claim_recovery" claim-stale "$directory" "${CHAIN_LOCK_STALE_SECONDS:-300}")"; then
     rm -f "$recovery_dir/pid"
     rmdir "$recovery_dir"
     return 2
   fi
 
   if [ "$stale" = "true" ]; then
-    claim_dir="$lock_dir.reclaim.$$.$RANDOM"
-    if mv "$lock_dir" "$claim_dir" 2>/dev/null; then
+    claim_dir="$directory.reclaim.$$.$RANDOM"
+    if mv "$directory" "$claim_dir" 2>/dev/null; then
       rm -f "$claim_dir/pid"
       rmdir "$claim_dir"
     fi
@@ -106,7 +107,7 @@ remove_stale_lock() {
 }
 
 recover_stale_recovery_lock() {
-  local recovery_dir="$lock_dir.recovery" stale claim_dir
+  local recovery_dir="${1:-$lock_dir}.recovery" stale claim_dir
 
   [ -d "$recovery_dir" ] || return 0
   stale="$(python3 "$claim_recovery" claim-stale "$recovery_dir" "${CHAIN_LOCK_STALE_SECONDS:-300}")"
@@ -120,17 +121,43 @@ fi
 }
 
 acquire_lock() {
+  local directory="${1:-$lock_dir}"
   while :; do
-    while [ -d "$lock_dir.recovery" ]; do
-      recover_stale_recovery_lock
+    while [ -d "$directory.recovery" ]; do
+      recover_stale_recovery_lock "$directory"
       sleep 0.01
     done
-    if mkdir "$lock_dir" 2>/dev/null; then
-      lock_acquired=1
-      printf '%s\t%s\n' "$$" "$(process_start "$$")" > "$lock_dir/pid"
+    if mkdir "$directory" 2>/dev/null; then
+      if [ "$#" -gt 0 ]; then
+        repository_lock_acquired=1
+      else
+        lock_acquired=1
+      fi
+      printf '%s\t%s\n' "$$" "$(process_start "$$")" > "$directory/pid"
       return
     fi
-    remove_stale_lock
+    remove_stale_lock "$directory"
+    sleep 0.01
+  done
+}
+
+acquire_repository_lock() {
+  repository_lock_dir="$repo_root/.git-loopy/worktree.lock"
+  mkdir -p "$(dirname "$repository_lock_dir")"
+  acquire_lock "$repository_lock_dir"
+}
+
+release_repository_lock() {
+  rm -f "$repository_lock_dir/pid"
+  rmdir "$repository_lock_dir"
+  repository_lock_acquired=0
+}
+
+pause_claim() {
+  local gate="$1"
+  [ -n "$gate" ] || return 0
+  touch "$gate.ready"
+  while [ -e "$gate" ]; do
     sleep 0.01
   done
 }
@@ -1439,11 +1466,7 @@ claim() {
   # Claims on different ledgers hold different ledger locks yet contend for the same
   # path and branch, so the transaction also takes a lock scoped to the repository.
   # Only claim takes it, and always after its ledger lock, so the order cannot cycle.
-  outer_lock_dir="$lock_dir"
-  lock_dir="$repo_root/.git-loopy/worktree.lock"
-  mkdir -p "$(dirname "$lock_dir")"
-  lock_acquired=0
-  acquire_lock
+  acquire_repository_lock
   rollback_pending_worktree "$ledger.pending"
 
   # Refuse a path or branch that already exists, before anything claims the right
@@ -1472,17 +1495,18 @@ print(json.dumps({
 PY
   mv "$pending.$$" "$pending"
 
+  # File gates let the race test hold the precondition-to-add and add-to-marker
+  # windows open without relying on scheduler timing.
+  pause_claim "${CHAIN_CLAIM_PAUSE_BEFORE_WORKTREE:-}"
   git -C "$repo_root" worktree add -b "$create_branch" "$worktree" "$spawn_commit" || exit 1
+  pause_claim "${CHAIN_CLAIM_PAUSE_BEFORE_MARKER:-}"
   write_marker "$worktree" "$owner_pid" "$owner_start" || {
     echo "error: could not write ownership marker: $worktree" >&2
     exit 1
   }
   rm -f "$pending"
   pending=""
-  release_lock
-  lock_dir="$outer_lock_dir"
-  outer_lock_dir=""
-  lock_acquired=1
+  release_repository_lock
   release_lock
 }
 

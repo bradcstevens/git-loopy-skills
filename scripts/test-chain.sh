@@ -204,19 +204,41 @@ git -C "$tmp_dir" branch -D bystander >/dev/null
 # Claims on different ledgers share a path and a branch, so one must lose cleanly
 # without rolling back the worktree the winner is still marking.
 race_worktree="$tmp_dir/worktree-race"
-for racer in a b; do
-  "$CHAIN" claim --ledger "$tmp_dir/race-$racer.jsonl" --worktree "$race_worktree" \
-    --create-branch race-branch --owner-pid "$$" >/dev/null 2>&1 &
-  eval "race_$racer=\$!"
+race_before_worktree="$tmp_dir/race-before-worktree"
+race_before_marker="$tmp_dir/race-before-marker"
+touch "$race_before_worktree" "$race_before_marker"
+CHAIN_CLAIM_PAUSE_BEFORE_WORKTREE="$race_before_worktree" \
+  "$CHAIN" claim --ledger "$tmp_dir/race-b.jsonl" --worktree "$race_worktree" \
+  --create-branch race-branch --owner-pid "$$" >"$tmp_dir/race-b.log" 2>&1 &
+race_b=$!
+for _ in $(seq 1 500); do
+  [ -f "$race_before_worktree.ready" ] && break
+  sleep 0.01
+done
+if [ ! -f "$race_before_worktree.ready" ]; then
+  err "race fixture did not pause the first claim after its precondition checks"
+fi
+CHAIN_CLAIM_PAUSE_BEFORE_MARKER="$race_before_marker" \
+  "$CHAIN" claim --ledger "$tmp_dir/race-a.jsonl" --worktree "$race_worktree" \
+  --create-branch race-branch --owner-pid "$$" >"$tmp_dir/race-a.log" 2>&1 &
+race_a=$!
+# With the repository lock, a cannot add until b finishes. Without it, a adds
+# while b is paused; b then loses its add and rolls a back before its marker.
+for _ in $(seq 1 500); do
+  [ -f "$race_before_marker.ready" ] && break
+  sleep 0.01
 done
 race_wins=0
-wait "$race_a" && race_wins=$((race_wins + 1))
+rm -f "$race_before_worktree"
 wait "$race_b" && race_wins=$((race_wins + 1))
+rm -f "$race_before_marker"
+wait "$race_a" && race_wins=$((race_wins + 1))
 if [ "$race_wins" -ne 1 ]; then
   err "exactly one claim on a shared path and branch should win, got $race_wins"
 fi
 if [ ! -f "$race_worktree/.git-loopy/worktree-owner" ] ||
-  ! git -C "$race_worktree" rev-parse --git-dir >/dev/null 2>&1
+  [ ! -f "$race_worktree/.git" ] ||
+  ! git -C "$tmp_dir" worktree list --porcelain | grep -qxF "worktree $race_worktree"
 then
   err "a losing claim on another ledger destroyed the winner's worktree"
 fi
@@ -225,8 +247,41 @@ if [ -e "$tmp_dir/race-a.jsonl.pending" ] || [ -e "$tmp_dir/race-b.jsonl.pending
 then
   err "racing claims left a pending worktree record or lock behind"
 fi
-git -C "$tmp_dir" worktree remove --force "$race_worktree"
-git -C "$tmp_dir" branch -D race-branch >/dev/null
+if [ -f "$race_worktree/.git" ]; then
+  git -C "$tmp_dir" worktree remove --force "$race_worktree"
+fi
+if git -C "$tmp_dir" rev-parse --verify --quiet race-branch >/dev/null; then
+  git -C "$tmp_dir" branch -D race-branch >/dev/null
+fi
+
+# Interrupt after selecting the repository lock, before acquiring it: cleanup
+# must release the ledger lock but leave another claimer's repository lock alone.
+signal_repo_lock="$tmp_dir/.git-loopy/worktree.lock"
+mkdir "$signal_repo_lock"
+printf '%s\t%s\n' "$$" "$timezone_stable_start" > "$signal_repo_lock/pid"
+cp "$signal_repo_lock/pid" "$tmp_dir/held-repository-lock-pid"
+cat > "$tmp_dir/claim-signal-env" <<'ENV'
+set -T
+trap 'if [ "${repository_lock_dir:-${lock_dir:-}}" = "$signal_repo_lock" ]; then trap - DEBUG; kill -"$signal_kind" "$$"; fi' DEBUG
+ENV
+for signal_kind in TERM INT; do
+  signal_status=0
+  signal_repo_lock="$signal_repo_lock" signal_kind="$signal_kind" \
+    BASH_ENV="$tmp_dir/claim-signal-env" bash "$CHAIN" claim \
+    --ledger "$tmp_dir/signal.jsonl" --worktree "$tmp_dir/worktree-signal" \
+    --create-branch signal --owner-pid "$$" || signal_status=$?
+  if [ "$signal_status" -ne 130 ]; then
+    err "claim did not stop on $signal_kind before acquiring the repository lock"
+  fi
+  if ! cmp -s "$tmp_dir/held-repository-lock-pid" "$signal_repo_lock/pid"; then
+    err "claim interrupted by $signal_kind removed another claimer's repository lock"
+  fi
+  if [ -e "$tmp_dir/signal.jsonl.lock" ]; then
+    err "claim interrupted by $signal_kind left its ledger lock behind"
+  fi
+done
+rm -f "$signal_repo_lock/pid"
+rmdir "$signal_repo_lock"
 
 # The new worktree starts from the caller's HEAD, not the main checkout's.
 caller_worktree="$tmp_dir/worktree-caller"

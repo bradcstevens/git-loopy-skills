@@ -69,11 +69,9 @@ write it: a reservation, and an agent told to make its own worktree.
 _Avoid_: Lock, owner file
 
 **Pending worktree**:
-A worktree that has begun coming into existence but whose transaction has not finished. It is named
-in a record beside the ledger before the directory exists, so an interruption that outruns any
-cleanup still leaves something naming it. Whoever next takes the ledger lock finishes it or undoes
-it. A reservation finishes when its row reaches the ledger; a claimed worktree, which has no row,
-finishes when its marker lands.
+A worktree that has begun coming into existence but whose transaction has not finished. A record
+beside the ledger names it before the directory exists, so an interruption that outruns cleanup
+still leaves evidence of the unfinished transaction.
 _Avoid_: Journal entry, temp worktree
 
 **Reserving parent**:
