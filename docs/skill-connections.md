@@ -7,21 +7,31 @@ The set is **composable, not a fixed pipeline**. [`next`](./next.md) picks the e
 gate rather than the next item on a checklist, so any skill can be an entry point. What follows are
 the paths that actually get walked.
 
-## Four kinds of connection
+## Five kinds of connection
 
-Every edge in this document is one of four kinds. Read the arrows with these in mind.
+Every edge in this document is one of five kinds. Read the arrows with these in mind.
 
 | Kind | Meaning | Example |
 | --- | --- | --- |
 | **Routes to** | One session ends, another begins — usually a fresh context | `/to-tickets` → `/implement` |
 | **Runs inside** | Nested in the caller's session; owns no transition and records nothing of its own | `/implement` → `/tdd` |
-| **Publishes to** | Leaves a durable evidence comment that a later session reads back | `/code-review` → the ticket |
+| **Publishes to** | Leaves an evidence comment that a later session reads back | `/code-review` → the ticket |
 | **Reads config from** | Depends on files another skill wrote | `/next` → `/setup-git-loopy-skills` |
+| **Spawns** | Launches an in-session subagent that owns a transition, publishes its own evidence comment, and has completion correlated by the spawn ledger | `/next` → `/code-review` |
+
+**Spawns is not a synonym for any existing kind.** It is nested in the caller's session like
+**runs inside**, but the spawned route owns its transition rather than merely returning evidence to
+its caller. It also routes onward and has the spawned route publish an evidence comment, like
+**routes to** and **publishes to**, while the spawn ledger correlates that completion. It does neither by
+ending the caller's session nor by only writing an evidence comment. The fifth kind makes those
+combined lifecycle and ownership semantics explicit. Nor is it **reads config from**: spawning
+starts and owns executable work, rather than consuming configuration another skill wrote.
 
 One skill is a hub. [`next`](./next.md) is the **router** — it reads live state (tracker, branch,
-diff, worktrees) and names one action. It does no work itself.
+diff, worktrees) and names one action. When the AFK-safe chain gate approves, it reserves and
+spawns that action as an in-session subagent.
 
-Eleven skills leave a durable evidence comment on the ticket they acted on and name the skill that
+Eleven skills leave an evidence comment on the ticket they acted on and name the skill that
 succeeds them: `code-review`, `grill-with-docs`, `implement`, `prototype`, `push`,
 `research`, `resolving-merge-conflicts`, `to-spec`, `to-tickets`, `triage`, `wayfinder`.
 
@@ -71,8 +81,12 @@ flowchart LR
     next --> wayfinder
     next --> diag
     next --> ica
-    next --> implement
-    next --> handoff
+    next ==>|spawns when AFK-safe and allowlisted| implement
+    next ==>|spawns when AFK-safe and allowlisted| review
+    next ==>|spawns when AFK-safe and allowlisted| research
+    next ==>|spawns when AFK-safe and allowlisted| push
+    next ==>|spawns when AFK-safe and allowlisted| rmc
+    next -->|routes to| handoff
     handoff --> next
 
     grillme --> grilling
@@ -101,7 +115,7 @@ flowchart LR
     next --> questionnaire
 ```
 
-Solid arrows route or nest; dotted arrows publish or read config.
+Ordinary arrows route or nest, thick arrows spawn, and dotted arrows publish or read config.
 
 ---
 
@@ -127,15 +141,15 @@ sequenceDiagram
 
     Note over GD,TT: one unbroken context
     U->>GD: sharpen it, a round of questions at a time
-    GD->>GD: post the grilled decision as a ticket comment
+    GD->>GD: post the grilled decision as an evidence comment
     GD->>TS: destination agreed
-    TS->>TS: post the spec as a ticket comment
+    TS->>TS: post the spec as an evidence comment
     TS->>TT: break the spec into tracer bullets
-    TT->>TT: post the ticket graph as a ticket comment
+    TT->>TT: post the ticket graph as an evidence comment
     
     Note over IM,PU: fresh context per ticket
     TT->>IM: one unblocked ticket
-    IM->>IM: post the implementation as a ticket comment
+    IM->>IM: post the implementation as an evidence comment
     IM->>CR: review this candidate head
     alt findings
         CR->>IM: address them, republish a head
@@ -150,9 +164,16 @@ sequenceDiagram
 A genuinely small change may skip the middle and go straight from grilling to
 [`implement`](./implement.md).
 
+After integration, the human may invoke [`/release`](./release.md) to publish one
+release for the unreleased completed batch. Unlike `/push`, which publishes a
+branch, it follows the target project's versioning and release gates. It is a
+user-invoked endpoint, not an automatic route or addition to the chain allowlist.
+
 ## 2. Routing and session continuity
 
-[`next`](./next.md) decides *what*; [`handoff`](./handoff.md) *launches* it.
+[`next`](./next.md) decides *what*; [`handoff`](./handoff.md) launches detached work that must
+outlive this session. The chain instead spawns its AFK-safe allowlisted routes in-session and records
+them in the spawn ledger.
 
 ```mermaid
 sequenceDiagram
@@ -162,24 +183,37 @@ sequenceDiagram
     participant NX as /next
     participant HO as /handoff
     participant BG as fresh session
+    participant SA as in-session subagent
 
     SK-->>NX: session concludes
     NX->>NX: read tracker, branch, diff, worktrees in flight
-    NX-->>U: one action, HITL or AFK-safe, plus model, effort, context
 
     alt Continue here
+        NX-->>U: one action, HITL or AFK-safe, plus model, effort, context
         U->>SK: paste the prompt into this conversation
     else Fresh session, you drive
+        NX-->>U: one action, HITL or AFK-safe, plus model, effort, context
         U->>BG: run the copyable copilot command block
-    else /implement route
-        NX->>HO: run /handoff with the prompt and flags just returned
-        HO->>BG: nohup copilot --yolo --no-ask-user with the same flags
-        BG-->>U: resume by session name
+    else AFK-safe allowlisted route
+        NX->>NX: chain.sh plan checks the spawn ledger and concurrency
+        alt plan returns spawn
+            NX->>NX: reserve a row in the spawn ledger
+            NX->>SA: spawn with the route and runtime
+            NX->>NX: bind the returned agent identity
+            NX-->>U: one AFK-safe action; its chain is running
+            SA-->>NX: subagentStop closes the spawn ledger row
+            NX->>NX: agentStop re-enters /next for the successor
+        else plan returns decline
+            NX-->>U: report the reason at the checkpoint boundary
+        end
     else Fresh session, agent drives
+        NX-->>U: one action, HITL or AFK-safe, plus model, effort, context
         U->>HO: /handoff
         HO->>NX: run /next first if it is not the last output
-        HO->>BG: nohup copilot --yolo --no-ask-user with the same flags
+        HO->>BG: handoff.sh launches a detached session with the same flags
         BG-->>U: resume by session name
+        BG-->>HO: the session exits
+        HO->>NX: /next on the state the run left
     end
 ```
 
@@ -224,12 +258,12 @@ sequenceDiagram
     end
 
     GR->>NX: conclude and route onward
-    GD->>GD: post the grilled decision as a ticket comment
+    GD->>GD: post the grilled decision as an evidence comment
 ```
 
 `/batch-grill-me` is a standalone variant of the same discipline — it asks the whole frontier at
 once instead of one question at a time, and calls nothing else. `/grill-with-docs` is the only
-member that leaves a ticket comment; a grilling nested inside `/triage` or `/wayfinder` records
+member that leaves an evidence comment; a grilling nested inside `/triage` or `/wayfinder` records
 nothing of its own.
 
 ## 4. Wayfinder: planning beyond one context
@@ -256,11 +290,11 @@ sequenceDiagram
     par AFK, in parallel subagents
         WF->>RS: a research ticket
         RS-->>WF: findings on a throwaway research branch
-        RS->>RS: post the resolution as a ticket comment
+        RS->>RS: post the resolution as an evidence comment
     and HITL, when discussion is not enough
         WF->>PR: a prototype ticket
         PR-->>WF: a concrete artifact to react to
-        PR->>PR: post the resolution as a ticket comment
+        PR->>PR: post the resolution as an evidence comment
     end
 
     loop until the frontier is empty
@@ -269,7 +303,7 @@ sequenceDiagram
     end
 
     WF->>TS: the way is clear, publish the spec
-    WF->>WF: post map-complete as a ticket comment
+    WF->>WF: post map-complete as an evidence comment
 ```
 
 Wayfinder routes to [`to-spec`](./to-spec.md), **not** straight to implementation — unless the
@@ -297,10 +331,10 @@ sequenceDiagram
     end
 
     alt agent-ready
-        TR->>TR: post triage-agent-ready as a ticket comment
+        TR->>TR: post triage-agent-ready as an evidence comment
         TR-->>IM: implement the triaged issue
     else needs info
-        TR->>TR: post triage-needs-info as a ticket comment
+        TR->>TR: post triage-needs-info as an evidence comment
         TR-->>M: a brief naming exactly what is missing
     end
 ```
@@ -334,7 +368,7 @@ sequenceDiagram
 
     IM->>IM: typecheck, targeted tests, full suite once
     IM->>IM: commit and push so the head is durable
-    IM->>IM: post the implementation as a ticket comment
+    IM->>IM: post the implementation as an evidence comment
     IM->>CR: review this exact candidate head
 ```
 
@@ -367,20 +401,20 @@ sequenceDiagram
     end
 
     alt findings
-        CR->>CR: post review-findings as a ticket comment
+        CR->>CR: post review-findings as an evidence comment
         CR->>IM: address them, republish a head
     else clean
-        CR->>CR: post review-clean as a ticket comment
+        CR->>CR: post review-clean as an evidence comment
         CR->>PU: publish the reviewed head
     end
 
     PU->>PU: stage intended changes, commit, push, open the PR
     alt the remote moved
         PU->>RMC: reconcile with the remote head
-        RMC->>RMC: post resolve-conflict as a ticket comment
+        RMC->>RMC: post resolve-conflict as an evidence comment
         RMC->>CR: review the resolved head
     else clean
-        PU->>PU: post publish-head as a ticket comment
+        PU->>PU: post publish-head as an evidence comment
     end
 ```
 
@@ -515,7 +549,8 @@ These have no workflow edges. Reach for them directly; they neither route onward
 | From | To | Kind | When |
 | --- | --- | --- | --- |
 | `next` | 22 routes | routes to | The earliest unresolved gate decides which |
-| `next` | `handoff` | runs | The chosen route is `/implement` |
+| `next` | `implement`, `code-review`, `research`, `push`, `resolving-merge-conflicts` | spawns | Only when the route is both AFK-safe and allowlisted |
+| `next` | `handoff` | routes to | A detached session must outlive the current one |
 | `next` | `setup-git-loopy-skills` | reads config from | `docs/agents/issue-tracker.md` is missing |
 | `handoff` | `next` | routes to | Runs `/next` first if it is not the last output |
 | `handoff` | fresh session | routes to | Launches the sized runtime in the background |
@@ -550,12 +585,22 @@ These have no workflow edges. Reach for them directly; they neither route onward
 | `azure-mcaps-resource-deployment` | `microsoft-foundry` | routes to | Creating or configuring a Foundry resource |
 | eleven producers | the ticket | publishes to | On completing a transition they own |
 
+### Chain hook edges
+
+| Event | Configured command | Effect |
+| --- | --- | --- |
+| `subagentStop` | `.github/hooks/git-loopy-chain.sh complete` | Closes the bound run's spawn ledger row |
+| `agentStop` | `.github/hooks/git-loopy-chain.sh reenter` | Re-enters `/next` once for every completed, unrouted batch |
+
 ## Rules that govern the edges
 
 - **Context boundaries.** `/grill-with-docs` → `/to-spec` → `/to-tickets` stays in one context.
   Every `/implement` ticket starts in a fresh one.
 - **Nesting owns nothing.** A skill running inside another's session hands its evidence back and
   records no transition of its own.
+- **Spawning owns the transition.** The five allowlisted routes can run as in-session subagents
+  only after the AFK-safe gate passes; the spawn ledger records their reservation, binding, completion,
+  and successor routing.
 - **Reviews come back.** `/code-review` findings return to `/implement`, which republishes a head
   and re-enters review. `/resolving-merge-conflicts` re-enters review too.
 - **Surveys do not build.** `/improve-codebase-architecture` and `/diagnosing-bugs` produce ideas

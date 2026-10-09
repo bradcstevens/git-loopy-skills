@@ -1,7 +1,7 @@
 ---
 name: to-spec
 description: Synthesize the current conversation into a spec and publish it to the repo's issue tracker.
-model: claude-opus-5
+model: GPT-6.1 Sol (copilot)
 reasoning-effort: xhigh
 user-invocable: true
 disable-model-invocation: true
