@@ -147,11 +147,12 @@ Issue #63 implements both boundaries, so a failed lookup no longer leaves an ope
 Issue #63 (PR #79) amended this record while it was still proposed. The edits above change what
 was originally stated, so they are listed here rather than left to be found by diff:
 
-- **The liveness check and fail-safe obligations are discharged, not dropped.** The record said #64
-  owed `recover` a process-liveness check before the sweeper could lean on it, and #63 owed
-  `reserve`, `plan` and `complete` the validate-and-fail-safe pair. `recover` now reuses
-  `claim-recovery.py owner-gone` for bound rows, and the pair is implemented, so the "owes" wording
-  is replaced by a statement of what the code does.
+- **The liveness check and fail-safe obligations are partly discharged, not dropped.** The record
+  said #64 owed `recover` a process-liveness check before the sweeper could lean on it, and #63
+  owed `reserve`, `plan` and `complete` the validate-and-fail-safe pair. The pair is implemented.
+  `recover` now reuses `claim-recovery.py owner-gone` for bound rows, so a bound run is reclaimed
+  only when its parent is proven gone; the unbound age backstop below remains, so #64 is not closed
+  by this amendment. The "owes" wording is replaced by a statement of what the code does.
 - **Age remains a backstop only for unbound reservations, and clean-only removal bounds its cost
   without closing its risk.** The rejected threshold option is not reopened. `complete` and
   `recover` never force-remove a worktree, so the backstop can no longer delete unsaved work. It can
