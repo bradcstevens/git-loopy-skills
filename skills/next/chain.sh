@@ -30,9 +30,10 @@ is the session that will bind the run and never the shell that invokes this scri
 Worktree ownership markers live at .git-loopy/worktree-owner and contain
 "<pid>\t<process start time>\n"; compare both values to determine liveness. The
 start time is that pid's `ps -o lstart=` output read under TZ=UTC, with runs of
-whitespace collapsed to single spaces. Liveness compares the two strings, so a
-marker recorded from local-time `ps` reports a live owner dead: every writer must
-produce the value in UTC. Use `claim` to mark a worktree this script did not
+whitespace collapsed to single spaces. Liveness compares the two start times as parsed
+timestamps, so a marker recorded from local-time `ps` reports a live owner dead: every writer must
+produce the value in UTC. A start time that does not parse reads as a live owner, never a dead
+one. Use `claim` to mark a worktree this script did not
 create, rather than writing the file by hand; `claim --create-branch` makes the
 worktree too, so creating and marking it cannot come apart.
 Route repetition and chain depth count bound rows only. Reservations claim
@@ -299,17 +300,28 @@ pause_claim() {
 
 remove_worktree() {
   local worktree="$1" force="${2:-}"
-  local ledger_root
+  local ledger_root marker saved_marker="" removed=0
 
   ledger_root="$(repository_root)"
   if [ -e "$worktree" ]; then
+    marker="$worktree/.git-loopy/worktree-owner"
     # The marker is untracked bookkeeping a plain `git worktree remove` would refuse over.
-    rm -f "$worktree/.git-loopy/worktree-owner"
+    if [ -f "$marker" ]; then
+      saved_marker="$(cat "$marker")"
+    fi
+    rm -f "$marker"
     rmdir "$worktree/.git-loopy" 2>/dev/null || true
     if [ "$force" = "--force" ]; then
-      git -C "$ledger_root" worktree remove --force "$worktree"
+      git -C "$ledger_root" worktree remove --force "$worktree" && removed=1
     else
-      git -C "$ledger_root" worktree remove "$worktree"
+      git -C "$ledger_root" worktree remove "$worktree" && removed=1
+    fi
+    if [ "$removed" -eq 0 ]; then
+      # A worktree that stays on disk must stay vouched for.
+      if [ -n "$saved_marker" ] && [ -d "$worktree" ]; then
+        write_marker "$worktree" "${saved_marker%%$'\t'*}" "${saved_marker#*$'\t'}" || true
+      fi
+      return 1
     fi
   else
     git -C "$ledger_root" worktree prune

@@ -124,8 +124,9 @@ Issue #63 implements both boundaries, so a failed lookup no longer leaves an ope
   only a branch a sweep can still see holding a worktree, and on the chain's mainline `/implement` →
   `/code-review` → `/push` → `/merge` path no such sweep ever happens. Every reservation is given a
   branch of its own — `chain.sh` names it `git-loopy/reservation-<pid>-<random>` as it creates the
-  worktree — `complete` removes that worktree when it is clean and retains it otherwise. No
-  `git branch -d` appears anywhere in `chain.sh`.
+  worktree — `complete` removes that worktree when it is clean and retains it otherwise. `chain.sh`
+  deletes a branch only when rolling back the transaction that created it, and no `git branch -d`
+  appears anywhere else.
   A retained worktree keeps its branch visible to a sweep; once a clean worktree is removed, its
   branch has no worktree and is no longer visible that way. So a sweep classifies a branch with no
   worktree too, and what vouches for one is the answer ADR-0006 already forces: ancestry proves
@@ -161,11 +162,18 @@ was originally stated, so they are listed here rather than left to be found by d
   backstop's (#28), and this amendment does not claim to close it.
 - **A population exists that the taxonomy does not name: the retained worktree.** When `complete` or
   `recover` leaves a **retained worktree** (`CONTEXT.md`), the row still closes and the slot is
-  released, so it is no longer a reservation. It holds no open row, so the sweeper meets it as an
-  unmarked worktree: reported, never removed on sight, and removable only once it is clean and has
-  earned a marker through corroboration. Until `chain.sh reserve` writes a marker itself (#51),
-  nothing else vouches for it. ADR-0002's first Consequence is revised to match.
+  released, so it is no longer a reservation. It holds no open row. A retained worktree that
+  `chain.sh reserve` made keeps the marker `reserve` wrote (#51), so the sweeper may remove it once
+  its owner is gone and it is clean; one made without a marker is unmarked: reported, never removed
+  on sight, and removable only once it is clean and has earned a marker through corroboration.
+  ADR-0002's first Consequence is revised to match.
 - **The branch-visibility consequence changes with it.** It said a reservation's branch outlives
   the only thing that would have made it visible to a sweep, "by construction", because `complete`
   always removed the worktree. A retained worktree now keeps its branch visible; a branch whose
   worktree was cleanly removed is still the branch-with-no-worktree case #65 implements.
+- **#51 implements the marker more narrowly than the first Consequence describes.** The file
+  records only the owning process and its start time, not the route and target, so attribution
+  still waits on #47. The prompt convention is one `claim --create-branch` rather than a second
+  command beside `git worktree add`, because a marker written in a separate command can be lost
+  between the two. A `git worktree add` that fails now leaves no ledger row and no halted target,
+  where it used to close the row as failed; the transaction either lands whole or not at all.

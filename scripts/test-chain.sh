@@ -2376,6 +2376,34 @@ then
   err "no-evidence completion did not record its target halt"
 fi
 
+reserve_and_bind \
+  --ledger "$complete_ledger" \
+  --route implement \
+  --target issue-locked-removal \
+  --session-id session-locked-removal \
+  --agent-id agent-locked-removal \
+  --agent-type implement-agent \
+  --agent-name implement-agent \
+  --spawn-time 2026-08-22T00:00:00Z \
+  --worktree "$tmp_dir/worktree-locked-removal" \
+  --chain-depth 1
+locked_marker_before="$(cat "$tmp_dir/worktree-locked-removal/.git-loopy/worktree-owner")"
+git -C "$tmp_dir" worktree lock "$tmp_dir/worktree-locked-removal"
+locked_removal_output="$(
+  PATH="$fake_bin:$PATH" CHAIN_EVIDENCE=published "$CHAIN" complete --ledger "$complete_ledger" \
+    <<< "$(completion_payload agent-locked-removal 2026-08-22T00:11:00Z implement-agent implement-agent session-locked-removal)" \
+    2>/dev/null
+)"
+assert_plan "completion whose clean worktree cannot be removed" "$locked_removal_output" \
+  '{"continue":true,"outcome":"published","target":"issue-locked-removal","retained_worktree":"'"$tmp_dir"'/worktree-locked-removal"}'
+if [ ! -f "$tmp_dir/worktree-locked-removal/.git-loopy/worktree-owner" ] ||
+  [ "$(cat "$tmp_dir/worktree-locked-removal/.git-loopy/worktree-owner")" != "$locked_marker_before" ]
+then
+  err "a worktree retained after a failed removal lost its ownership marker"
+fi
+git -C "$tmp_dir" worktree unlock "$tmp_dir/worktree-locked-removal"
+git -C "$tmp_dir" worktree remove --force "$tmp_dir/worktree-locked-removal"
+
 plan_ledger="$complete_ledger"
 no_evidence_target="$(plan /implement issue-no-evidence AFK-safe implement-agent gpt-5.6-terra high default "$tmp_dir/plan-no-evidence")"
 assert_plan "no-evidence target" "$no_evidence_target" \

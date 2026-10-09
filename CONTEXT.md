@@ -65,8 +65,9 @@ completion payload find its row.
 **Worktree marker**:
 A file inside a worktree naming the process that owns it and when that process started, so a later
 reader can tell a directory an agent is thinking in from one nobody will return to. Two producers
-write it: a reservation, and an agent told to make its own worktree.
-_Avoid_: Lock, owner file
+write it: a reservation, and an agent told to make its own worktree. ADR-0007 also has it carry the
+route and target the process bound, which `chain.sh` does not yet write.
+_Avoid_: Lock, owner file, sentinel
 
 **Pending worktree**:
 A worktree that has begun coming into existence but whose transaction has not finished. A record
@@ -119,12 +120,6 @@ _Avoid_: Dead worktree, leftover
 A worktree `chain.sh` left on disk when completing or reclaiming its row, because it has uncommitted
 changes, cannot be inspected, or cannot be removed. Its row is closed, so it holds no slot and is no
 longer the chain's to reclaim.
-
-**Worktree marker**:
-The record inside a worktree naming the process that owns it and when that process started, together
-with the route and target it bound. The first pair decides removal; the second attributes the
-directory to a workstream.
-_Avoid_: Lock file, owner file, sentinel
 
 **Held**:
 Said of a worktree a live process is using at the moment it is looked at. Weak evidence on its own,
