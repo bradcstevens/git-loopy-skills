@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline contract tests for the co-installed model-fit manifest guard."""
+"""Offline contract tests for the co-installed set-task-models manifest guard."""
 
 import copy
 import importlib.util
@@ -11,8 +11,8 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCRIPT = Path(__file__).resolve().parents[1] / "skills/model-fit/validate_manifest.py"
-SPEC = importlib.util.spec_from_file_location("model_fit", SCRIPT)
+SCRIPT = Path(__file__).resolve().parents[1] / "skills/set-task-models/validate_manifest.py"
+SPEC = importlib.util.spec_from_file_location("set_task_models", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 guard = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(guard)
@@ -235,7 +235,7 @@ class ManifestTests(unittest.TestCase):
             path.write_text("{", encoding="utf-8")
             result = subprocess.run(command, capture_output=True, text=True, check=False)
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("model-fit:", result.stderr)
+            self.assertIn("set-task-models:", result.stderr)
             self.assertNotIn("Traceback", result.stderr)
 
 
