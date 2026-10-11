@@ -1,22 +1,22 @@
 ---
 name: build-iterated-agentic-loop
-description: build a repo-local skill and install a matching iterated coding-agent GitHub Actions workflow, prompt, memory file, and reference templates
+description: build a repo-local skill and install a matching iterated Copilot CLI GitHub Actions workflow, prompt, memory file, and reference templates
 ---
 
 # Build Iterated Agentic Loop
 
-Use this skill when the user wants to turn a repeatable agent task into a repo-local skill plus a GitHub Actions workflow that runs a coding agent on a schedule, manually, or both.
+Use this skill when the user wants to turn a repeatable agent task into a repo-local skill plus a GitHub Actions workflow that runs the GitHub Copilot CLI on a schedule, manually, or both.
 
-The target shape is an iterated agentic loop: a focused skill defines the agent's judgement, a workflow invokes a coding agent with a repo-specific prompt, an agent-memory file carries standing feedback between runs, and each workflow labels its PRs so only one open PR exists per loop. The `narrow-react-prop-types` skill is the concrete reference pattern.
+The target shape is an iterated agentic loop: a focused skill defines the agent's judgement, a workflow runs the Copilot CLI headless (`copilot -p`) with a repo-specific prompt, an agent-memory file carries standing feedback between runs, and each workflow labels its PRs so only one open PR exists per loop. The `narrow-react-prop-types` skill is the concrete reference pattern.
 
 ## Outputs
 
 Create or update these files in the target repo:
 
-- `.claude/skills/<skill-name>/SKILL.md` for the repo-local agent behavior.
-- `.github/workflows/agent-<task-name>.yml` for the recurring coding-agent automation.
+- `.github/skills/<skill-name>/SKILL.md` for the repo-local agent behavior. Copilot CLI loads project skills from `.github/skills/` and `.agents/skills/`; use `.agents/skills/<skill-name>/` when the repo already keeps its skills there.
+- `.github/workflows/agent-<task-name>.yml` for the recurring Copilot CLI automation.
 - `.github/agent-memory/<task-name>.md` for stable feedback and scope constraints.
-- Optional references under `.claude/skills/<skill-name>/references/` when the skill needs templates, examples, or long supporting material.
+- Optional references under the skill's `references/` directory when the skill needs templates, examples, or long supporting material.
 
 ## Workflow
 
@@ -27,7 +27,7 @@ Read before asking setup questions:
 - Existing `.github/workflows/*.yml` and `.github/actions/**` to understand runner, checkout, dependency install, cache, and PR patterns.
 - Package manager files such as `package.json`, `bun.lock`, `pnpm-lock.yaml`, `yarn.lock`, `package-lock.json`, `pyproject.toml`, `go.mod`, or `Cargo.toml`, or other package management-related files
 - Existing validation scripts, especially typecheck, lint, test, quality, format, and package-scoped commands.
-- Existing `.claude/skills` and `.agents/skills` to avoid duplicating conventions.
+- Existing `.github/skills/` and `.agents/skills/`, plus the custom instructions Copilot CLI loads into every run (`AGENTS.md`, `.github/copilot-instructions.md`, `.github/instructions/`), to avoid duplicating conventions.
 
 Completion criterion: you can name the repo's package manager, install command, likely validation commands, and existing workflow conventions.
 
@@ -35,7 +35,7 @@ Completion criterion: you can name the repo's package manager, install command, 
 
 Walk the user through these decisions. Recommend defaults from repo evidence instead of presenting a blank form.
 
-1. **Coding Agent**: Claude Code, Codex, OpenCode, or CodeLayer. Explain the required secret and headless command for the recommended choice. Use `references/agent-runner-templates.md`. CodeLayer is Humanlayer's ultra-lightweight agent harness.
+1. **Copilot CLI run**: the model to pin (recommend the one you are running on), reasoning effort, an optional per-run `--max-ai-credits` cap, and authentication — the workflow's built-in `GITHUB_TOKEN` (recommended) or a `COPILOT_GITHUB_TOKEN` personal-access-token secret. Explain the billing trade-off from `references/agent-runner-templates.md`.
 2. **Cadence**: daily, weekly, weekdays, monthly, manual-only, or custom cron. Recommend a cadence based on task risk and review burden - most likely weekdays, daily, or weekly. 
 3. **Task**: What task should the agent loop accomplish?
   - Are there existing skills for doing this? (you can do research before asking the user this)
@@ -90,14 +90,14 @@ Write a repo-local skill that captures the agent's judgement for this task. The 
 
 Use these skill-writing rules:
 
-- Put ordered behavior in `SKILL.md` in the skill directory (`.claude/skill-slug-here` or `.agents/skill-slug-here` depending on repo patterns and user preferences) steps with checkable completion criteria  
+- Put ordered behavior in the skill's `SKILL.md` (at the path from Outputs) as steps with checkable completion criteria.
 - Move long templates and examples into sibling reference files, then point to them from `SKILL.md`.
-- Keep one source of truth for each rule; do not repeat the same guidance in the skill, prompt, and memory file.
+- Keep each rule in exactly one place: the skill, the prompt, the memory file, or the repo's custom instructions.
 - Include a response template as a reference file (e.g., `references/response-template.md` under the skill directory) that defines how the CI agent should format its final output. The skill should instruct the agent to read and follow this template when formatting its final response which will be used as the PR body.
 - Use the skill template in `references/skill-template.md`. An EXAMPLE skill can be found in `references/example-skill.md`
 - You may refer to https://agentskills.io/specification to understand skill specification. 
 
-**IMPORTANT**: the `name` field in the `SKILL.md` frontmatter must match the skill slug - e.g. a skill with name `fix-eslint-issues` must be in `.claude/skills/fix-eslint-issues/SKILL.md` or `.agents/skills/fix-eslint-issues/SKILL.md`
+**IMPORTANT**: the `name` field in the `SKILL.md` frontmatter must match the skill slug - e.g. a skill with name `fix-eslint-issues` must be in `.github/skills/fix-eslint-issues/SKILL.md` or `.agents/skills/fix-eslint-issues/SKILL.md`
 
 
 
@@ -112,7 +112,7 @@ Put repo-specific targeting in the GitHub Actions prompt, not in the generic ski
 - Instructions: the reviewable unit of work, what to avoid, and how to validate.
 - Validation commands in fenced bash if applicable
 - Agent memory interpolation from `.github/agent-memory/<task-name>.md`.
-- Finishing requirements: validate, commit, push, and return a PR-ready summary.
+- Finishing requirements: validate, commit, push, and end the run on the PR-ready summary — the workflow turns the agent's final message into the PR body.
 
 Use `references/workflow-template.yml` as the base template. Use `references/prompt-template.md` when drafting the embedded prompt.
 
@@ -145,8 +145,7 @@ Required customizations:
 - Workflow name, cron, branch prefix, workflow id, agent label, PR title.
 - Runner label and setup steps for the repo.
 - Dependency install command.
-- Coding-agent install, secret, and headless run command (from `references/agent-runner-templates.md`).
-- Response extraction step: each agent outputs differently (JSON, stream-json, plain text). Use the agent-specific extraction from `references/agent-runner-templates.md` to get the final response into `/tmp/pr-body.md` for the PR body.
+- Copilot CLI settings from step 2: the `COPILOT_FLAGS` array (model, effort, optional `--max-ai-credits`) and authentication — the template ships `GITHUB_TOKEN` with `copilot-requests: write`; for the PAT, follow `references/agent-runner-templates.md`.
 - Skill name, scope, validation commands, and memory path.
 - PR bounding gate: the workflow checks for open PRs with the agent label before running. Configure the bound based on the user's choice from step 2 (default: 1). The gate uses `gh pr list --label "$AGENT_LABEL" --state open` and compares the count. If bounding is disabled, remove the gate step entirely.
 - If `/iterate` is enabled: install `references/agent-iteration.ts` to the user's preferred location and update the workflow paths to match. The script handles both PR footer generation and iteration prompt building. This file can be run with the user's preferred typescript toolchain (node with type-stripping, **Bun (recommended)**, Deno, tsx, etc) or can at the user's request be rewritten into another language.
@@ -194,18 +193,18 @@ GitHub Actions workflows cannot be manually dispatched via `workflow_dispatch` u
 
 2. Commit and push all the new files (workflow, skill, memory file, scripts).
 
-3. The workflow will trigger on push. Watch the Actions tab to verify it runs successfully.
+3. The workflow will trigger on push. Watch the Actions tab to verify it runs successfully; if the Copilot CLI step fails to authenticate, work through the troubleshooting list in `references/agent-runner-templates.md`.
 
 4. After the first successful run, remove the temporary `push` trigger and push again. The workflow can now be dispatched manually via the Actions UI or `gh workflow run`.
 
 5. If the dry-run creates a PR, review it to verify the agent behavior, then close or merge as appropriate.
 
-Completion criterion: the workflow appears in the Actions tab and can be triggered via `workflow_dispatch`.
+Completion criterion: the dry run's Copilot CLI step authenticated and finished, and the workflow can be triggered via `workflow_dispatch`.
 
 ## Reference Files
 
-- `references/workflow-template.yml` - coding-agent GitHub Actions workflow skeleton.
-- `references/agent-runner-templates.md` - headless commands and secrets for Claude Code, Codex, OpenCode, and CodeLayer.
+- `references/workflow-template.yml` - Copilot CLI GitHub Actions workflow skeleton.
+- `references/agent-runner-templates.md` - Copilot CLI authentication and billing (`GITHUB_TOKEN` or `COPILOT_GITHUB_TOKEN`), run flags, final-message extraction, and troubleshooting.
 - `references/agent-iteration.ts` - helper script for `/iterate` support (PR footer and iteration prompt building). Install to `.github/scripts/`, `ci-scripts/`, or `scripts/` based on user preference.
 - `references/prompt-template.md` - embedded prompt structure for the workflow.
 - `references/memory-template.md` - agent-memory file skeleton.

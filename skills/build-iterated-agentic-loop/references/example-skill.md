@@ -21,7 +21,7 @@ The goal is to make component types describe the real live-code-path contract, t
 
 ## Workflow
 
-For an example recurring GitHub Actions workflow that runs this skill through CodeLayer, see `references/agent-narrow-component-props.yml`. Its example agent memory file is `references/narrow-component-props-memory.md`.
+For an example recurring GitHub Actions workflow that runs this skill through the GitHub Copilot CLI, see `references/agent-narrow-component-props.yml`. Its example agent memory file is `references/narrow-component-props-memory.md`.
 
 ### 1. Identify the suspect component
 

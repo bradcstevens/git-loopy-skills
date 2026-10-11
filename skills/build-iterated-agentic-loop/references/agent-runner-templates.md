@@ -1,149 +1,29 @@
-# Agent Runner Templates
+# Copilot CLI Runner
 
-Use one of these inside the workflow's agent run step. Broad permission modes are appropriate only on trusted, isolated runners.
+The loop runs the GitHub Copilot CLI (`copilot`) headless with `-p`. `references/workflow-template.yml` carries the working steps; this file holds what the template cannot say inline: authentication and billing, the flag choices, and troubleshooting.
 
-Each agent outputs differently, so response extraction varies. The goal is to get the agent's final formatted response into `/tmp/pr-body.md` for the PR body.
+## Authenticate
 
----
+Settle one option with the user in setup step 2:
 
-## Claude Code
+- **`GITHUB_TOKEN` (recommended; the template ships it).** The `copilot-requests: write` permission lets the workflow's built-in token authenticate the CLI, so no secret is stored. Declaring `permissions:` sets every unlisted scope to `none`, so that line must stay. Billing follows the repo owner:
+  - Organization-owned repo: usage bills to the organization, which needs the policy **Allow use of Copilot CLI billed to the organization** (on by default where Copilot CLI is enabled). User-level Copilot budgets do not apply, so recommend `--max-ai-credits`.
+  - Personal repo: usage bills to the owner's Copilot seat.
+- **Personal access token.** For an organization whose policy is off, or to bill one user's seat: a fine-grained PAT with the **Copilot Requests** permission, stored as the repo secret `COPILOT_GITHUB_TOKEN` and added to the run step's `env:` as `COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}`. The CLI prefers it over `GITHUB_TOKEN`, which stays for `gh`.
 
-Secret: `ANTHROPIC_API_KEY`.
+The CLI redacts the `GITHUB_TOKEN` and `COPILOT_GITHUB_TOKEN` values from its output by default; name any other secret the agent must not see in `--secret-env-vars=NAME,...`.
 
-```yaml
-- uses: actions/setup-node@v4
-  with:
-    node-version: 24
-- run: npm install -g @anthropic-ai/claude-code
-- name: Run Claude Code
-  env:
-    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-  run: |
-    claude -p "$PROMPT" \
-      --permission-mode bypassPermissions \
-      --output-format stream-json \
-      --verbose \
-      2>&1 | tee /tmp/agent-output.txt
-```
+## Flags
 
-Use `--max-turns` or `--max-budget-usd` when the repo needs spend guards.
+The run step keeps one `COPILOT_FLAGS` array for both the scheduled and `/iterate` paths:
 
-**Response extraction:** Claude Code with `--output-format stream-json` outputs JSON lines. Extract the final assistant message:
+- `--model "<model>"`: pin a model ID from `/model` in an interactive `copilot` session, so every scheduled run uses the same model.
+- `--allow-all`: a headless run denies any action that is not pre-approved, so an unattended coding run needs every tool, path, and URL permission. It suits only trusted, isolated runners such as GitHub-hosted ones.
+- `--output-format json` and `--share /tmp/agent-session.md`: the PR body (or `/iterate` reply) is the agent's final message, and `-s`/`--silent` would print every assistant message, mid-run narration included. So the `Extract PR body` step reads the JSONL and keeps the last `assistant.message` event with non-empty `.data.content`; the shared transcript is the readable copy in the `agent-output` artifact.
+- Optional `--max-ai-credits <n>` (minimum 30): a soft per-run spend cap; the run ends once it is reached.
 
-```yaml
-- name: Extract PR body
-  run: |
-    # Extract the last assistant text message from stream-json output
-    cat /tmp/agent-output.txt \
-      | grep '^{' \
-      | jq -s '[.[] | select(.type == "assistant" and .message.content)] | last | .message.content[] | select(.type == "text") | .text' -r \
-      > /tmp/pr-body.md
-```
+## Troubleshooting
 
----
-
-## Codex CLI
-
-Secret: `OPENAI_API_KEY`.
-
-```yaml
-- uses: actions/setup-node@v4
-  with:
-    node-version: 24
-- run: npm install -g @openai/codex
-- name: Login Codex
-  env:
-    OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-  run: printenv OPENAI_API_KEY | codex login --with-api-key
-- name: Run Codex
-  run: |
-    codex exec "$PROMPT" \
-      --cd "$GITHUB_WORKSPACE" \
-      --ask-for-approval never \
-      --sandbox danger-full-access \
-      --json \
-      --output-last-message /tmp/pr-body.md \
-      2>&1 | tee /tmp/agent-output.txt
-```
-
-**Response extraction:** Codex has built-in support via `--output-last-message /tmp/pr-body.md`. No additional extraction needed.
-
----
-
-## OpenCode
-
-Secret: provider-specific, commonly `ANTHROPIC_API_KEY` or `OPENAI_API_KEY`.
-
-```yaml
-- uses: oven-sh/setup-bun@v2
-- run: bun install -g opencode-ai
-- name: Run OpenCode
-  env:
-    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-  run: |
-    opencode run "$PROMPT" \
-      --dir "$GITHUB_WORKSPACE" \
-      --model anthropic/claude-sonnet-4-5 \
-      --format json \
-      --dangerously-skip-permissions \
-      2>&1 | tee /tmp/agent-output.txt
-```
-
-Change `--model` and env secrets together, for example to an `openai/...` model with `OPENAI_API_KEY`.
-
-**Response extraction:** OpenCode with `--format json` outputs structured JSON. Extract the final message:
-
-```yaml
-- name: Extract PR body
-  run: |
-    # Extract the last assistant message from OpenCode JSON output
-    cat /tmp/agent-output.txt \
-      | jq -r '.messages | map(select(.role == "assistant")) | last | .content' \
-      > /tmp/pr-body.md
-```
-
----
-
-## CodeLayer
-
-Secret: usually `ANTHROPIC_API_KEY` for Anthropic-backed runs.
-
-```yaml
-- uses: oven-sh/setup-bun@v2
-- name: Run CodeLayer
-  env:
-    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-    GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    FORCE_COLOR: "3"
-  run: |
-    bunx @humanlayer/cli@latest codelayer \
-      --provider anthropic \
-      --model claude-opus-5.5 \
-      --thinking high \
-      --prompt "$PROMPT" \
-      2>&1 | tee /tmp/agent-output.txt
-```
-
-Use this when the repo already depends on HumanLayer/CodeLayer conventions or wants CodeLayer's PR-oriented behavior.
-
-**Response extraction:** CodeLayer outputs plain text with ANSI colors. Use a parser script or strip formatting:
-
-```yaml
-- name: Extract PR body
-  run: |
-    # If you have a codelayer-output parser script:
-    # bun ci-scripts/codelayer-output.ts < /tmp/agent-output.txt > /tmp/pr-body.md
-    
-    # Otherwise, strip ANSI codes and use the raw output:
-    cat /tmp/agent-output.txt | sed 's/\x1b\[[0-9;]*m//g' > /tmp/pr-body.md
-```
-
-For cleaner extraction, use a parser script like `ci-scripts/codelayer-output.ts` that extracts just the final response section.
-
----
-
-## Notes
-
-- All agents should tee output to `/tmp/agent-output.txt` for artifact upload and debugging.
-- The extracted response goes to `/tmp/pr-body.md` which is used by the PR creation step.
-- If extraction fails, the workflow should fall back gracefully (e.g., use raw output or a placeholder message).
+- Copilot step fails to authenticate: confirm `copilot-requests: write` in `permissions:`, then the organization policy above — or switch to the PAT.
+- Pinned model rejected: the billing account's plan or policy does not enable it; pick another from `/model`.
+- Empty or unexpected PR body: read `/tmp/agent-session.md` in the `agent-output` artifact.
