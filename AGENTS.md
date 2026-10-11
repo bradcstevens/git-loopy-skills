@@ -2,6 +2,18 @@
 
 Guidance for coding agents working in this repository.
 
+## Feedback loops
+
+Run the loops your change touches before committing. A git-loopy **Integration**
+also runs every row below, top to bottom and fail-fast, over the merged worktree,
+so each row is a blocking gate and none may reach the network. Commands are
+relative to the repository root and resolve their tools through `PATH`.
+
+| Loop | Command | When to run |
+| --- | --- | --- |
+| Skill validation and script suites | `scripts/validate-skills.sh` | Any change under `skills/`, `docs/`, `scripts/` or `.github/hooks/` |
+| README skill index | `node scripts/build-readme.mjs --check` | Any change that adds, removes, renames or re-describes a skill, or edits `README.md` |
+
 ## Agent skills
 
 ### Issue tracker
