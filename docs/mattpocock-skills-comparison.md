@@ -499,7 +499,7 @@ Upstream skills with no counterpart here, or only a partial one — candidates t
 | **retro** | engineering · user | Looks back at a session and proposes changes to the agent's environment, most severe first: navigation pointers, automated checks (a mechanical violation gets a lint rule, pre-commit hook or CI job), coding standards, steering files, tool economy, no-ops, information access | None — `codebase-audit` audits code, not the agent's environment | Upstream's router runs it last in the main flow, after `code-review`, and after a `diagnosing-bugs` fix |
 | **pr** *(partial)* | engineering · model | Shapes a PR body: Summary visual, before/after Evidence, Merge Danger | `show-me` covers the Summary visuals; `/push` opens the PR with a plain body | Could become `/push`'s PR-body format rather than a new skill. HumanLayer also publishes a `visual-pr` plugin |
 | **handoff** *(partial)* | productivity · user | Writes a handoff document for a fresh agent, then stops | `handoff` here launches and watches a background session instead | The name is taken here, so it would need another |
-| **chief-of-staff** | in-progress · user | Pursues a long-running goal in one session by coordinating background sub-agents and suggesting recurring schedules, on two tracks: finish the task, and improve the agents' environment for the next one | `/next` and the chain; `design-control-loop` and `build-iterated-agentic-loop` for scheduled loops | Beta, and unlisted in upstream's README |
+| **chief-of-staff** | in-progress · user | Pursues a long-running goal in one session by coordinating background sub-agents and suggesting recurring schedules, on two tracks: finish the task, and improve the agents' environment for the next one | `/next` and the chain; `design-control-loop` for scheduled loops | Beta, and unlisted in upstream's README |
 | **setup-ts-deep-modules** | in-progress · user | Wires dependency-cruiser into a TypeScript repo so each package is a deep module, reachable only through its entry points; ships the config | `codebase-design` supplies the vocabulary, not the enforcement | TypeScript only; beta |
 | **writing-fragments** | in-progress · user | Writing, explore: grills you for raw fragments and appends them to one document | `grilling` supplies the interview mechanics | First of a three-skill writing pipeline; beta |
 | **writing-beats** | in-progress · user | Writing, exploit: assembles raw material into a journey of beats, one beat at a time | — | Beta |
@@ -516,7 +516,8 @@ Skills here that no current upstream skill maps to:
 - **`resolving-merge-conflicts`** — an upstream skill, since deleted upstream (see
   [Deprecated](#deprecated)).
 - **From HumanLayer**, imported into this repo alongside `show-me` (`83c1c4f`, 2026-09-14):
-  `build-iterated-agentic-loop`, `design-control-loop`, `narrow-react-prop-types`.
+  `design-control-loop`, `narrow-react-prop-types`. A third import,
+  `build-iterated-agentic-loop`, was folded into `design-control-loop` and removed.
 - **Everything else:** `push`, `release`, `model-fit`, `sync-model-roster`, `codebase-audit`,
   `create-readme`, `mermaid-diagrams`, `playwright-cli`, `jev-ultrafast`,
   `microsoft-code-reference`, `microsoft-docs`, `microsoft-foundry`.

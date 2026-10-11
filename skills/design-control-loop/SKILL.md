@@ -33,7 +33,7 @@ Read `references/control-loop-taxonomy.md` and walk the user through these conce
 Create or update these in the target repo, tailored to the agreed design:
 
 - The **sensor** and **controller** as version-controlled commands/scripts the user can run locally.
-- `.copilot/skills/<skill-name>/SKILL.md` — the **actuator** skill capturing the agent's judgement. A loop still being tuned can live in `~/.copilot/skills/<skill-name>/` first, then move into the repo.
+- `.github/skills/<skill-name>/SKILL.md` — the **actuator** skill capturing the agent's judgement (or `.agents/skills/<skill-name>/` when the repo already keeps its skills there; Copilot CLI loads project skills from both). A loop still being tuned can live in `~/.copilot/skills/<skill-name>/` first, then move into the repo.
 - The recurring **workflow** that runs the loop and opens a PR (GitHub Actions by default; whatever CI the repo uses).
 - A **memory/feedback file** that carries standing feedback between runs.
 - Optionally, a **dampener** (regression gate) that keeps the problem from getting worse while the loop improves it.
@@ -49,7 +49,8 @@ Read before asking setup questions:
 - Existing CI: `.github/workflows/*.yml`, `.github/actions/**`, or the repo's non-GitHub CI config — runner, checkout, dependency install, cache, and PR conventions.
 - Package manager files (`package.json`, `bun.lock`, `pnpm-lock.yaml`, `yarn.lock`, `package-lock.json`, `pyproject.toml`, `go.mod`, `Cargo.toml`, …).
 - Existing validation scripts: typecheck, lint, test, quality, format, and package-scoped commands.
-- Existing `.copilot/skills`, `.copilot/settings.json`, `~/.copilot/skills`, `git-loopy.env`, and any existing agent loops (workflows, `agent-memory`, where glue scripts live) to mirror conventions instead of inventing new ones.
+- Existing `.github/skills/`, `.agents/skills/`, `.github/copilot/settings.json`, `~/.copilot/skills`, `git-loopy.env`, and any existing agent loops (workflows, `agent-memory`, where glue scripts live) to mirror conventions instead of inventing new ones.
+- The custom instructions Copilot CLI loads into every run (`AGENTS.md`, `.github/copilot-instructions.md`, `.github/instructions/`), so the actuator skill and prompt do not duplicate them.
 - The static-analysis, linting, codegen, and test tooling already in the repo — these are the most likely raw material for a sensor.
 - Discover packages, services, and repo purpose at a high level. 
 
@@ -70,7 +71,7 @@ This is an interview. Work through each component below, proposing options groun
 3. **Controller.** How will the loop choose the next increment from the measurement, sized to stay low-risk and reviewable? Design this *with* the user: how to prioritize targets, how big one increment is, and what "one reviewable unit of work" means here. A controller can be anything from fully deterministic (a script that selects the next target) to fully agentic (an agent that decides from natural-language criteria), and it may be **fused** with the sensor or the actuator. The controller is the part you will **tune over time** from loop output — start simple and expect to revise it.
 
 4. **Actuator.** A coding agent plus a repo-local skill applies the change.
-   - **Agent + credentials.** The actuator is the GitHub Copilot CLI, run headless. Settle the model, reasoning effort, and context tier (default to the `GIT_LOOPY_*` values in `git-loopy.env`), the `COPILOT_GITHUB_TOKEN` secret for CI, and the permission flags, from `references/agent-runner-templates.md`.
+   - **Agent + credentials.** The actuator is the GitHub Copilot CLI, run headless. Settle the model, reasoning effort, and context tier (default to the `GIT_LOOPY_*` values in `git-loopy.env`), an optional per-run `--max-ai-credits` cap, CI authentication — the workflow's built-in `GITHUB_TOKEN` (recommended) or a `COPILOT_GITHUB_TOKEN` personal-access-token secret — and the permission flags, from `references/agent-runner-templates.md`. Explain the billing trade-off it describes.
    - **Golden patterns first.** Before automating, establish what a good change looks like: ask the user whether existing patterns in the codebase should be followed, and inspect the code to find them. Capture these in the actuator skill (Phase C).
    - **Validation.** Decide which commands must pass before the agent commits (propose these from Phase A and confirm).
 
@@ -87,10 +88,10 @@ Write a repo-local skill that captures the actuator's judgement for this task. I
 - Put ordered behavior in `SKILL.md` as steps with checkable completion criteria; move long templates and examples into sibling reference files.
 - Encode the golden patterns from Phase B4 so the agent follows established conventions.
 - Keep one source of truth for each rule; do not repeat the same guidance in the skill, the prompt, and the memory file.
-- Include a response template (e.g. `references/response-template.md`) defining how the agent formats its final output, which becomes the PR body. Instruct the skill to read and follow it.
+- Include a response template (e.g. `references/response-template.md`) defining how the agent formats its final output, which becomes the PR body. Show the user the examples in `references/response-template.md` (fix/migration, generation, refactor), ask what reviewers need (summary stats, risk levels, verification steps, file lists), and tailor it. Instruct the skill to read and follow it.
 - Use `references/skill-template.md` as the skeleton and `references/example-skill.md` as a concrete example. See https://agentskills.io/specification for the skill spec.
 
-**IMPORTANT:** the `name` in the skill's frontmatter must match its directory slug — a skill named `migrate-foo` lives at `.copilot/skills/migrate-foo/SKILL.md`.
+**IMPORTANT:** the `name` in the skill's frontmatter must match its directory slug — a skill named `migrate-foo` lives at `.github/skills/migrate-foo/SKILL.md`.
 
 Completion criterion: the skill explains the job clearly enough that the agent can do it unattended, including how to format its final response.
 
@@ -118,7 +119,7 @@ Assemble the components into a recurring job. GitHub Actions is the default beca
 - Reusable logic can live in a custom composite action.
 - Decide the **cadence** (daily, weekdays, weekly, monthly, manual-only, or custom cron) based on task risk and review burden.
 - Interpolate the memory file (Phase F) into the actuator's context.
-- Use `references/workflow-template.yml` as the base and `references/prompt-template.md` for the embedded prompt. Pull the Copilot CLI run step from `references/agent-runner-templates.md` (`--silent` output goes straight to `/tmp/pr-body.md`).
+- Use `references/workflow-template.yml` as the base; its actuator steps already install, authenticate, and run the Copilot CLI and extract the final message into `/tmp/pr-body.md`. Use `references/prompt-template.md` for the embedded prompt and `references/agent-runner-templates.md` for auth and flags.
 
 Completion criterion: the workflow can run from `workflow_dispatch` without relying on files that do not exist.
 
@@ -142,7 +143,8 @@ Completion criterion: standing feedback survives between runs, and `/iterate` (i
 Bound work-in-progress so the loop never produces PRs faster than they can be reviewed. **Recommended default: one open PR per loop.**
 
 - The workflow checks for open PRs with this loop's label and no-ops on scheduled runs when the bound is met; manual `workflow_dispatch` runs bypass the check.
-- Decide PR metadata: label name, PR title prefix, branch prefix.
+- Decide PR metadata: label name, PR title prefix, branch prefix. Suggest `[MM/DD][Agent: <Agent Name>]: <Concise Description>` as the title, e.g. `[6/23][Agent: Effect Migrator]: Migrate XYZ module`.
+- Manual `workflow_dispatch` runs accept an optional `target_path` that overrides the controller's selection for that run.
 
 Without this, a daily loop can stack up duplicate or conflicting PRs while no one is reviewing. Completion criterion: scheduled runs no-op when the open-PR bound for this loop is already met.
 
@@ -152,7 +154,7 @@ Without this, a daily loop can stack up duplicate or conflicting PRs while no on
 
 **Validate** the workflow YAML (`bunx js-yaml file.yml`, `python -c "import yaml,sys; yaml.safe_load(open(sys.argv[1]))" file.yml`, or `yq`) and confirm every path named by the skill, workflow, and memory file exists or is created by this task.
 
-**Dry-run.** A workflow cannot be `workflow_dispatch`-ed until it has run once. Temporarily add a `push` trigger for the current branch, push, watch it run, then remove the trigger. Review any PR it opens to confirm the loop's behavior.
+**Dry-run.** A workflow cannot be `workflow_dispatch`-ed until it has run once. Temporarily add a `push` trigger for the current branch, push, watch it run, then remove the trigger. If the Copilot CLI step fails to authenticate, work through the troubleshooting list in `references/agent-runner-templates.md`. Review any PR it opens to confirm the loop's behavior.
 
 **Ready to iterate faster** (once the loop is tuned and producing consistent, high-quality output): increase the schedule frequency; widen the controller's batch (e.g. select N targets per run); run the sense→control→actuate cycle N times per workflow run; or run the workflow multiple times and assign one PR to each teammate.
 
@@ -164,7 +166,7 @@ Each phase above names the references relevant to it — read each one when you 
 
 - `references/control-loop-taxonomy.md` — the control-loop components and the design questions to ask; read this first and use it to teach the user.
 - `references/example-control-loop.md` — one fully worked loop, annotated component-by-component. An illustration, not a template.
-- `references/agent-runner-templates.md` — Copilot CLI headless command, `COPILOT_GITHUB_TOKEN` secret, and response capture, locally and in CI.
+- `references/agent-runner-templates.md` — Copilot CLI headless run, locally and in CI: authentication and billing (`GITHUB_TOKEN` or `COPILOT_GITHUB_TOKEN`), flags, final-message extraction, and troubleshooting.
 - `references/workflow-template.yml` — recurring loop workflow skeleton with discrete sensor/controller/actuator steps.
 - `references/prompt-template.md` — embedded prompt structure for the actuator step.
 - `references/memory-template.md` — memory/feedback file skeleton.

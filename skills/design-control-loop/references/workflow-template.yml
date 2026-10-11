@@ -15,6 +15,11 @@ on:
   schedule:
     - cron: "0 13 * * *" # Update me based on user preferences
   workflow_dispatch:
+    inputs:
+      target_path:
+        description: "Optional path or package to work on instead of the controller's selection"
+        required: false
+        type: string
   issue_comment:
     types: [created] # for iteration!
 
@@ -22,6 +27,7 @@ permissions:
   contents: write
   pull-requests: write
   issues: write
+  copilot-requests: write # lets GITHUB_TOKEN authenticate the Copilot CLI
 
 concurrency:
   group: agent-<task-slug>
@@ -41,6 +47,13 @@ jobs:
          github.event.comment.author_association == 'COLLABORATOR')
       )
     runs-on: ubuntu-latest
+    env:
+      # Copilot CLI flags shared by both actuator steps. Values must not contain spaces.
+      # Add --context <tier> for a non-default context tier, --max-ai-credits <n> (minimum 30) to cap spend per run.
+      COPILOT_FLAGS: >-
+        --model <model> --reasoning-effort high
+        --allow-all --no-ask-user --no-color
+        --output-format json --share /tmp/agent-session.md
     steps:
       - name: Check iterate marker to bound work-in-progress
         id: agent_gate
@@ -121,6 +134,11 @@ jobs:
         with:
           node-version: 24
 
+      # Copilot CLI ships on npm: keep Node.js even when the repo itself does not use it.
+      - name: Install Copilot CLI
+        if: steps.agent_gate.outputs.run_agent == 'true'
+        run: npm install -g @github/copilot
+
       - name: Cache bun dependencies
         if: steps.agent_gate.outputs.run_agent == 'true'
         uses: actions/cache@v4
@@ -139,8 +157,9 @@ jobs:
       - name: Actuator — iterate on feedback
         if: steps.agent_gate.outputs.run_agent == 'true' && github.event_name == 'issue_comment'
         env:
-          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Authenticates the Copilot CLI (with copilot-requests: write) and gh.
+          # PAT option: also set COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PR_NUMBER: ${{ steps.agent_gate.outputs.number }}
           COMMENT_BODY: ${{ github.event.comment.body }}
@@ -156,11 +175,8 @@ jobs:
             --pr-number "$PR_NUMBER" \
             --comment-body "$COMMENT_BODY" > /tmp/agent-prompt.md
 
-          # Copilot CLI runner — see references/agent-runner-templates.md. Pin <model> to the loop's model.
-          copilot -p "$(cat /tmp/agent-prompt.md)" \
-            --model "<model>" --reasoning-effort high \
-            --allow-all --no-ask-user --no-color --silent \
-            > /tmp/pr-body.md
+          read -ra FLAGS <<< "$COPILOT_FLAGS"
+          copilot -p "$(cat /tmp/agent-prompt.md)" "${FLAGS[@]}" > /tmp/agent-output.jsonl
 
       # --- Scheduled / manual path: one sense -> control -> actuate iteration ---
       # If your sensor and controller are fused into the agent (or into one tool), collapse
@@ -188,37 +204,41 @@ jobs:
       - name: Actuator — run the coding agent
         if: steps.agent_gate.outputs.run_agent == 'true' && github.event_name != 'issue_comment'
         env:
-          COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Authenticates the Copilot CLI (with copilot-requests: write) and gh.
+          # PAT option: also set COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
+          TARGET_PATH: ${{ github.event.inputs.target_path }}
         run: |
           set -o pipefail
           MEMORY_CONTENT="$(cat .github/agent-memory/<task-slug>.md)"
           CONTROLLER_OUTPUT="$(cat /tmp/controller-output.md 2>/dev/null || true)"
 
-          PROMPT="$(cat <<EOF
+          # A manual target_path overrides the controller's selection for this run.
+          if [ -n "$TARGET_PATH" ]; then
+            CONTROLLER_OUTPUT="The user requested this path or package: $TARGET_PATH
+
+          Start there instead of the controller's selection."
+          fi
+
+          # Quoted delimiter: paste the prompt as-is; backticks, $ and \ stay literal.
+          cat > /tmp/agent-prompt.md <<'PROMPT_EOF'
           <paste prompt-template.md here and replace placeholders>
+          PROMPT_EOF
+          printf '\n## Selected work (controller output)\n\n%s\n\n## Agent Memory\n\n%s\n' \
+            "$CONTROLLER_OUTPUT" "$MEMORY_CONTENT" >> /tmp/agent-prompt.md
 
-          ## Selected work (controller output)
+          read -ra FLAGS <<< "$COPILOT_FLAGS"
+          copilot -p "$(cat /tmp/agent-prompt.md)" "${FLAGS[@]}" > /tmp/agent-output.jsonl
 
-          $CONTROLLER_OUTPUT
-
-          ## Agent Memory
-
-          $MEMORY_CONTENT
-          EOF
-          )"
-
-          # Copilot CLI runner — see references/agent-runner-templates.md. --silent prints only the
-          # final response, which becomes the PR body.
-          copilot -p "$PROMPT" \
-            --model "<model>" --reasoning-effort high \
-            --allow-all --no-ask-user --no-color --silent \
-            > /tmp/pr-body.md
-
+      # The agent's final message becomes the PR body (or the /iterate reply). --silent would
+      # also print mid-run narration, so take the last non-empty assistant.message from the JSONL.
       - name: Extract PR body
-        if: steps.agent_gate.outputs.run_agent == 'true' && github.event_name != 'issue_comment'
+        if: steps.agent_gate.outputs.run_agent == 'true'
         run: |
-          [ -s /tmp/pr-body.md ] || echo "Agent produced no final message; see the workflow run." > /tmp/pr-body.md
+          grep '^{' /tmp/agent-output.jsonl \
+            | jq -rs '[.[] | select(.type == "assistant.message" and (.data.content // "") != "")] | last | .data.content // empty' \
+            > /tmp/pr-body.md
+          [ -s /tmp/pr-body.md ] || echo "Agent produced no final message; see the agent-output artifact." > /tmp/pr-body.md
 
       - name: Push and create PR
         if: steps.agent_gate.outputs.run_agent == 'true' && github.event_name != 'issue_comment'
@@ -263,4 +283,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: agent-output
-          path: /tmp/agent-output.txt
+          path: |
+            /tmp/agent-output.jsonl
+            /tmp/agent-session.md

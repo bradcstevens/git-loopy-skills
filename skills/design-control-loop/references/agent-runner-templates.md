@@ -1,8 +1,6 @@
 # Actuator Runner — GitHub Copilot CLI
 
-The actuator is the GitHub Copilot CLI (`copilot`) run headless with `-p`. The same command runs locally and in CI; only the credentials and the permission flags differ. `--allow-all` / `--yolo` is appropriate only on trusted, isolated runners.
-
-Goal: the agent's final formatted response lands in `/tmp/pr-body.md` for the PR body. `--silent` prints only that response, so extraction is a redirect.
+The actuator is the GitHub Copilot CLI (`copilot`) run headless with `-p`. The same command runs locally and in CI; only authentication differs. `references/workflow-template.yml` carries the CI steps; this file holds what the template cannot say inline.
 
 ## Run it locally first
 
@@ -10,53 +8,44 @@ Run the actuator by hand against a controller-selected target before it goes int
 
 ```bash
 source git-loopy.env
-PROMPT="$(cat /tmp/agent-prompt.md)"   # your assembled actuator prompt
-copilot -p "$PROMPT" \
+copilot -p "$(cat /tmp/agent-prompt.md)" \
   --model "$GIT_LOOPY_MODEL" \
   --reasoning-effort "$GIT_LOOPY_EFFORT" \
   --context "$GIT_LOOPY_CONTEXT" \
-  --allow-all --no-ask-user --no-color --silent \
+  --allow-all --no-ask-user --no-color \
+  --output-format json --share /tmp/agent-session.md \
+  > /tmp/agent-output.jsonl
+grep '^{' /tmp/agent-output.jsonl \
+  | jq -rs '[.[] | select(.type == "assistant.message" and (.data.content // "") != "")] | last | .data.content // empty' \
   > /tmp/pr-body.md
 ```
 
+`/tmp/agent-prompt.md` is your assembled actuator prompt. Afterwards `/tmp/pr-body.md` holds the PR body CI would open, and `/tmp/agent-session.md` the readable transcript.
+
 Flags outrank every other layer (`.github/copilot/settings.json`, `~/.copilot/settings.json`), so pin model, effort, and context here when the loop needs a stable actuator.
 
-## In CI
+## Authenticate in CI
 
-Secret: `COPILOT_GITHUB_TOKEN` — a fine-grained personal access token with the **Copilot Requests** permission, stored as a repo secret. `GITHUB_TOKEN` cannot authenticate Copilot; keep it for `gh` and PR creation.
+Settle one option with the user in Phase B:
 
-```yaml
-- uses: actions/setup-node@v4
-  with:
-    node-version: 24
-- run: npm install -g @github/copilot
-- name: Run Copilot CLI
-  env:
-    COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}
-    GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-  run: |
-    set -o pipefail
-    copilot -p "$PROMPT" \
-      --model "<model>" \
-      --reasoning-effort high \
-      --allow-all --no-ask-user --no-color --silent \
-      > /tmp/pr-body.md
-```
+- **`GITHUB_TOKEN` (recommended; the template ships it).** The `copilot-requests: write` permission lets the workflow's built-in token authenticate the CLI, so no secret is stored. Declaring `permissions:` sets every unlisted scope to `none`, so that line must stay. Billing follows the repo owner:
+  - Organization-owned repo: usage bills to the organization, which needs the policy **Allow use of Copilot CLI billed to the organization** (on by default where Copilot CLI is enabled). User-level Copilot budgets do not apply, so recommend `--max-ai-credits`.
+  - Personal repo: usage bills to the owner's Copilot seat.
+- **Personal access token.** For an organization whose policy is off, or to bill one user's seat: a fine-grained PAT with the **Copilot Requests** permission, stored as the repo secret `COPILOT_GITHUB_TOKEN` and added to each actuator step's `env:` as `COPILOT_GITHUB_TOKEN: ${{ secrets.COPILOT_GITHUB_TOKEN }}`. The CLI prefers it over `GITHUB_TOKEN`, which stays for `gh`.
 
-Pick `<model>` from the models the Copilot CLI lists (`copilot --help`, `/model`). Add `--max-autopilot-continues <n>` when the repo needs a spend guard. Use `--output-format json` plus `--share /tmp/session.md` when the run needs a debug transcript; then take the final message from the JSONL instead of redirecting stdout.
+The CLI redacts the `GITHUB_TOKEN` and `COPILOT_GITHUB_TOKEN` values from its output by default; name any other secret the agent must not see in `--secret-env-vars=NAME,...`.
 
-## Response extraction
+## Flags
 
-With `--silent`, stdout is the final response and needs no parsing. Fall back to a placeholder body when the file is empty:
+The template keeps one job-level `COPILOT_FLAGS` string for both actuator steps (the scheduled run and `/iterate`), split into an array with `read -ra`, so flag values must not contain spaces:
 
-```yaml
-- name: Extract PR body
-  run: |
-    [ -s /tmp/pr-body.md ] || echo "Agent produced no final message; see the workflow run." > /tmp/pr-body.md
-```
+- `--model <model>`: pin the model settled in Phase B, so every scheduled run uses the same one. Add `--context <tier>` when Phase B chose a non-default context tier.
+- `--allow-all`: a headless run denies any action that is not pre-approved, so an unattended coding run needs every tool, path, and URL permission. It suits only trusted, isolated runners such as GitHub-hosted ones.
+- `--output-format json` and `--share /tmp/agent-session.md`: the PR body (or `/iterate` reply) is the agent's final message, and `-s`/`--silent` would print every assistant message, mid-run narration included. So the `Extract PR body` step reads the JSONL and keeps the last `assistant.message` event with non-empty `.data.content`; the shared transcript is the readable copy in the `agent-output` artifact.
+- Optional `--max-ai-credits <n>` (minimum 30): a soft per-run spend cap; the run ends once it is reached.
 
-## Notes
+## Troubleshooting
 
-- Upload `/tmp/pr-body.md` (and any `--share` transcript) as an artifact for debugging.
-- The PR creation step reads `/tmp/pr-body.md`.
-- `COPILOT_GITHUB_TOKEN` outranks `GH_TOKEN`, so the CLI authenticates with the former while `gh` uses the latter. Keep secrets out of the prompt; `--secret-env-vars=<NAME>,...` strips and redacts any variable the agent must not see.
+- Copilot step fails to authenticate: confirm `copilot-requests: write` in `permissions:`, then the organization policy above — or switch to the PAT.
+- Pinned model rejected: the billing account's plan or policy does not enable it; pick another from `/model`.
+- Empty or unexpected PR body: read `/tmp/agent-session.md` in the `agent-output` artifact.
