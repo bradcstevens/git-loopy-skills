@@ -3236,11 +3236,10 @@ if [ -e "$captured_worktree" ]; then
   err "captured payload completion did not remove its worktree"
 fi
 
-# Identity is itself conditional. Of the 824 real `subagentStop` invocations
-# recorded on the machine that produced these fixtures, 502 carry neither
-# `agentId` nor `agentType`, and the two are perfectly correlated: a payload has
-# both or neither. Requiring either rejected 61% of live traffic at exit 2,
-# before any match ran, so those rows could never close (#70).
+# Identity is itself conditional. Most real `subagentStop` invocations measured
+# in ADR-0005 carry neither `agentId` nor `agentType`, and the two are perfectly
+# correlated: a payload has both or neither. Requiring either rejected that
+# traffic at exit 2, before any match ran, so those rows could never close (#70).
 #
 # The payload below is captured for the same reason the one above is: a test
 # that builds its own payload cannot observe a shape the runtime sends and the

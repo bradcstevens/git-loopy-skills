@@ -1506,9 +1506,9 @@ required_fields = (
     "cwd",
 )
 # The identity of the run is itself conditional, so the fields carrying it are
-# required only on the path that reads them. 61% of real subagentStop payloads
-# carry neither agentId nor agentType — a payload has both or neither — and one
-# that names no agent is correlated by where the run worked instead, using the
+# required only on the path that reads them. Most real subagentStop payloads
+# carry neither agentId nor agentType — a payload has both or neither, as
+# measured in ADR-0005 — and one that names no agent is correlated by where the run worked instead, using the
 # agentName the runtime sets to the agent type (#70).
 identity_fields = ("agentId", "agentType")
 
@@ -1526,6 +1526,8 @@ if not isinstance(payload, dict):
 # a shape no runtime has been observed to send, and downgrading it to the
 # weaker correlation would ignore the very field it did carry.
 has_identity = any(field in payload for field in identity_fields)
+# The one field each tier cannot correlate without: agentId names the run, and
+# agentName stands in for the agent type when nothing names it.
 correlation_field = "agentId" if has_identity else "agentName"
 required_fields += identity_fields if has_identity else ("agentName",)
 
@@ -1555,8 +1557,7 @@ if isinstance(payload["timestamp"], bool) or not isinstance(
     print("error: subagent-stop payload has non-string timestamp", file=sys.stderr)
     raise SystemExit(2)
 
-correlation_value = payload[correlation_field]
-if not correlation_value:
+if not payload[correlation_field]:
     print(
         f"error: subagent-stop payload has an empty {correlation_field}",
         file=sys.stderr,
@@ -1575,7 +1576,11 @@ if os.path.exists(ledger_path):
 # Real paths, not the strings as recorded: on macOS a directory reported under
 # /var resolves under /private/var, so `reserve`, `bind` and this match all
 # compare what a path resolves to rather than how it was spelled.
-payload_worktree = os.path.realpath(os.path.abspath(payload["cwd"]))
+def resolved(path):
+    return os.path.realpath(os.path.abspath(path))
+
+
+payload_worktree = resolved(payload["cwd"])
 
 if has_identity:
     # agentId identifies the run on its own; sessionId and agentType stop a
@@ -1594,7 +1599,7 @@ if has_identity:
             and not row.get("finish_time")
         )
     ]
-    declined = {"agent_id": correlation_value}
+    declined = {"agent_id": payload["agentId"]}
 else:
     # Nothing in this payload names the run, so the row is found by where the
     # run happened: the session that launched it, the worktree it was given, and
@@ -1610,14 +1615,14 @@ else:
             row.get("session_id") == payload["sessionId"]
             and isinstance(row.get("worktree"), str)
             and row["worktree"]
-            and os.path.realpath(os.path.abspath(row["worktree"])) == payload_worktree
+            and resolved(row["worktree"]) == payload_worktree
             and row.get("agent_type") == payload["agentName"]
             and not row.get("finish_time")
         )
     ]
     declined = {
         "session_id": payload["sessionId"],
-        "agent_type": correlation_value,
+        "agent_type": payload["agentName"],
         "worktree": payload_worktree,
     }
 
@@ -1627,7 +1632,7 @@ if not matches:
         for index, row in enumerate(rows)
         if (
             isinstance(row.get("worktree"), str)
-            and os.path.realpath(os.path.abspath(row["worktree"])) == payload_worktree
+            and resolved(row["worktree"]) == payload_worktree
             and not row.get("finish_time")
             and not row.get("agent_id")
         )

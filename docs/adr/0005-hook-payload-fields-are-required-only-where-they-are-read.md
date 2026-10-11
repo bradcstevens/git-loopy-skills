@@ -51,7 +51,13 @@ keeps the stronger evidence wherever the runtime supplies it, and weakens the pr
 it supplies nothing else.
 
 What the weaker tier can act on is bounded by what the payload reports: it closes a row when the run
-reported the directory that row reserved, and declines when it did not. That bound is deliberate,
+reported the directory that row reserved, and declines when it did not. In recorded traffic that
+bound is tight. A no-identity payload reports the directory of the session that launched the run —
+1,106 of 1,476 on the measuring machine name the primary checkout — rather than the reserved
+worktree, so the fallback mostly declines; and no payload recorded since 2026-10-01 has lacked
+identity, so the runtime may have retired the shape altogether. Matching on the repository root
+instead was considered and not taken: it widens a correlation this tier exists to keep narrow, for a
+shape that may no longer arrive. That bound is deliberate,
 and the floor underneath it is the point — a payload carrying no identity is now answered at exit 0
 with a named reason instead of aborting the hook at exit 2, so `agentStop` and every gate that reads
 open rows keep working either way.
