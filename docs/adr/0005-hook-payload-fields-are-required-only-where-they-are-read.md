@@ -25,8 +25,8 @@ both. It is not one agent type misbehaving — the shape covers `code-review`, `
 `general-purpose`, `explore`, `research`, `rubber-duck` and `security-review`, and all but the last
 also appear on payloads that *do* carry identity, so which shape a run produces follows the session
 it was launched from rather than the agent it ran. It dominated August (774 of 1,187), and requiring
-identity rejected every one of those completions at exit 2 before any match ran, which is #41
-again, one field further along.
+identity rejected every no-identity completion — all 1,476 — at exit 2 before any match ran, which
+is #41 again, one field further along.
 
 ## Identity is conditional, so the predicate is tiered
 
