@@ -64,6 +64,7 @@ def acquire_lock(lock_dir: str) -> bool:
             ["ps", "-o", "lstart=", "-p", str(os.getpid())],
             capture_output=True,
             text=True,
+            env={**os.environ, "TZ": "UTC"},
         ).stdout.split()
         with open(os.path.join(lock_dir, "pid"), "w", encoding="utf-8") as owner:
             owner.write(f"{os.getpid()}\t{' '.join(start)}\n")
@@ -98,6 +99,7 @@ def lock_is_stale(lock_dir: str) -> bool:
         ["ps", "-o", "lstart=", "-p", str(pid)],
         capture_output=True,
         text=True,
+        env={**os.environ, "TZ": "UTC"},
     ).stdout.split()
     return " ".join(current_start) != owner_start
 

@@ -37,6 +37,10 @@ skill before setup. Setup also copies its bundled `agentStop` decision helper. I
 exact hook and rewrites the same files on re-runs rather than adding duplicates. Because the
 script path is local to an installation, each clone should run setup after installing the skills.
 
+The helper and chain script record ledger lock owner start times in UTC, regardless of the
+machine's timezone. Re-run setup after updating the skills to refresh the copied helper in
+existing consumer repos; updating the installed skill alone does not replace that copy.
+
 > Copilot silently skips repository hooks in folders outside its `trustedFolders` setting. Add
 > the repository path (or an appropriate parent) to that setting before relying on the chain;
 > otherwise a fresh clone can appear to have a broken trigger with no error.
