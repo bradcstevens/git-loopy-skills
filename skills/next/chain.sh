@@ -1506,10 +1506,11 @@ required_fields = (
     "cwd",
 )
 # The identity of the run is itself conditional, so the fields carrying it are
-# required only on the path that reads them. Most real subagentStop payloads
-# carry neither agentId nor agentType — a payload has both or neither, as
-# measured in ADR-0005 — and one that names no agent is correlated by where the run worked instead, using the
-# agentName the runtime sets to the agent type (#70).
+# required only on the path that reads them. About half of the real
+# subagentStop payloads measured in ADR-0005 carry neither agentId nor
+# agentType — a payload has both or neither — and one that names no agent is
+# correlated by where the run worked instead, using the agentName the runtime
+# sets to the agent type (#70).
 identity_fields = ("agentId", "agentType")
 
 try:

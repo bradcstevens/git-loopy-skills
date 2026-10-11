@@ -17,15 +17,16 @@ it to the agent *type* rather than to the descriptive name a caller binds, at wh
 on it could only ever decline a correctly bound row. It left the match, and this rule then required
 it to leave `required_fields` too.
 
-`agentId` and `agentType` were the last two, until #70. Re-measured on the machine that produced
-these fixtures, **502 of 824** recorded `subagentStop` invocations carried neither, and the two
-fields are perfectly correlated: a payload has both or neither, with no mixed shape observed and no
-session among the 130 emitting both. It is not one agent type misbehaving — the shape covers
-`code-review`, `task`, `general-purpose`, `explore`, `security-review` and `research`, and those
-same built-in types also appear on payloads that *do* carry identity, so which shape a run produces
-follows the session it was launched from rather than the agent it ran. Nor is it rare: it is 61% of
-all traffic and effectively all recent traffic. Requiring identity rejected those completions at
-exit 2 before any match ran, which is #41 again, one field further along.
+`agentId` and `agentType` were the last two, until #70. Measured on the machine that produced these
+fixtures — every `subagentStop` invocation recorded from 2026-08-22 to 2026-10-11, deduplicated
+across hooks — **1,476 of 3,008** carried neither, and the two fields are perfectly correlated: a
+payload has both or neither, with no mixed shape observed and no session among the 511 emitting
+both. It is not one agent type misbehaving — the shape covers `code-review`, `task`,
+`general-purpose`, `explore`, `research`, `rubber-duck` and `security-review`, and all but the last
+also appear on payloads that *do* carry identity, so which shape a run produces follows the session
+it was launched from rather than the agent it ran. It dominated August (774 of 1,187), and requiring
+identity rejected every one of those completions at exit 2 before any match ran, which is #41
+again, one field further along.
 
 ## Identity is conditional, so the predicate is tiered
 
@@ -51,14 +52,15 @@ keeps the stronger evidence wherever the runtime supplies it, and weakens the pr
 it supplies nothing else.
 
 What the weaker tier can act on is bounded by what the payload reports: it closes a row when the run
-reported the directory that row reserved, and declines when it did not. In recorded traffic that
-bound is tight. A no-identity payload reports the directory of the session that launched the run —
-1,106 of 1,476 on the measuring machine name the primary checkout — rather than the reserved
-worktree, so the fallback mostly declines; and no payload recorded since 2026-10-01 has lacked
-identity, so the runtime may have retired the shape altogether. Matching on the repository root
-instead was considered and not taken: it widens a correlation this tier exists to keep narrow, for a
-shape that may no longer arrive. That bound is deliberate,
-and the floor underneath it is the point — a payload carrying no identity is now answered at exit 0
+reported the directory that row reserved, and declines when it did not. In the same recorded
+traffic that bound is tight: a no-identity payload reports the directory of the session that
+launched the run, and 1,227 of the 1,476 name a primary checkout rather than any reserved worktree,
+so the fallback mostly declines. The shape may also be gone — the last one was recorded on
+2026-09-19, and none of the 274 invocations recorded in October lacked identity.
+
+The bound is deliberate. Matching on the repository root instead was considered and not taken: it
+widens a correlation this tier exists to keep narrow, for a shape that may no longer arrive. The
+floor underneath the bound is the point — a payload carrying no identity is now answered at exit 0
 with a named reason instead of aborting the hook at exit 2, so `agentStop` and every gate that reads
 open rows keep working either way.
 

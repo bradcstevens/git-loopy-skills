@@ -17,7 +17,7 @@ the run was launched by a custom `implement-agent`, and the runtime set `agentNa
 ## `subagent-stop-hook-invocation-without-identity.json`
 
 The other shape the runtime sends, captured the same way. It carries neither `agentId` nor
-`agentType`, the shape most real `subagentStop` traffic measured in
+`agentType`, the shape about half of the real `subagentStop` traffic measured in
 [ADR-0005](../../docs/adr/0005-hook-payload-fields-are-required-only-where-they-are-read.md) arrives
 in: the two fields are perfectly correlated, so a payload has both or neither, and which shape a run
 produces follows the session it was launched from rather than the agent it ran (#70). Requiring
