@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Implement the route-request contract described by ADR-0008."""
+from __future__ import annotations
+
 import atexit
 import glob
 import json

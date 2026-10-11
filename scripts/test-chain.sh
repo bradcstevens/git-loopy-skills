@@ -301,13 +301,14 @@ reserve_and_bind() {
 
   local -a ledger_args=()
   [ -z "$ledger_path" ] || ledger_args=(--ledger "$ledger_path")
-  "$CHAIN" reserve --parent-pid "$$" "${ledger_args[@]}" \
+  # Bash 3.2 treats an empty array as unset under nounset.
+  "$CHAIN" reserve --parent-pid "$$" ${ledger_args[@]+"${ledger_args[@]}"} \
     --route "$route" \
     --target "$target" \
     --spawn-time "$spawn_time" \
     --worktree "$worktree" \
     --chain-depth "$chain_depth"
-  "$CHAIN" bind "${ledger_args[@]}" \
+  "$CHAIN" bind ${ledger_args[@]+"${ledger_args[@]}"} \
     --worktree "$worktree" \
     --session-id "$session_id" \
     --agent-id "$agent_id" \
