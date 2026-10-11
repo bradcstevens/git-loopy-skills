@@ -26,6 +26,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+# Comments from anyone else on a public repository are left out of the prompt: the
+# agent acts on them with a write token.
+DEFAULT_TRUSTED = ("OWNER", "MEMBER", "COLLABORATOR")
+
 
 def marker(workflow: str, memory: str) -> str:
     return f"<!-- git-loopy-agent:workflow={workflow};memory={memory};version=1 -->"
@@ -86,6 +90,11 @@ def format_review_comments(comments: list) -> str:
     )
 
 
+def trusted_only(comments: list, trusted_associations) -> tuple:
+    kept = [comment for comment in comments or [] if comment.get("author_association") in trusted_associations]
+    return kept, len(comments or []) - len(kept)
+
+
 def render_iteration_prompt(
     workflow: str,
     memory_path: str,
@@ -94,13 +103,20 @@ def render_iteration_prompt(
     comment_body: str,
     memory_text: str | None = None,
     fetch=gh_api_json,
+    trusted_associations=DEFAULT_TRUSTED,
 ) -> str:
     if memory_text is None:
         path = Path(memory_path)
         memory_text = path.read_text(encoding="utf-8") if path.is_file() else ""
     pr = fetch(f"repos/{repo}/pulls/{pr_number}")
-    issue_comments = fetch(f"repos/{repo}/issues/{pr_number}/comments?per_page=100", paginate=True)
-    review_comments = fetch(f"repos/{repo}/pulls/{pr_number}/comments?per_page=100", paginate=True)
+    issue_comments, omitted_issue = trusted_only(
+        fetch(f"repos/{repo}/issues/{pr_number}/comments?per_page=100", paginate=True), trusted_associations
+    )
+    review_comments, omitted_review = trusted_only(
+        fetch(f"repos/{repo}/pulls/{pr_number}/comments?per_page=100", paginate=True), trusted_associations
+    )
+    omitted = omitted_issue + omitted_review
+    omitted_note = f"\n\n({omitted} comment(s) from other accounts omitted.)" if omitted else ""
     return f"""# Iteration Request
 
 {strip_iterate_command(comment_body)}
@@ -144,7 +160,7 @@ You are iterating on an open PR that was created by this coding agent workflow.
 
 # PR Review Comments
 
-{format_review_comments(review_comments)}
+{format_review_comments(review_comments)}{omitted_note}
 """
 
 

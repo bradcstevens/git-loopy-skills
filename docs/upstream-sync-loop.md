@@ -53,9 +53,15 @@ flowchart LR
   verdict, fix attempts and unanswered `/iterate` comments;
 - git-loopy's pin, and whether it contains the last sync.
 
-Both repositories are public, so anyone can comment. A marker counts only when the token's own
-account wrote it, and an issue-body marker only when the issue's author holds one of the
-`trusted_associations`.
+Both repositories are public, so anyone can comment or open a fork pull request. The loop trusts:
+
+- a marker comment only when the token's own account wrote it, and an issue-body marker only when
+  the issue's author holds one of the `trusted_associations`;
+- a pull request as its own only when that account opened it from a branch in the repository; a
+  fork pull request neither counts as a loop pull request nor claims a ticket;
+- a `review-clean` record only when that account wrote it. `chain.sh gate` matches a record from
+  any commenter, so the loop requires its own on top of the gate before it merges;
+- in an `/iterate` prompt, only comments from `trusted_associations`.
 
 ### Controller
 

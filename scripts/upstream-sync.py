@@ -123,6 +123,41 @@ def trusted_issue(issue: dict, cfg: dict) -> bool:
     return issue.get("author_association") in cfg["trusted_associations"]
 
 
+def is_loop_pr(head_ref: str, author: str | None, cross_repository: bool, labels: list, cfg: dict, trusted: str) -> bool:
+    """The loop's own pull request: opened by its account, from a branch in this repository."""
+    if cross_repository or author != trusted:
+        return False
+    return head_ref.startswith(cfg["branch_prefix"]) or cfg["labels"]["pull_request"] in labels
+
+
+_REVIEW_RECORD: list = []
+
+
+def review_record():
+    """scripts/review-clean-record.py, the single source of the record's shape."""
+    if not _REVIEW_RECORD:
+        path = REPO_ROOT / "scripts" / "review-clean-record.py"
+        spec = importlib.util.spec_from_file_location("review_clean_record", path)
+        module = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(module)
+        _REVIEW_RECORD.append(module)
+    return _REVIEW_RECORD[0]
+
+
+def trusted_review_clean(comments: list, head: str, trusted: str) -> bool:
+    """Whether the loop's own account recorded `review-clean` for this exact head.
+
+    `chain.sh gate` matches a record from any commenter, so on a public tracker the
+    loop also requires one its own account wrote before it merges.
+    """
+    record = review_record()
+    return any(
+        trusted_comment(comment, trusted) and record.matching_record(comment.get("body") or "", head)
+        for comment in comments
+    )
+
+
 _LOGIN: list = []
 
 
@@ -215,8 +250,8 @@ def count_markers(comments: list, kind: str, trusted: str, after: str | None = N
     return count
 
 
-def pending_iterate(comments: list, authors: list, trusted: str) -> dict | None:
-    """The oldest authorised /iterate comment the loop has not answered."""
+def answered_iterates(comments: list, trusted: str) -> set:
+    """Ids of the /iterate comments the loop's own replies name as answered."""
     answered = set()
     for comment in comments:
         if not trusted_comment(comment, trusted):
@@ -224,6 +259,12 @@ def pending_iterate(comments: list, authors: list, trusted: str) -> dict | None:
         for kind, fields in parse_markers(comment.get("body")):
             if kind == "iterate-reply" and fields.get("comment"):
                 answered.add(str(fields["comment"]))
+    return answered
+
+
+def pending_iterate(comments: list, authors: list, trusted: str) -> dict | None:
+    """The oldest authorised /iterate comment the loop has not answered."""
+    answered = answered_iterates(comments, trusted)
     for comment in sorted(comments, key=lambda item: (item.get("created_at", ""), item.get("id", 0))):
         body = (comment.get("body") or "").strip()
         if not body.startswith("/iterate"):
@@ -337,8 +378,25 @@ def run_gate(repo: str, number: int, ticket: int, repo_root: Path) -> dict:
 def read_open_prs(repo: str) -> list:
     return gh_json(
         "pr", "list", "--repo", repo, "--state", "open", "--limit", "200", "--json",
-        "number,title,headRefName,headRefOid,isDraft,labels,createdAt,url,closingIssuesReferences",
+        "number,title,headRefName,headRefOid,isDraft,labels,createdAt,url,closingIssuesReferences,author,isCrossRepository",
     ) or []
+
+
+def pr_claims(prs: list, cfg: dict, interesting: set) -> dict:
+    """Tickets an open pull request from a branch in this repository closes or is named for.
+
+    A fork pull request claims nothing: anyone can open one, and a claim stops the loop.
+    """
+    prefix = cfg["branch_prefix"]
+    claims: dict = {}
+    for pr in prs:
+        if pr.get("isCrossRepository") or pr["headRefName"].startswith(prefix):
+            continue
+        refs = [ref["number"] for ref in pr.get("closingIssuesReferences") or []]
+        for number in refs + claimed_numbers(pr["headRefName"], prefix):
+            if number in interesting:
+                claims.setdefault(str(number), []).append(f"PR #{pr['number']} ({pr['headRefName']})")
+    return claims
 
 
 def read_claims(repo: str, prs: list, cfg: dict, now: str, interesting: set) -> dict:
@@ -348,14 +406,7 @@ def read_claims(repo: str, prs: list, cfg: dict, now: str, interesting: set) -> 
     with many runner lanes would otherwise cost one API call per branch.
     """
     prefix = cfg["branch_prefix"]
-    claims: dict = {}
-    for pr in prs:
-        if pr["headRefName"].startswith(prefix):
-            continue
-        refs = [ref["number"] for ref in pr.get("closingIssuesReferences") or []]
-        for number in refs + claimed_numbers(pr["headRefName"], prefix):
-            if number in interesting:
-                claims.setdefault(str(number), []).append(f"PR #{pr['number']} ({pr['headRefName']})")
+    claims = pr_claims(prs, cfg, interesting)
     if not interesting:
         return claims
     max_age_minutes = cfg["limits"]["branch_claim_days"] * 24 * 60
@@ -450,14 +501,15 @@ def eligibility(issue: dict, cfg: dict, claims: dict, limit: int | None = None) 
 
 def read_loop_prs(repo: str, prs: list, cfg: dict, repo_root: Path, trusted: str) -> list:
     prefix = cfg["branch_prefix"]
-    label = cfg["labels"]["pull_request"]
     loop_prs = []
     for pr in prs:
         names = [item["name"] for item in pr.get("labels") or []]
-        if not (pr["headRefName"].startswith(prefix) or label in names):
+        author = (pr.get("author") or {}).get("login")
+        if not is_loop_pr(pr["headRefName"], author, bool(pr.get("isCrossRepository")), names, cfg, trusted):
             continue
         ticket = ticket_from_branch(pr["headRefName"], prefix)
         ticket_issue = gh_api(f"repos/{repo}/issues/{ticket}") if ticket else {}
+        ticket_comments = comments_of(repo, ticket) if ticket else []
         comments = comments_of(repo, pr["number"])
         reset_at = last_iterate_reply_at(comments, trusted)
         head = gh_api(f"repos/{repo}/commits/{pr['headRefOid']}") if pr.get("headRefOid") else None
@@ -474,6 +526,8 @@ def read_loop_prs(repo: str, prs: list, cfg: dict, repo_root: Path, trusted: str
             "ticket": ticket,
             "ticket_state": ticket_issue.get("state"),
             "ticket_state_reason": ticket_issue.get("state_reason"),
+            "review_clean_by_loop": bool(ticket and pr.get("headRefOid"))
+            and trusted_review_clean(ticket_comments, pr["headRefOid"], trusted),
             "pending_iterate": pending_iterate(comments, cfg["trusted_associations"], trusted),
             "fix_attempts": count_markers(comments, "fix-attempt", trusted, after=reset_at),
             "paused": count_markers(comments, "paused", trusted, after=reset_at) > 0,
@@ -489,7 +543,7 @@ def read_downstream_issues(cfg: dict, trusted: str) -> list:
     issues = [
         normalize_issue(issue)
         for issue in gh_paginated(f"repos/{repo}/issues?labels={cfg['labels']['sync']}&state=open&per_page=100")
-        if "pull_request" not in issue
+        if "pull_request" not in issue and trusted_issue(issue, cfg)
     ]
     attach_attempts(repo, issues, lambda issue: True, trusted)
     return issues
@@ -639,12 +693,15 @@ def shepherd_pr(pr: dict, cfg: dict, now: str) -> dict:
     if pr.get("ticket") is None:
         return decide("blocked", reason=f"loop PR #{pr['number']} names no ticket in {pr['head_ref']}", **common)
     gate = pr.get("gate") or {}
-    if gate.get("decision") == "allow":
+    if gate.get("decision") != "allow" and not gate.get("missing"):
+        return decide("wait", reason=f"merge gate unavailable: {gate.get('reason', 'no verdict')}", **common)
+    missing = set(gate.get("missing") or [])
+    if not pr.get("review_clean_by_loop"):
+        missing.add("review-clean-evidence-comment")
+    if not missing:
         method = repo_settings(pr["repository"], cfg)["merge_method"]
         return decide("merge", merge_method=method, reason="merge evidence complete", **common)
-    missing = sorted(gate.get("missing") or [])
-    if not missing:
-        return decide("wait", reason=f"merge gate unavailable: {gate.get('reason', 'no verdict')}", **common)
+    missing = sorted(missing)
     if pr.get("is_draft") or "pull-request-not-draft" in missing:
         return decide("wait", reason="draft PR: paused by a human", **common)
     conflicted = pr.get("mergeable") == "CONFLICTING"
@@ -973,17 +1030,56 @@ def manual_implement(cfg: dict, repo: str, ticket: int) -> dict:
     )
 
 
+def iterate_refusal(request: dict) -> str | None:
+    """Why a comment-triggered /iterate must not run, or None when it should.
+
+    The scheduled path reaches the same answers through the sensor; this keeps a
+    comment run from iterating a PR the loop does not own, has closed, or has
+    already answered.
+    """
+    if not request["ours"]:
+        return "the pull request was not opened by the loop"
+    if request["pr_state"] != "open":
+        return "the pull request is closed"
+    if request.get("ticket") and request.get("ticket_state") == "closed":
+        return f"ticket #{request['ticket']} is closed; the next scheduled run closes its pull request"
+    if request["answered"]:
+        return f"/iterate {request['comment_id']} was already answered"
+    return None
+
+
 def manual_iterate(cfg: dict, repo: str, number: int, comment_id: str, comment_body: str) -> dict:
     pr = gh_api(f"repos/{repo}/pulls/{number}")
-    if f"<!-- git-loopy-agent:workflow={cfg['workflow_id']};" not in (pr.get("body") or ""):
-        return decide("none", reason=f"{repo}#{number} was not opened by {cfg['workflow_id']}")
+    trusted = current_login()
+    head = pr.get("head") or {}
+    ticket = ticket_from_branch(head.get("ref", ""), cfg["branch_prefix"])
+    marked = f"<!-- git-loopy-agent:workflow={cfg['workflow_id']};" in (pr.get("body") or "")
+    request = {
+        "ours": marked
+        and is_loop_pr(
+            head.get("ref", ""),
+            (pr.get("user") or {}).get("login"),
+            (head.get("repo") or {}).get("full_name") != repo,
+            [label["name"] for label in pr.get("labels") or []],
+            cfg,
+            trusted,
+        ),
+        "pr_state": pr.get("state"),
+        "ticket": ticket,
+        "ticket_state": gh_api(f"repos/{repo}/issues/{ticket}").get("state") if ticket else None,
+        "comment_id": comment_id,
+        "answered": str(comment_id) in answered_iterates(comments_of(repo, number), trusted),
+    }
+    refusal = iterate_refusal(request)
+    if refusal:
+        return decide("none", reason=f"{repo}#{number}: {refusal}")
     return decide(
         "iterate",
         repository=repo,
         pull_request=number,
-        ticket=ticket_from_branch(pr["head"]["ref"], cfg["branch_prefix"]),
-        branch=pr["head"]["ref"],
-        head_sha=pr["head"]["sha"],
+        ticket=ticket,
+        branch=head["ref"],
+        head_sha=head.get("sha"),
         reason="/iterate comment",
         details={"comment": {"id": comment_id, "body": comment_body}},
     )
@@ -1082,7 +1178,7 @@ def start(decision: dict, cfg: dict, root: Path, install_skills: bool, copilot_h
         branch = decision["branch"]
         remote = git(work, "ls-remote", "--heads", "origin", branch)
         if remote:
-            open_prs = gh_json("pr", "list", "--repo", repo, "--head", branch, "--state", "open", "--json", "number") or []
+            open_prs = open_prs_for_branch(repo, branch)
             if open_prs:
                 raise LoopError(f"{branch} already has open PR #{open_prs[0]['number']}; shepherd it instead")
             if not dry_run:
@@ -1200,6 +1296,7 @@ def build_prompt(decision: dict, cfg: dict, repo_root: Path, workspace: dict | N
                 pr_number=decision["pull_request"],
                 comment_body=(decision.get("details") or {}).get("comment", {}).get("body", ""),
                 memory_text=memory,
+                trusted_associations=cfg["trusted_associations"],
             ).rstrip()
         )
     parts += ["## Agent memory", memory]
@@ -1210,9 +1307,22 @@ def pr_footer(cfg: dict) -> str:
     return load_iteration_helper().render_footer(cfg["workflow_id"], cfg["memory_path"])
 
 
+def open_prs_for_branch(repo: str, branch: str) -> list:
+    """Open pull requests from this repository's `branch`; a fork's branch of the same name is not one."""
+    prs = gh_json(
+        "pr", "list", "--repo", repo, "--head", branch, "--state", "open", "--json",
+        "number,url,headRefOid,author,isCrossRepository",
+    ) or []
+    return [pr for pr in prs if not pr.get("isCrossRepository")]
+
+
 def find_open_pr(repo: str, branch: str) -> dict | None:
-    prs = gh_json("pr", "list", "--repo", repo, "--head", branch, "--state", "open", "--json", "number,url,headRefOid") or []
-    return prs[0] if prs else None
+    """The loop's own open pull request for `branch`."""
+    trusted = current_login()
+    for pr in open_prs_for_branch(repo, branch):
+        if (pr.get("author") or {}).get("login") == trusted:
+            return pr
+    return None
 
 
 def wait_for_checks(repo: str, number: int, timeout: int) -> str:
@@ -1292,16 +1402,10 @@ def finish(decision: dict, cfg: dict, body: str, wait_checks: int, dry_run: bool
             return "planned: a spec now targets " + target[:12]
         return open_blocker(cfg, f"Upstream sync blocked: planning {decision['details']['gap']['release']} produced no spec", message, dry_run)
     if action == "downstream-plan":
-        issues = gh_paginated(f"repos/{repo}/issues?labels={cfg['labels']['sync']}&state=open&per_page=100")
-        ready = [
-            issue
-            for issue in issues
-            if "pull_request" not in issue
-            and cfg["labels"]["ready"] in [label["name"] for label in issue.get("labels") or []]
-            and normalize_issue(issue)["afk_ready"]
-        ]
-        if ready:
-            return f"planned: {len(ready)} ready git-loopy ticket(s)"
+        issues = read_downstream_issues(cfg, current_login())
+        planned = [issue["number"] for issue in issues if eligibility(issue, cfg, {}) not in ("closed", "not_ready")]
+        if planned:
+            return f"planned: git-loopy ticket(s) {planned} ready"
         return "planning produced no ready git-loopy ticket; the next run retries or blocks"
     return f"{action}: nothing to finish"
 
