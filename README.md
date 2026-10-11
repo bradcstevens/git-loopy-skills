@@ -128,8 +128,11 @@ scripts/link-skills.sh        # symlink all skills into ~/.copilot/skills for lo
 ```
 
 `scripts/link-skills.sh` is a maintainer convenience for working on skills in place — it symlinks
-this repo into the agent skills directory, so a `git pull` is enough to pick up changes. It is not a
-supported installer; use `npx skills add` for that.
+this repo's skills into `~/.copilot/skills` and `~/.config/git-loopy/skills`, and its custom agent
+profiles into `~/.copilot/agents`, so a `git pull` is enough to pick up changes. It replaces
+same-name real agent files and prunes links to retired profiles from this checkout, leaving
+unrelated files and links alone. Run it from the primary checkout, not a temporary worktree.
+It is not a supported installer; use `npx skills add` for skills.
 
 ## Shell wrappers
 
