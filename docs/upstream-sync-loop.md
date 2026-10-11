@@ -49,9 +49,13 @@ flowchart LR
   removed, moved or deprecated, by comparing the two upstream trees, and applies the scope gate;
 - claims: open pull requests that close a ticket, and branches named `ticket/<n>-...` or
   `.../issue-<n>` committed to in the last `branch_claim_days`;
-- open loop pull requests in both repositories, each with its `chain.sh gate` verdict, fix
-  attempts and unanswered `/iterate` comments;
+- open loop pull requests in both repositories, each with its ticket's state, its `chain.sh gate`
+  verdict, fix attempts and unanswered `/iterate` comments;
 - git-loopy's pin, and whether it contains the last sync.
+
+Both repositories are public, so anyone can comment. A marker counts only when the token's own
+account wrote it, and an issue-body marker only when the issue's author holds one of the
+`trusted_associations`.
 
 ### Controller
 
@@ -60,16 +64,21 @@ flowchart LR
 
 | # | When | Action |
 | --- | --- | --- |
-| 1 | A loop PR has an unanswered `/iterate` | `iterate` |
-| 2 | A loop PR passes the merge gate | `merge` (merge commit here, squash in git-loopy) |
-| 3 | A loop PR is a draft, its checks are running, or mergeability is unknown | `wait` |
-| 4 | A loop PR is conflicted, red or unreviewed | `fix`, at most `max_fix_attempts`, then `blocked` |
-| 5 | An open `upstream-sync` blocker issue exists | `blocked` |
-| 6 | Every ticket of an open spec is closed | `close-out` |
-| 7 | The last sync is not in git-loopy's pin | `implement` its ready ticket there, or `downstream-plan` one |
-| 8 | An open spec has a ready ticket: unblocked, unassigned, unclaimed, under `max_ticket_attempts` | `implement` (`priority` first, then oldest) |
-| 9 | A release is past the baseline | `plan` if it changes an in-scope skill, else `record-release` |
-| 10 | Otherwise | `none` |
+| 1 | A loop PR's ticket was closed | `abandon`: close the PR with a comment |
+| 2 | A loop PR has an unanswered `/iterate` | `iterate` |
+| 3 | A loop PR passes the merge gate | `merge` (merge commit here, squash in git-loopy) |
+| 4 | A loop PR is a draft, its checks are running, or mergeability is unknown | `wait` |
+| 5 | A loop PR is conflicted, red or unreviewed | `fix`, at most `max_fix_attempts`, then `blocked` |
+| 6 | An open `upstream-sync` blocker issue exists | `blocked` |
+| 7 | Every ticket of an open spec is closed | `close-out` |
+| 8 | The last sync is not in git-loopy's pin | `implement` its ready ticket there, or `downstream-plan` one |
+| 9 | An open spec has an eligible ticket | `implement` (`priority` first, then oldest) |
+| 10 | A release is past the baseline | `plan` if it changes an in-scope skill, else `record-release` |
+| 11 | Otherwise | `none` |
+
+A ticket is eligible when it is open, `ready-for-agent` without `ready-for-human`, has both
+`## What to build` and `## Acceptance criteria`, has no open blocker, no assignee and no claim, and
+has had fewer than `max_ticket_attempts` loop attempts. The same rule picks git-loopy's ticket.
 
 At most one loop pull request is open at a time, across both repositories.
 
@@ -82,7 +91,8 @@ repository's own skills through the skill tool:
 
 - **`implement`:** `/implement`, open the pull request, then `/code-review`, which records the
   findings or a `review-clean: head=<sha>` line on the ticket.
-- **`fix`:** resolve the conflict, the red check or the review findings, then review the new head.
+- **`fix`:** `/implement` resolves the conflict, the red check or the review findings, and closes
+  with a review of the new head.
 - **`iterate`:** apply the maintainer's feedback and distill durable guidance into memory.
 - **`plan`:** `/to-spec` and `/to-tickets` for a new release, plus a follow-up issue in git-loopy.
 - **`downstream-plan`:** `/to-tickets` in git-loopy for the pin move.
@@ -94,7 +104,7 @@ In CI the catalog is copied, never linked, into the agent's skill root, so a tic
 
 Deterministic. The workflow merges only when `skills/next/chain.sh gate` allows: GitHub reports
 the pull request mergeable, the ticket carries a `review-clean` record for the exact head, and
-every check is green. Making a pull request a draft holds it.
+every check is green. Making a pull request a draft pauses it.
 
 ### Dampener
 
@@ -150,7 +160,8 @@ the loop opens pull requests in git-loopy too, and because pull requests opened 
    permissions **Contents**, **Issues**, **Pull requests** and **Workflows**, all read and write;
    account permission **Copilot Requests**.
 2. Store it: `gh secret set UPSTREAM_SYNC_TOKEN --repo bradcstevens/git-loopy-skills`.
-3. Renew it before it expires. A run without it fails at its first step, naming this section.
+3. Renew it before it expires. Without it, scheduled and `/iterate` runs skip with a warning, and
+   a manual run fails.
 
 Copilot usage bills to the token owner's seat.
 
@@ -164,13 +175,15 @@ Copilot usage bills to the token owner's seat.
 - **Selection:** the loop takes only `ready-for-agent` tickets. Add `priority` to go first, assign
   yourself to reserve a ticket, or swap in `ready-for-human` to keep it from the loop. A ticket the
   loop fails twice moves to `ready-for-human` on its own.
-- **A pull request:** comment `/iterate <feedback>`, or make it a draft to hold it. After
-  `max_fix_attempts` failed fixes the loop comments and stops touching it until you do.
+- **A pull request:** comment `/iterate <feedback>`, or make it a draft to pause it. After
+  `max_fix_attempts` failed fixes the loop comments and stops touching it until you do. Close a
+  ticket and the loop closes its pull request. On a git-loopy pull request, `/iterate` waits for the
+  next scheduled run, and any memory entry it proposes is quoted in the reply for you to add here.
 - **Pausing:** an open issue labelled `upstream-sync` whose body carries
   `<!-- upstream-sync:blocked -->` pauses new work. The loop opens one when planning fails; close
   it to resume.
-- **Manual runs:** dispatch the workflow with `ticket` to implement a specific issue now, or with
-  `dry_run` to see what it would do.
+- **Manual runs:** dispatch the workflow with `ticket` to implement a specific issue now (an
+  override: it skips the one-open-PR bound), or with `dry_run` to see what it would do.
 
 ## Disturbances
 

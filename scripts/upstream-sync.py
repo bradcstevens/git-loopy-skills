@@ -7,7 +7,7 @@ and steering: docs/upstream-sync-loop.md. Scope gate: .github/upstream-sync.json
 
     upstream-sync.py sense                        read-only measurement   > sensor.json
     upstream-sync.py control SENSOR               pure decision           > decision.json
-    upstream-sync.py apply DECISION [--dry-run]   merge, close-out, record-release, hold
+    upstream-sync.py apply DECISION [--dry-run]   merge, abandon, close-out, record-release, pause
     upstream-sync.py shepherd [--out FILE]        sense, control, apply until a non-deterministic decision
     upstream-sync.py decide implement --ticket N [--repo R]
     upstream-sync.py decide iterate --repo R --pr N --comment-id C --comment-body B
@@ -39,7 +39,9 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_CONFIG = REPO_ROOT / ".github" / "upstream-sync.json"
 
 AGENT_ACTIONS = ("implement", "fix", "iterate", "plan", "downstream-plan")
-DETERMINISTIC_ACTIONS = ("merge", "close-out", "record-release")
+DETERMINISTIC_ACTIONS = ("merge", "abandon", "close-out", "record-release")
+# A non-renameable assertion (docs/agents/triage-labels.md), so it is not configurable.
+PRIORITY_LABEL = "priority"
 
 MARKER_RE = re.compile(r"<!--\s*upstream-sync:([a-z-]+)((?:\s+[a-z_]+=[^\s>]+)*)\s*-->")
 CLAIM_RE = re.compile(r"(?:^|/)(?:ticket|issue)[-/]?(\d+)(?=\D|$)")
@@ -97,6 +99,39 @@ def minutes_between(earlier: str, later: str) -> float:
     return (parse_time(later) - parse_time(earlier)).total_seconds() / 60
 
 
+def number_from_url(url: str) -> int:
+    return int(url.strip().rstrip("/").rsplit("/", 1)[-1])
+
+
+def queue_key(issue: dict) -> tuple:
+    """Priority first, then oldest: the order docs/agents/triage-labels.md gives the queue."""
+    return (PRIORITY_LABEL not in issue["labels"], issue["created_at"], issue["number"])
+
+
+# --------------------------------------------------------------------------- trust
+#
+# The repositories are public, so anyone can comment. A marker counts only when the
+# loop's own account (the token's owner) wrote it, and an issue-body marker only when
+# a trusted association authored the issue.
+
+
+def trusted_comment(comment: dict, trusted: str) -> bool:
+    return (comment.get("user") or {}).get("login") == trusted
+
+
+def trusted_issue(issue: dict, cfg: dict) -> bool:
+    return issue.get("author_association") in cfg["trusted_associations"]
+
+
+_LOGIN: list = []
+
+
+def current_login() -> str:
+    if not _LOGIN:
+        _LOGIN.append(gh_api("user")["login"])
+    return _LOGIN[0]
+
+
 # --------------------------------------------------------------------------- gh
 
 
@@ -139,16 +174,9 @@ def load_config(path: Path) -> dict:
         return json.load(handle)
 
 
-def merge_method(repo: str, cfg: dict) -> str:
-    if repo == cfg["downstream"]["repository"]:
-        return cfg["downstream"]["merge_method"]
-    return cfg["skills"]["merge_method"]
-
-
-def default_branch(repo: str, cfg: dict) -> str:
-    if repo == cfg["downstream"]["repository"]:
-        return cfg["downstream"]["default_branch"]
-    return cfg["skills"]["default_branch"]
+def repo_settings(repo: str, cfg: dict) -> dict:
+    """The config section for a repository: the downstream runner's, or this repository's."""
+    return cfg["downstream"] if repo == cfg["downstream"]["repository"] else cfg["skills"]
 
 
 def local_skill_names(repo_root: Path) -> list:
@@ -176,19 +204,23 @@ def normalize_issue(issue: dict) -> dict:
     }
 
 
-def count_markers(comments: list, kind: str, after: str | None = None) -> int:
+def count_markers(comments: list, kind: str, trusted: str, after: str | None = None) -> int:
     count = 0
     for comment in comments:
+        if not trusted_comment(comment, trusted):
+            continue
         if after and comment.get("created_at", "") <= after:
             continue
         count += sum(1 for found, _ in parse_markers(comment.get("body")) if found == kind)
     return count
 
 
-def pending_iterate(comments: list, authors: list) -> dict | None:
+def pending_iterate(comments: list, authors: list, trusted: str) -> dict | None:
     """The oldest authorised /iterate comment the loop has not answered."""
     answered = set()
     for comment in comments:
+        if not trusted_comment(comment, trusted):
+            continue
         for kind, fields in parse_markers(comment.get("body")):
             if kind == "iterate-reply" and fields.get("comment"):
                 answered.add(str(fields["comment"]))
@@ -209,11 +241,12 @@ def pending_iterate(comments: list, authors: list) -> dict | None:
     return None
 
 
-def last_iterate_reply_at(comments: list) -> str | None:
+def last_iterate_reply_at(comments: list, trusted: str) -> str | None:
     stamps = [
         comment.get("created_at", "")
         for comment in comments
-        if any(kind == "iterate-reply" for kind, _ in parse_markers(comment.get("body")))
+        if trusted_comment(comment, trusted)
+        and any(kind == "iterate-reply" for kind, _ in parse_markers(comment.get("body")))
     ]
     return max(stamps) if stamps else None
 
@@ -338,11 +371,12 @@ def read_claims(repo: str, prs: list, cfg: dict, now: str, interesting: set) -> 
     return claims
 
 
-def read_specs(repo: str, label: str) -> dict:
+def read_specs(repo: str, cfg: dict, trusted: str) -> dict:
+    label = cfg["labels"]["sync"]
     issues = [
         issue
         for issue in gh_paginated(f"repos/{repo}/issues?labels={label}&state=all&per_page=100")
-        if "pull_request" not in issue
+        if "pull_request" not in issue and trusted_issue(issue, cfg)
     ]
     open_specs, closed_specs, blockers = [], [], []
     for issue in issues:
@@ -368,7 +402,8 @@ def read_specs(repo: str, label: str) -> dict:
     for spec in sorted(completed, key=lambda item: item.get("closed_at") or "", reverse=True):
         synced = None
         for comment in comments_of(repo, spec["number"]):
-            synced = first_marker(comment.get("body"), "synced") or synced
+            if trusted_comment(comment, trusted):
+                synced = first_marker(comment.get("body"), "synced") or synced
         last_completed = dict(spec)
         if synced:
             last_completed.update(
@@ -382,26 +417,38 @@ def read_specs(repo: str, label: str) -> dict:
     return {"open": sorted(open_specs, key=lambda item: item["number"]), "last_completed": last_completed, "blockers": blockers}
 
 
-def attach_attempts(repo: str, issues: list, should_count) -> None:
+def attach_attempts(repo: str, issues: list, should_count, trusted: str) -> None:
     for issue in issues:
-        issue["attempts"] = count_markers(comments_of(repo, issue["number"]), "attempt") if should_count(issue) else 0
+        issue["attempts"] = (
+            count_markers(comments_of(repo, issue["number"]), "attempt", trusted) if should_count(issue) else 0
+        )
 
 
 def read_tickets(repo: str, spec: int) -> list:
     return [normalize_issue(item) for item in gh_paginated(f"repos/{repo}/issues/{spec}/sub_issues?per_page=100")]
 
 
-def selectable(ticket: dict, cfg: dict, claims: dict) -> bool:
-    return (
-        ticket["state"] == "open"
-        and cfg["labels"]["ready"] in ticket["labels"]
-        and not ticket["assignees"]
-        and ticket.get("blocked_by", 0) == 0
-        and str(ticket["number"]) not in claims
-    )
+def eligibility(issue: dict, cfg: dict, claims: dict, limit: int | None = None) -> str:
+    """Where an issue stands in the loop's queue. One rule for every queue the loop reads.
+
+    `not_ready` follows docs/agents/triage-labels.md: the AFK-ready label, no human label,
+    and a body with both `## What to build` and `## Acceptance criteria`.
+    """
+    labels = cfg["labels"]
+    if issue.get("state") != "open":
+        return "closed"
+    if labels["ready"] not in issue["labels"] or labels["human"] in issue["labels"] or not issue.get("afk_ready"):
+        return "not_ready"
+    if issue.get("blocked_by", 0) > 0:
+        return "blocked"
+    if issue.get("assignees") or str(issue["number"]) in claims:
+        return "claimed"
+    if limit is not None and issue.get("attempts", 0) >= limit:
+        return "exhausted"
+    return "eligible"
 
 
-def read_loop_prs(repo: str, prs: list, cfg: dict, repo_root: Path) -> list:
+def read_loop_prs(repo: str, prs: list, cfg: dict, repo_root: Path, trusted: str) -> list:
     prefix = cfg["branch_prefix"]
     label = cfg["labels"]["pull_request"]
     loop_prs = []
@@ -410,8 +457,10 @@ def read_loop_prs(repo: str, prs: list, cfg: dict, repo_root: Path) -> list:
         if not (pr["headRefName"].startswith(prefix) or label in names):
             continue
         ticket = ticket_from_branch(pr["headRefName"], prefix)
+        ticket_issue = gh_api(f"repos/{repo}/issues/{ticket}") if ticket else {}
         comments = comments_of(repo, pr["number"])
-        reset_at = last_iterate_reply_at(comments)
+        reset_at = last_iterate_reply_at(comments, trusted)
+        head = gh_api(f"repos/{repo}/commits/{pr['headRefOid']}") if pr.get("headRefOid") else None
         record = {
             "repository": repo,
             "number": pr["number"],
@@ -419,12 +468,15 @@ def read_loop_prs(repo: str, prs: list, cfg: dict, repo_root: Path) -> list:
             "title": pr.get("title"),
             "head_ref": pr["headRefName"],
             "head_sha": pr.get("headRefOid"),
+            "head_committed_at": head["commit"]["committer"]["date"] if head else None,
             "is_draft": bool(pr.get("isDraft")),
             "created_at": pr.get("createdAt"),
             "ticket": ticket,
-            "pending_iterate": pending_iterate(comments, cfg["iterate_authors"]),
-            "fix_attempts": count_markers(comments, "fix-attempt", after=reset_at),
-            "held": count_markers(comments, "held", after=reset_at) > 0,
+            "ticket_state": ticket_issue.get("state"),
+            "ticket_state_reason": ticket_issue.get("state_reason"),
+            "pending_iterate": pending_iterate(comments, cfg["trusted_associations"], trusted),
+            "fix_attempts": count_markers(comments, "fix-attempt", trusted, after=reset_at),
+            "paused": count_markers(comments, "paused", trusted, after=reset_at) > 0,
             "mergeable": wait_for_mergeable(repo, pr["number"]),
             "gate": run_gate(repo, pr["number"], ticket, repo_root) if ticket else None,
         }
@@ -432,14 +484,14 @@ def read_loop_prs(repo: str, prs: list, cfg: dict, repo_root: Path) -> list:
     return loop_prs
 
 
-def read_downstream_issues(cfg: dict) -> list:
+def read_downstream_issues(cfg: dict, trusted: str) -> list:
     repo = cfg["downstream"]["repository"]
     issues = [
         normalize_issue(issue)
         for issue in gh_paginated(f"repos/{repo}/issues?labels={cfg['labels']['sync']}&state=open&per_page=100")
         if "pull_request" not in issue
     ]
-    attach_attempts(repo, issues, lambda issue: True)
+    attach_attempts(repo, issues, lambda issue: True, trusted)
     return issues
 
 
@@ -498,7 +550,11 @@ def sense(cfg: dict, repo_root: Path) -> dict:
     sensor["skills_main"] = section(
         "skills_main", lambda: gh_api(f"repos/{skills_repo}/commits/{cfg['skills']['default_branch']}")["sha"]
     )
-    specs = section("specs", lambda: read_specs(skills_repo, cfg["labels"]["sync"])) or {
+    trusted = section("trusted_login", current_login)
+    sensor["trusted_login"] = trusted
+    if trusted is None:
+        return sensor
+    specs = section("specs", lambda: read_specs(skills_repo, cfg, trusted)) or {
         "open": [],
         "last_completed": None,
         "blockers": [],
@@ -507,7 +563,7 @@ def sense(cfg: dict, repo_root: Path) -> dict:
         spec["tickets"] = section(
             f"tickets of #{spec['number']}", lambda spec=spec: read_tickets(skills_repo, spec["number"])
         ) or []
-    down_issues = section("downstream_issues", lambda: read_downstream_issues(cfg)) or []
+    down_issues = section("downstream_issues", lambda: read_downstream_issues(cfg, trusted)) or []
 
     open_tickets = {ticket["number"] for spec in specs["open"] for ticket in spec["tickets"] if ticket["state"] == "open"}
     skills_prs = section("pull_requests", lambda: read_open_prs(skills_repo)) or []
@@ -522,13 +578,16 @@ def sense(cfg: dict, repo_root: Path) -> dict:
         section(
             f"attempts of #{spec['number']}",
             lambda spec=spec: attach_attempts(
-                skills_repo, spec["tickets"], lambda ticket: selectable(ticket, cfg, skills_claims)
+                skills_repo,
+                spec["tickets"],
+                lambda ticket: eligibility(ticket, cfg, skills_claims) == "eligible",
+                trusted,
             ),
         )
 
-    sensor["loop_prs"] = (section("loop_prs", lambda: read_loop_prs(skills_repo, skills_prs, cfg, repo_root)) or []) + (
-        section("downstream_loop_prs", lambda: read_loop_prs(down_repo, down_prs, cfg, repo_root)) or []
-    )
+    sensor["loop_prs"] = (
+        section("loop_prs", lambda: read_loop_prs(skills_repo, skills_prs, cfg, repo_root, trusted)) or []
+    ) + (section("downstream_loop_prs", lambda: read_loop_prs(down_repo, down_prs, cfg, repo_root, trusted)) or [])
     sensor["specs"] = {"open": specs["open"], "last_completed": specs["last_completed"]}
     sensor["blocked_issues"] = specs["blockers"]
     release = section("latest_release", lambda: latest_release(cfg["upstream"]["repository"]))
@@ -554,25 +613,18 @@ def decide(action: str, **fields: object) -> dict:
 
 
 def select_ticket(tickets: list, cfg: dict, claims: dict) -> tuple:
-    labels = cfg["labels"]
-    limit = cfg["limits"]["max_ticket_attempts"]
     census = {"open": 0, "not_ready": 0, "blocked": 0, "claimed": 0, "exhausted": 0}
     candidates = []
     for ticket in tickets:
-        if ticket["state"] != "open":
+        standing = eligibility(ticket, cfg, claims, limit=cfg["limits"]["max_ticket_attempts"])
+        if standing == "closed":
             continue
         census["open"] += 1
-        if labels["ready"] not in ticket["labels"] or labels["human"] in ticket["labels"]:
-            census["not_ready"] += 1
-        elif ticket.get("blocked_by", 0) > 0:
-            census["blocked"] += 1
-        elif ticket.get("assignees") or str(ticket["number"]) in claims:
-            census["claimed"] += 1
-        elif ticket.get("attempts", 0) >= limit:
-            census["exhausted"] += 1
-        else:
+        if standing == "eligible":
             candidates.append(ticket)
-    candidates.sort(key=lambda item: (labels["priority"] not in item["labels"], item["created_at"], item["number"]))
+        else:
+            census[standing] += 1
+    candidates.sort(key=queue_key)
     return (candidates[0] if candidates else None), census
 
 
@@ -588,24 +640,26 @@ def shepherd_pr(pr: dict, cfg: dict, now: str) -> dict:
         return decide("blocked", reason=f"loop PR #{pr['number']} names no ticket in {pr['head_ref']}", **common)
     gate = pr.get("gate") or {}
     if gate.get("decision") == "allow":
-        return decide("merge", merge_method=merge_method(pr["repository"], cfg), reason="merge evidence complete", **common)
+        method = repo_settings(pr["repository"], cfg)["merge_method"]
+        return decide("merge", merge_method=method, reason="merge evidence complete", **common)
     missing = sorted(gate.get("missing") or [])
     if not missing:
         return decide("wait", reason=f"merge gate unavailable: {gate.get('reason', 'no verdict')}", **common)
     if pr.get("is_draft") or "pull-request-not-draft" in missing:
-        return decide("wait", reason="draft PR: held by a human", **common)
+        return decide("wait", reason="draft PR: paused by a human", **common)
     conflicted = pr.get("mergeable") == "CONFLICTING"
     if pr.get("mergeable") == "UNKNOWN":
         return decide("wait", reason="GitHub has not computed mergeability yet", **common)
     if not conflicted and "checks-complete" in missing:
         return decide("wait", reason="checks running", **common)
     if not conflicted and "checks-present" in missing:
-        if minutes_between(pr["created_at"], now) < cfg["limits"]["checks_absent_grace_minutes"]:
+        pushed = pr.get("head_committed_at") or pr["created_at"]
+        if minutes_between(pushed, now) < cfg["limits"]["checks_absent_grace_minutes"]:
             return decide("wait", reason="waiting for checks to start", **common)
         return decide(
             "blocked",
             reason=f"PR #{pr['number']} has reported no checks; was it opened with the workflow's GITHUB_TOKEN?",
-            hold=True,
+            pause=True,
             **common,
         )
     attempts = pr.get("fix_attempts", 0)
@@ -613,7 +667,7 @@ def shepherd_pr(pr: dict, cfg: dict, now: str) -> dict:
         return decide(
             "blocked",
             reason=f"PR #{pr['number']}: {attempts} fix attempts without merge evidence; a human decides",
-            hold=True,
+            pause=True,
             details={"missing": missing},
             **common,
         )
@@ -626,26 +680,23 @@ def shepherd_pr(pr: dict, cfg: dict, now: str) -> dict:
 
 
 def downstream_decision(last: dict, downstream: dict, cfg: dict, claims: dict) -> dict:
-    labels = cfg["labels"]
     repo = downstream["repository"]
     issues = downstream.get("issues") or []
     details = {
         "last_sync": last,
         "pin": downstream.get("pin"),
         "publish_revision": downstream.get("publish_revision"),
-        "sources": [issue["number"] for issue in issues if labels["ready"] not in issue["labels"]],
+        "sources": [issue["number"] for issue in issues if cfg["labels"]["ready"] not in issue["labels"]],
     }
     ready, in_flight = [], []
     for issue in issues:
-        if labels["ready"] not in issue["labels"] or labels["human"] in issue["labels"] or not issue["afk_ready"]:
-            continue
-        if issue.get("assignees") or str(issue["number"]) in claims or issue.get("blocked_by", 0) > 0:
-            in_flight.append(issue["number"])
-        elif issue.get("attempts", 0) < cfg["limits"]["max_ticket_attempts"]:
+        standing = eligibility(issue, cfg, claims, limit=cfg["limits"]["max_ticket_attempts"])
+        if standing == "eligible":
             ready.append(issue)
+        elif standing in ("claimed", "blocked"):
+            in_flight.append(issue["number"])
     if ready:
-        ready.sort(key=lambda item: (labels["priority"] not in item["labels"], item["created_at"], item["number"]))
-        pick = ready[0]
+        pick = sorted(ready, key=queue_key)[0]
         return decide(
             "implement",
             repository=repo,
@@ -675,6 +726,17 @@ def control(sensor: dict, cfg: dict) -> dict:
         return decide("blocked", reason="sensor could not read the system", details={"errors": sensor["errors"]})
 
     prs = sorted(sensor.get("loop_prs") or [], key=lambda item: (item.get("created_at") or "", item["number"]))
+    for pr in prs:
+        if pr.get("ticket") is not None and pr.get("ticket_state") == "closed":
+            reason = pr.get("ticket_state_reason") or "closed"
+            return decide(
+                "abandon",
+                repository=pr["repository"],
+                pull_request=pr["number"],
+                ticket=pr["ticket"],
+                branch=pr["head_ref"],
+                reason=f"ticket #{pr['ticket']} was closed ({reason}), so its pull request is no longer wanted",
+            )
     for pr in prs:
         if pr.get("pending_iterate"):
             return decide(
@@ -761,10 +823,18 @@ def control(sensor: dict, cfg: dict) -> dict:
 # --------------------------------------------------------------------------- deterministic actions
 
 
-def ensure_label(repo: str, name: str, color: str, description: str, dry_run: bool) -> None:
-    if dry_run:
-        return
-    run_gh(["label", "create", name, "--repo", repo, "--color", color, "--description", description, "--force"])
+LOOP_LABELS = {
+    "sync": ("5319e7", "Tracked by the upstream-sync control loop"),
+    "pull_request": ("0E8A16", "Opened by the upstream-sync control loop"),
+}
+
+
+def ensure_label(repo: str, cfg: dict, role: str, dry_run: bool) -> str:
+    name = cfg["labels"][role]
+    if not dry_run:
+        color, description = LOOP_LABELS[role]
+        run_gh(["label", "create", name, "--repo", repo, "--color", color, "--description", description, "--force"])
+    return name
 
 
 def comment(repo: str, number: int, body: str, dry_run: bool) -> None:
@@ -811,21 +881,29 @@ def apply(decision: dict, cfg: dict, dry_run: bool = False) -> str:
         title = f"Spec: Record mattpocock/skills {gap['release']} (no in-scope changes)"
         if dry_run:
             return f"[dry-run] create and close '{title}'"
-        ensure_label(repo, cfg["labels"]["sync"], "5319e7", "Tracked by the upstream-sync control loop", dry_run)
-        url = run_gh(["issue", "create", "--repo", repo, "--title", title, "--body", body, "--label", cfg["labels"]["sync"]]).strip()
-        number = int(url.rstrip("/").rsplit("/", 1)[-1])
+        label = ensure_label(repo, cfg, "sync", dry_run)
+        number = number_from_url(run_gh(["issue", "create", "--repo", repo, "--title", title, "--body", body, "--label", label]))
         previous = decision["details"].get("previous_skills")
         comment(repo, number, marker("synced", target=gap["head"], release=gap["release"], skills=previous), dry_run)
         run_gh(["issue", "close", str(number), "--repo", repo, "--reason", "completed"])
         return f"recorded {gap['release']} as {repo}#{number}"
-    if action == "blocked" and decision.get("hold") and decision.get("pull_request"):
+    if action == "abandon":
+        body = (
+            f"**Upstream-sync loop:** {decision['reason']}. Closing it; reopen the ticket and this pull "
+            f"request if that was a mistake."
+        )
+        if dry_run:
+            return f"[dry-run] close {repo}#{decision['pull_request']}: {body}"
+        run_gh(["pr", "close", str(decision["pull_request"]), "--repo", repo, "--comment", body])
+        return f"closed {repo}#{decision['pull_request']}"
+    if action == "blocked" and decision.get("pause") and decision.get("pull_request"):
         body = (
             f"**Upstream-sync loop:** {decision['reason']}. The loop will not touch this PR again until a "
             f"maintainer comments `/iterate <feedback>`, fixes it, or closes it.\n\n"
-            + marker("held", pr=decision["pull_request"])
+            + marker("paused", pr=decision["pull_request"])
         )
         comment(repo, decision["pull_request"], body, dry_run)
-        return f"held {repo}#{decision['pull_request']}"
+        return f"paused {repo}#{decision['pull_request']}"
     return f"{action}: nothing to apply"
 
 
@@ -846,7 +924,7 @@ def shepherd(cfg: dict, repo_root: Path, dry_run: bool) -> tuple:
             if dry_run:
                 break
             continue
-        if decision["action"] == "blocked" and decision.get("hold") and not sensor_held(sensor, decision):
+        if decision["action"] == "blocked" and decision.get("pause") and not sensor_paused(sensor, decision):
             steps.append({"decision": decision, "outcome": apply(decision, cfg, dry_run)})
         else:
             steps.append({"decision": decision, "outcome": "handed on"})
@@ -854,10 +932,10 @@ def shepherd(cfg: dict, repo_root: Path, dry_run: bool) -> tuple:
     return decision, steps
 
 
-def sensor_held(sensor: dict, decision: dict) -> bool:
+def sensor_paused(sensor: dict, decision: dict) -> bool:
     for pr in sensor.get("loop_prs") or []:
         if pr["number"] == decision.get("pull_request") and pr["repository"] == decision.get("repository"):
-            return bool(pr.get("held"))
+            return bool(pr.get("paused"))
     return False
 
 
@@ -998,7 +1076,7 @@ def start(decision: dict, cfg: dict, root: Path, install_skills: bool, copilot_h
     repo = decision["repository"]
     root.mkdir(parents=True, exist_ok=True)
     work = ensure_clone(repo, root)
-    base = default_branch(repo, cfg)
+    base = repo_settings(repo, cfg)["default_branch"]
     guard_pushes(work, [base])
     if action == "implement":
         branch = decision["branch"]
@@ -1059,7 +1137,7 @@ def selected_work_markdown(decision: dict, cfg: dict, workspace: dict | None = N
         if workspace.get("skills_checkout"):
             lines.append(f"- **git-loopy-skills checkout (published revision, detached):** `{workspace['skills_checkout']}`")
     if action == "implement":
-        base = default_branch(decision["repository"], cfg)
+        base = repo_settings(decision["repository"], cfg)["default_branch"]
         lines.append(
             f"- **Open the PR** right after the first push, before the review: `gh pr create --repo "
             f"{decision['repository']} --base {base} --head {decision['branch']} --title \"[upstream-sync] "
@@ -1160,9 +1238,9 @@ def open_blocker(cfg: dict, title: str, body: str, dry_run: bool) -> str:
     full = body.rstrip() + f"\n\nRun: {run_link()}\n\nClose this issue to let the loop continue.\n\n" + marker("blocked")
     if dry_run:
         return f"[dry-run] open blocker '{title}'"
-    ensure_label(repo, cfg["labels"]["sync"], "5319e7", "Tracked by the upstream-sync control loop", dry_run)
+    label = ensure_label(repo, cfg, "sync", dry_run)
     url = run_gh(
-        ["issue", "create", "--repo", repo, "--title", title, "--body", full, "--label", cfg["labels"]["sync"], "--label", cfg["labels"]["triage"]]
+        ["issue", "create", "--repo", repo, "--title", title, "--body", full, "--label", label, "--label", cfg["labels"]["triage"]]
     ).strip()
     return f"opened blocker {url}"
 
@@ -1173,7 +1251,7 @@ def finish(decision: dict, cfg: dict, body: str, wait_checks: int, dry_run: bool
     message = body.strip() or "The agent produced no final message; see the run's agent-output artifact."
     if action == "implement":
         pr = find_open_pr(repo, decision["branch"])
-        base = default_branch(repo, cfg)
+        base = repo_settings(repo, cfg)["default_branch"]
         if pr is None:
             ahead = git_remote_ahead(repo, base, decision["branch"])
             if not ahead:
@@ -1184,14 +1262,14 @@ def finish(decision: dict, cfg: dict, body: str, wait_checks: int, dry_run: bool
                 ["pr", "create", "--repo", repo, "--base", base, "--head", decision["branch"],
                  "--title", f"[upstream-sync] {decision.get('title', '')}", "--body", f"Closes #{decision['ticket']}"]
             ).strip()
-            pr = {"number": int(url.rstrip("/").rsplit("/", 1)[-1]), "url": url}
+            pr = {"number": number_from_url(url), "url": url}
         closes = [decision["ticket"]] + list((decision.get("details") or {}).get("sources") or [])
         closing = ", ".join(f"closes #{number}" for number in closes)
         full = f"{message}\n\n{closing[0].upper()}{closing[1:]}\n\n{pr_footer(cfg)}\n"
         if dry_run:
             return f"[dry-run] would set the body of {repo}#{pr['number']}:\n{full}"
-        ensure_label(repo, cfg["labels"]["pull_request"], "0E8A16", "Opened by the upstream-sync control loop", dry_run)
-        run_gh(["pr", "edit", str(pr["number"]), "--repo", repo, "--body", full, "--add-label", cfg["labels"]["pull_request"]])
+        label = ensure_label(repo, cfg, "pull_request", dry_run)
+        run_gh(["pr", "edit", str(pr["number"]), "--repo", repo, "--body", full, "--add-label", label])
         outcome = f"PR {repo}#{pr['number']} labelled and described"
         if wait_checks:
             outcome += "; " + wait_for_checks(repo, pr["number"], wait_checks)
@@ -1208,7 +1286,7 @@ def finish(decision: dict, cfg: dict, body: str, wait_checks: int, dry_run: bool
             outcome += "; " + wait_for_checks(repo, decision["pull_request"], wait_checks)
         return outcome
     if action == "plan":
-        specs = read_specs(repo, cfg["labels"]["sync"])
+        specs = read_specs(repo, cfg, current_login())
         target = decision["details"]["gap"]["head"]
         if any(spec.get("target") == target for spec in specs["open"]):
             return "planned: a spec now targets " + target[:12]
@@ -1238,7 +1316,7 @@ def git_remote_ahead(repo: str, base: str, branch: str) -> bool:
 
 def fail_ticket(decision: dict, cfg: dict, message: str, dry_run: bool) -> str:
     repo, ticket = decision["repository"], decision["ticket"]
-    attempts = count_markers(comments_of(repo, ticket), "attempt")
+    attempts = count_markers(comments_of(repo, ticket), "attempt", current_login())
     if attempts < cfg["limits"]["max_ticket_attempts"]:
         return f"no PR for #{ticket} (attempt {attempts}); the next run may retry"
     body = (

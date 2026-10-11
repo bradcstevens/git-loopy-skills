@@ -32,6 +32,7 @@ NOW = "2026-10-11T12:00:00Z"
 TARGET = "49dd158d1076134a641b33efb035946536778336"
 SKILLS_MAIN = "c2fbfea0000000000000000000000000000000aa"
 PIN = "89ba57c41f9959699e2267f794d200b57b229c02"
+BOT = "bradcstevens"
 
 
 def ticket(number, labels=("ready-for-agent",), state="open", created=None, **extra):
@@ -82,8 +83,10 @@ def loop_pr(number=200, repo=SKILLS, ticket_number=87, gate=None, **extra):
         "ticket": ticket_number,
         "pending_iterate": None,
         "fix_attempts": 0,
-        "held": False,
+        "paused": False,
         "mergeable": "MERGEABLE",
+        "ticket_state": "open",
+        "head_committed_at": "2026-10-11T11:00:00Z",
         "gate": gate if gate is not None else {"decision": "allow", "reason": "merge-evidence-complete"},
     }
     record.update(extra)
@@ -105,12 +108,29 @@ class MarkerTests(unittest.TestCase):
 
     def test_count_markers_after_a_reset(self):
         comments = [
-            {"created_at": "2026-10-11T01:00:00Z", "body": loop.marker("fix-attempt", pr=1)},
-            {"created_at": "2026-10-11T02:00:00Z", "body": loop.marker("iterate-reply", comment=9)},
-            {"created_at": "2026-10-11T03:00:00Z", "body": loop.marker("fix-attempt", pr=1)},
+            {"created_at": "2026-10-11T01:00:00Z", "user": {"login": BOT}, "body": loop.marker("fix-attempt", pr=1)},
+            {"created_at": "2026-10-11T02:00:00Z", "user": {"login": BOT}, "body": loop.marker("iterate-reply", comment=9)},
+            {"created_at": "2026-10-11T03:00:00Z", "user": {"login": BOT}, "body": loop.marker("fix-attempt", pr=1)},
         ]
-        self.assertEqual(loop.count_markers(comments, "fix-attempt"), 2)
-        self.assertEqual(loop.count_markers(comments, "fix-attempt", after=loop.last_iterate_reply_at(comments)), 1)
+        self.assertEqual(loop.count_markers(comments, "fix-attempt", BOT), 2)
+        reset = loop.last_iterate_reply_at(comments, BOT)
+        self.assertEqual(loop.count_markers(comments, "fix-attempt", BOT, after=reset), 1)
+
+    def test_markers_from_anyone_else_are_ignored(self):
+        forged = [
+            {"created_at": "2026-10-11T01:00:00Z", "user": {"login": "mallory"}, "body": loop.marker("attempt", ticket=87)},
+            {"created_at": "2026-10-11T02:00:00Z", "user": {"login": "mallory"}, "body": loop.marker("iterate-reply", comment=2)},
+        ]
+        self.assertEqual(loop.count_markers(forged, "attempt", BOT), 0)
+        self.assertIsNone(loop.last_iterate_reply_at(forged, BOT))
+        request = {"id": 2, "created_at": "2026-10-11T00:30:00Z", "author_association": "OWNER", "body": "/iterate x", "user": {"login": BOT}}
+        self.assertEqual(loop.pending_iterate([request] + forged, CFG["trusted_associations"], BOT)["id"], 2)
+
+    def test_issue_markers_need_a_trusted_author(self):
+        body = loop.marker("spec", target=TARGET, release="v1.3.1")
+        self.assertTrue(loop.trusted_issue({"author_association": "OWNER", "user": {"login": BOT}}, CFG))
+        self.assertFalse(loop.trusted_issue({"author_association": "NONE", "user": {"login": "mallory"}}, CFG))
+        self.assertEqual(loop.first_marker(body, "spec")["target"], TARGET)
 
 
 class BranchTests(unittest.TestCase):
@@ -198,10 +218,10 @@ class IterateTests(unittest.TestCase):
             {"id": 1, "created_at": "2026-10-11T01:00:00Z", "author_association": "NONE", "body": "/iterate please", "user": {"login": "x"}},
             {"id": 2, "created_at": "2026-10-11T02:00:00Z", "author_association": "OWNER", "body": "/iterate first", "user": {"login": "o"}},
             {"id": 3, "created_at": "2026-10-11T03:00:00Z", "author_association": "OWNER", "body": "/iterate second", "user": {"login": "o"}},
-            {"id": 4, "created_at": "2026-10-11T04:00:00Z", "author_association": "OWNER", "body": "done\n" + loop.marker("iterate-reply", comment=2)},
+            {"id": 4, "created_at": "2026-10-11T04:00:00Z", "author_association": "OWNER", "user": {"login": BOT}, "body": "done\n" + loop.marker("iterate-reply", comment=2)},
         ]
-        self.assertEqual(loop.pending_iterate(comments, CFG["iterate_authors"])["id"], 3)
-        self.assertIsNone(loop.pending_iterate(comments[:1], CFG["iterate_authors"]))
+        self.assertEqual(loop.pending_iterate(comments, CFG["trusted_associations"], BOT)["id"], 3)
+        self.assertIsNone(loop.pending_iterate(comments[:1], CFG["trusted_associations"], BOT))
 
 
 class ControllerTests(unittest.TestCase):
@@ -240,19 +260,29 @@ class ControllerTests(unittest.TestCase):
         self.assertEqual(decision["action"], "wait")
 
     def test_absent_checks_wait_then_block(self):
-        young = loop_pr(created_at="2026-10-11T11:30:00Z", gate=refuse("checks-present"))
+        young = loop_pr(head_committed_at="2026-10-11T11:30:00Z", gate=refuse("checks-present"))
         self.assertEqual(self.decide(loop_prs=[young])["action"], "wait")
-        old = loop_pr(created_at="2026-10-11T09:00:00Z", gate=refuse("checks-present"))
+        old = loop_pr(head_committed_at="2026-10-11T09:00:00Z", gate=refuse("checks-present"))
         decision = self.decide(loop_prs=[old])
         self.assertEqual(decision["action"], "blocked")
-        self.assertTrue(decision["hold"])
+        self.assertTrue(decision["pause"])
+
+    def test_the_checks_grace_counts_from_the_head_commit(self):
+        pr = loop_pr(created_at="2026-10-01T00:00:00Z", head_committed_at="2026-10-11T11:50:00Z", gate=refuse("checks-present"))
+        self.assertEqual(self.decide(loop_prs=[pr])["action"], "wait")
+
+    def test_a_pr_whose_ticket_closed_is_abandoned(self):
+        pr = loop_pr(ticket_state="closed", ticket_state_reason="not_planned", pending_iterate={"id": 5, "author": "o", "body": "/iterate x"})
+        decision = self.decide(loop_prs=[pr])
+        self.assertEqual((decision["action"], decision["pull_request"]), ("abandon", 200))
+        self.assertIn("abandon", loop.DETERMINISTIC_ACTIONS)
 
     def test_missing_review_is_fixed_until_attempts_run_out(self):
         pr = loop_pr(gate=refuse("review-clean-evidence-comment"), fix_attempts=1)
         self.assertEqual(self.decide(loop_prs=[pr])["details"]["attempt"], 2)
         pr["fix_attempts"] = CFG["limits"]["max_fix_attempts"]
         decision = self.decide(loop_prs=[pr])
-        self.assertEqual((decision["action"], decision.get("hold")), ("blocked", True))
+        self.assertEqual((decision["action"], decision.get("pause")), ("blocked", True))
 
     def test_a_loop_pr_without_a_ticket_blocks(self):
         decision = self.decide(loop_prs=[loop_pr(ticket=None, head_ref="agent/upstream-sync/other")])
@@ -283,14 +313,29 @@ class ControllerTests(unittest.TestCase):
             ticket(92, attempts=CFG["limits"]["max_ticket_attempts"]),
             ticket(93),
             ticket(94, labels=("ready-for-agent", "priority")),
+            ticket(95, labels=("ready-for-agent", "priority"), afk_ready=False),
         ]
         claims = {SKILLS: {"89": ["branch ticket/89-x"]}, DOWN: {}}
         decision = self.decide(specs={"open": [spec(tickets=tickets)], "last_completed": None}, claims=claims)
         self.assertEqual((decision["action"], decision["ticket"]), ("implement", 94))
         self.assertEqual(decision["branch"], f"{CFG['branch_prefix']}94")
-        tickets[-1]["labels"] = ["ready-for-agent"]
+        next(item for item in tickets if item["number"] == 94)["labels"] = ["ready-for-agent"]
         decision = self.decide(specs={"open": [spec(tickets=tickets)], "last_completed": None}, claims=claims)
         self.assertEqual(decision["ticket"], 93)
+
+    def test_one_eligibility_rule_serves_every_queue(self):
+        claims = {"91": ["PR #1"]}
+        cases = {
+            "closed": ticket(90, state="closed"),
+            "not_ready": ticket(92, afk_ready=False),
+            "blocked": ticket(93, blocked_by=2),
+            "claimed": ticket(91),
+            "exhausted": ticket(94, attempts=9),
+            "eligible": ticket(96),
+        }
+        for expected, issue in cases.items():
+            self.assertEqual(loop.eligibility(issue, CFG, claims, limit=2), expected, expected)
+        self.assertEqual(loop.eligibility(ticket(97, labels=("ready-for-agent", "ready-for-human")), CFG, {}), "not_ready")
 
     def test_nothing_selectable_waits_on_others_or_blocks(self):
         claimed = {SKILLS: {"87": ["PR #5"]}, DOWN: {}}
@@ -306,7 +351,7 @@ class ControllerTests(unittest.TestCase):
         return {"repository": DOWN, "pin": PIN, "publish_revision": SKILLS_MAIN, "pin_contains_last_sync": contains, "issues": issues}
 
     def test_a_completed_sync_moves_the_pin_through_a_ready_ticket(self):
-        issues = [ticket(738, labels=("needs-triage",), afk_ready=False), ticket(740)]
+        issues = [ticket(738, labels=("needs-triage",), afk_ready=False), ticket(739, afk_ready=False), ticket(740)]
         decision = self.decide(specs={"open": [], "last_completed": self.last_sync()}, downstream=self.downstream(issues))
         self.assertEqual((decision["action"], decision["repository"], decision["ticket"]), ("implement", DOWN, 740))
         self.assertEqual(decision["details"]["sources"], [738])
@@ -443,10 +488,21 @@ class RepositoryContractTests(unittest.TestCase):
         for name in ("sync-rules.md", "response-template.md"):
             self.assertTrue((REPO / ".github" / "skills" / "upstream-sync" / "references" / name).is_file(), name)
 
+    def test_the_workflow_finishes_only_what_it_started(self):
+        text = (REPO / ".github" / "workflows" / "agent-upstream-sync.yml").read_text(encoding="utf-8")
+        for step in ("Extract the final message", "Finish"):
+            block = text.split(f"- name: {step}", 1)[1].split("- name:", 1)[0]
+            self.assertIn("steps.start.outcome == 'success'", block, step)
+        finish = text.split("- name: Finish", 1)[1].split("- name:", 1)[0]
+        self.assertIn("set -o pipefail", finish)
+        self.assertNotRegex(text, r"(?m)^concurrency:", "concurrency belongs on the loop job, not the workflow")
+        self.assertRegex(text, r"(?m)^    concurrency:")
+
     def test_config_values_are_usable(self):
         self.assertIn(CFG["skills"]["merge_method"], ("merge", "squash", "rebase"))
         self.assertIn(CFG["downstream"]["merge_method"], ("merge", "squash", "rebase"))
         self.assertTrue(CFG["branch_prefix"].endswith("issue-"))
+        self.assertNotIn("priority", CFG["labels"], "priority is a non-renameable assertion")
         for name in CFG["upstream"]["renames"].values():
             self.assertTrue(name.islower())
 

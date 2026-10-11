@@ -28,8 +28,7 @@
     "pull_request": "agent-upstream-sync",
     "ready": "ready-for-agent",
     "human": "ready-for-human",
-    "triage": "needs-triage",
-    "priority": "priority"
+    "triage": "needs-triage"
   },
   "branch_prefix": "agent/upstream-sync/issue-",
   "workflow_id": "agent-upstream-sync",
@@ -43,5 +42,5 @@
     "branch_claim_days": 7,
     "deterministic_steps_per_run": 6
   },
-  "iterate_authors": ["OWNER", "MEMBER", "COLLABORATOR"]
+  "trusted_associations": ["OWNER", "MEMBER", "COLLABORATOR"]
 }

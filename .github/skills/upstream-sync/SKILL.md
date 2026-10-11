@@ -1,6 +1,6 @@
 ---
 name: upstream-sync
-description: "Carry out one action of the upstream-sync control loop (plan a mattpocock/skills release, implement or fix a sync ticket's pull request, iterate on reviewer feedback, or move git-loopy's skill pin) when the agent-upstream-sync workflow hands over a Selected work block. Use the pinned upstream revision and references/sync-rules.md, never upstream main or memory of upstream."
+description: "Carry out the one upstream-sync loop action a Selected work block names: plan a mattpocock/skills release, implement, fix or iterate a sync pull request, or move git-loopy's skill pin."
 ---
 
 # Upstream Sync
@@ -14,24 +14,25 @@ git-loopy-skills revision containing it.
 
 ## Core requirements
 
-- The Selected work block is the whole assignment: one action, on one ticket, pull request or
-  release, in one repository. Do not pick up other work, however related it looks.
-- Upstream content comes from mattpocock/skills at the pinned revision the spec or Selected work
-  names: `gh api "repos/mattpocock/skills/contents/<path>?ref=<sha>"`, or a clone checked out at that
-  sha. Never upstream `main`, and never your memory of upstream.
-- [`references/sync-rules.md`](references/sync-rules.md) is the only source for what a synced file
+- **One assignment.** The Selected work block is the whole job: one action, on one ticket, pull
+  request or release, in one repository. Leave everything else for its own run.
+- **The pinned revision.** Read upstream at the sha the spec or Selected work names:
+  `gh api "repos/mattpocock/skills/contents/<path>?ref=<sha>"`, or a clone checked out at that sha.
+  That revision, not upstream `main` or recollection, is what a synced file matches.
+- **One rule book.** [`references/sync-rules.md`](references/sync-rules.md) says what a synced file
   keeps and what it takes from upstream. Apply it to every file you sync.
-- Stay ticket-bounded. Change only what the ticket names. In git-loopy, change only the skill pin
-  and the consumers git-loopy's `docs/skill-catalog-source.md` lists.
-- Load the workflow skills through the skill tool: `implement`, `code-review`, `to-spec`,
-  `to-tickets`. A built-in reviewer, or a sub-agent you prompt yourself, is not `/code-review`, and
-  its verdict records nothing the merge gate can read.
-- Stay on the branch you were given. Never `git checkout`, `git switch` or `git reset` away from it,
-  and tell every review sub-agent the same: read other revisions with `git show` and `git diff`.
-- Never force-push, push to a default branch, merge, or close a pull request. The workflow merges
-  through `chain.sh gate`, and only on its evidence.
-- Never answer an authority prompt (login, MFA, secret, consent). Stop and say what was missing.
-- You run unattended. Do not ask anyone anything.
+- **Ticket-bounded.** Change only what the ticket names. In git-loopy, that is the skill pin and the
+  consumers git-loopy's `docs/skill-catalog-source.md` lists.
+- **Real skills.** Load `implement`, `code-review`, `to-spec` and `to-tickets` through the skill
+  tool. Only `/code-review` records the verdict the merge gate reads; a built-in reviewer or a
+  sub-agent you prompt yourself records nothing.
+- **Your branch only.** Work and push on the branch you were given. Read other revisions with
+  `git show` and `git diff` rather than `git checkout`, `git switch` or `git reset`, and give every
+  review sub-agent the same instruction.
+- **Publish, never integrate.** Push with plain fast-forward pushes and open the pull request; the
+  workflow alone merges or closes it, through `chain.sh gate`.
+- **Authority stays put.** A login, MFA, secret or consent prompt ends the run: report what was
+  missing.
 
 ## Workflow
 
@@ -85,28 +86,29 @@ is green, and the ticket carries a review record for the pull request's head.
 
 #### `fix`
 
-The pull request lacks merge evidence; Selected work lists which.
+The pull request lacks merge evidence; Selected work lists which. Call the skill tool with
+"implement" for the ticket, naming what is missing, so the remediation closes with a review of the
+new head like any other candidate:
 
-- **`pull-request-mergeable`:** merge the default branch into the branch
-  (`git fetch origin && git merge origin/<default>`) and resolve the conflicts. For `README.md`'s
-  skill index, take either side and regenerate it with `node scripts/build-readme.mjs`; never
-  hand-merge it.
+- **`pull-request-mergeable`:** the branch conflicts with the default branch. Merge
+  `origin/<default>` into it and resolve the conflicts. Take either side of `README.md`'s skill
+  index, then regenerate it with `node scripts/build-readme.mjs`; the index is never hand-merged.
 - **`checks-green`:** read the failing log (`gh pr checks <n> --repo <repo>`, then
   `gh run view <run> --repo <repo> --log-failed`) and fix the cause, not the check.
 - **`review-clean-evidence-comment`:** remediate the ticket's latest review findings. If no review
-  exists for the current head, review it.
+  exists for the current head, review it with "code-review" instead.
 
-Then validate, push, and call the skill tool with "code-review" for the new head. A resolved or
-remediated head is a new review, never a reused one.
+A resolved or remediated head is a new review, never a reused one.
 
 Completion criterion: the branch is pushed, and the ticket carries a review record for the new head.
 
 #### `iterate`
 
 The maintainer's feedback in the Iteration context is the instruction. Update the pull request
-branch. Distill guidance that should change future runs into `.github/agent-memory/upstream-sync.md`:
-on this branch for a git-loopy-skills pull request; for a git-loopy pull request, quote the memory
-entry in your reply instead. Then validate, push, and review the new head with "code-review".
+branch. Distill guidance that should change future runs into `.github/agent-memory/upstream-sync.md`
+on this branch. A git-loopy pull request cannot carry that file, so quote the entry under
+**Memory** in your reply for a maintainer to add. Then validate, push, and review the new head with
+"code-review".
 
 Completion criterion: the feedback is addressed on the branch, and your reply says whether memory
 changed.
