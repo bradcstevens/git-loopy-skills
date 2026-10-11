@@ -63,7 +63,7 @@ This is an interview. Work through each component below, proposing options groun
 
 1. **Set point and scope.** Begin with a focused `/grilling` interview about the property to drive, its target, and the boundaries for files the loop may change or only read. Bring repo-grounded options from Phase A; use the grill's one-question-at-a-time rounds and stop once the target and scope are settled. Examples include an invariant ("no procedures use the old pattern"), a threshold ("test coverage ≥ X in these packages"), or a direction ("reduce occurrences each run"). Carry the settled answers into the remaining design; do not reopen them without new evidence.
 
-   Use `/domain-modeling` alongside the interview only when project-specific vocabulary blocks a decision or a resolved term belongs in the project's `CONTEXT.md`. General control-theory terms do not by themselves warrant a domain-modeling session.
+   Use `/domain-modeling` alongside the interview only when project-specific vocabulary blocks a decision or a resolved term belongs in the project's `GLOSSARY.md`. General control-theory terms do not by themselves warrant a domain-modeling session.
 
 2. **Sensor.** How will the loop measure the gap to the set point? Inspect the codebase and the user's existing tooling and propose the options that fit *their* stack — a static-analysis or lint tool, a structural/AST search, a test suite, a type checker, a telemetry or error query, a custom script, or even an agent-based check. Discuss the trade-offs that matter to them (stability, cost, repeatability, and whether the measurement can be silently disabled) instead of mandating any property. Aim for a measurement the controller can act on repeatably.
 
