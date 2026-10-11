@@ -1,0 +1,179 @@
+# Agent: upstream sync, the scheduled upstream-sync control loop.
+#
+# Keeps git-loopy-skills synced with mattpocock/skills releases, and moves
+# git-loopy's skill pin behind each completed sync. Each run:
+#   1. shepherd: sense -> control -> apply the deterministic actions (merge through
+#      `chain.sh gate`, close out a finished spec, record an out-of-scope release)
+#      until the controller names an agent action, or nothing to do;
+#   2. actuator: one Copilot CLI run on that action (implement, fix, iterate, plan,
+#      downstream-plan) through the `upstream-sync` skill;
+#   3. finish: publish the agent's final message as the PR body or a comment, wait
+#      for checks, and shepherd again, so a clean PR merges in the same run.
+# `/iterate` on a loop PR in this repository runs at once. `/iterate` on a
+# git-loopy loop PR is picked up by the next scheduled run.
+#
+# Every step runs locally the same way: docs/upstream-sync-loop.md.
+
+name: "Agent: upstream sync"
+
+on:
+  schedule:
+    - cron: "17 */6 * * *"
+  workflow_dispatch:
+    inputs:
+      ticket:
+        description: "Implement this git-loopy-skills issue now, instead of the controller's choice"
+        required: false
+        type: string
+      dry_run:
+        description: "Sense and decide only; change nothing"
+        required: false
+        type: boolean
+        default: false
+  issue_comment:
+    types: [created]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: agent-upstream-sync
+  cancel-in-progress: false
+
+jobs:
+  loop:
+    if: >-
+      github.event_name != 'issue_comment' ||
+      (github.event.issue.pull_request &&
+       startsWith(github.event.comment.body, '/iterate') &&
+       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    env:
+      GH_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN }}
+      COPILOT_GITHUB_TOKEN: ${{ secrets.UPSTREAM_SYNC_TOKEN }}
+      LOOP: ${{ github.workspace }}/loop
+      REPOS: ${{ github.workspace }}/repos
+      # Shared by the actuator; values must not contain spaces. Pinned from git-loopy.env.
+      COPILOT_FLAGS: >-
+        --model gpt-6.1-sol --reasoning-effort xhigh --context long_context
+        --allow-all --no-ask-user --no-color
+        --output-format json --share /tmp/agent-session.md
+    steps:
+      - name: Require the loop token
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::error::Set the UPSTREAM_SYNC_TOKEN secret. See docs/upstream-sync-loop.md, Credentials."
+            exit 1
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          path: loop
+          token: ${{ secrets.UPSTREAM_SYNC_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+
+      # Same CLI the loop was verified with locally.
+      - name: Install Copilot CLI
+        run: npm install -g @github/copilot@1.0.96-2
+
+      - name: Configure git as the token's owner
+        run: |
+          login="$(gh api user --jq .login)"
+          id="$(gh api user --jq .id)"
+          git config --global user.name "$login (upstream-sync loop)"
+          git config --global user.email "$id+$login@users.noreply.github.com"
+          gh auth setup-git
+
+      - name: Decide
+        id: decide
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          TICKET: ${{ inputs.ticket }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          PR_NUMBER: ${{ github.event.issue.number }}
+          COMMENT_ID: ${{ github.event.comment.id }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          set -euo pipefail
+          loop="$LOOP/scripts/upstream-sync.py"
+          if [ "$EVENT_NAME" = "issue_comment" ]; then
+            python3 "$loop" decide iterate --repo "$GITHUB_REPOSITORY" --pr "$PR_NUMBER" \
+              --comment-id "$COMMENT_ID" --comment-body "$COMMENT_BODY" --out /tmp/decision.json
+          elif [ -n "${TICKET:-}" ]; then
+            python3 "$loop" decide implement --ticket "$TICKET" --out /tmp/decision.json
+          elif [ "${DRY_RUN:-false}" = "true" ]; then
+            python3 "$loop" shepherd --dry-run --out /tmp/decision.json --summary "$GITHUB_STEP_SUMMARY"
+          else
+            python3 "$loop" shepherd --out /tmp/decision.json --summary "$GITHUB_STEP_SUMMARY"
+          fi
+          action="$(jq -r .action /tmp/decision.json)"
+          case "$action" in
+            implement|fix|iterate|plan|downstream-plan) agent=true ;;
+            *) agent=false ;;
+          esac
+          if [ "${DRY_RUN:-false}" = "true" ]; then agent=false; fi
+          echo "action=$action" >> "$GITHUB_OUTPUT"
+          echo "agent=$agent" >> "$GITHUB_OUTPUT"
+          jq . /tmp/decision.json
+
+      - name: Prepare the workspace
+        id: start
+        if: steps.decide.outputs.agent == 'true'
+        run: |
+          set -euo pipefail
+          loop="$LOOP/scripts/upstream-sync.py"
+          python3 "$loop" start /tmp/decision.json --root "$REPOS" --install-skills --out /tmp/workspace.json
+          echo "work=$(jq -r .work /tmp/workspace.json)" >> "$GITHUB_OUTPUT"
+          python3 "$loop" prompt /tmp/decision.json --workspace /tmp/workspace.json > /tmp/agent-prompt.md
+
+      - name: Actuator (Copilot CLI)
+        if: steps.decide.outputs.agent == 'true'
+        working-directory: ${{ steps.start.outputs.work }}
+        run: |
+          set -o pipefail
+          read -ra FLAGS <<< "$COPILOT_FLAGS"
+          copilot -p "$(cat /tmp/agent-prompt.md)" "${FLAGS[@]}" --add-dir "$LOOP" --add-dir "$REPOS" \
+            > /tmp/agent-output.jsonl
+
+      # The final message is the PR body or reply. --silent would also print mid-run
+      # narration, so keep the last non-empty assistant.message from the JSONL.
+      - name: Extract the final message
+        if: always() && steps.decide.outputs.agent == 'true'
+        run: |
+          grep '^{' /tmp/agent-output.jsonl 2>/dev/null \
+            | jq -rs '[.[] | select(.type == "assistant.message" and (.data.content // "") != "")] | last | .data.content // empty' \
+            > /tmp/agent-message.md || true
+          [ -s /tmp/agent-message.md ] || echo "The agent produced no final message; see the agent-output artifact." > /tmp/agent-message.md
+
+      - name: Finish
+        if: always() && steps.decide.outputs.agent == 'true'
+        run: |
+          python3 "$LOOP/scripts/upstream-sync.py" finish /tmp/decision.json \
+            --body /tmp/agent-message.md --wait-checks 1800 | tee -a "$GITHUB_STEP_SUMMARY"
+
+      - name: Shepherd again
+        if: steps.decide.outputs.agent == 'true' && contains(fromJSON('["implement","fix","iterate"]'), steps.decide.outputs.action)
+        run: |
+          python3 "$LOOP/scripts/upstream-sync.py" shepherd --out /tmp/decision-after.json --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload agent output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-output
+          if-no-files-found: ignore
+          path: |
+            /tmp/decision.json
+            /tmp/decision-after.json
+            /tmp/workspace.json
+            /tmp/agent-prompt.md
+            /tmp/agent-output.jsonl
+            /tmp/agent-session.md
+            /tmp/agent-message.md

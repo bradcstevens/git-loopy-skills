@@ -84,4 +84,5 @@ bash scripts/test-review-clean-record.sh || fail=1
 bash scripts/test-handoff.sh || fail=1
 python3 scripts/test-model-fit.py || fail=1
 python3 scripts/test-model-scorecard.py || fail=1
+python3 scripts/test-upstream-sync.py || fail=1
 exit "$fail"

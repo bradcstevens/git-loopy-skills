@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "upstream": {
+    "repository": "mattpocock/skills",
+    "skills_root": "skills",
+    "in_scope_buckets": ["engineering", "productivity"],
+    "also_in_scope": ["loop-me", "chief-of-staff", "claude-handoff"],
+    "renames": {
+      "ask-matt": "next",
+      "setup-matt-pocock-skills": "setup-git-loopy-skills",
+      "claude-handoff": "handoff",
+      "handoff": "to-handoff"
+    }
+  },
+  "skills": {
+    "repository": "bradcstevens/git-loopy-skills",
+    "default_branch": "main",
+    "merge_method": "merge"
+  },
+  "downstream": {
+    "repository": "bradcstevens/git-loopy",
+    "default_branch": "main",
+    "pin_path": "git-loopy/python/git_loopy/skill_source.json",
+    "merge_method": "squash"
+  },
+  "labels": {
+    "sync": "upstream-sync",
+    "pull_request": "agent-upstream-sync",
+    "ready": "ready-for-agent",
+    "human": "ready-for-human",
+    "triage": "needs-triage",
+    "priority": "priority"
+  },
+  "branch_prefix": "agent/upstream-sync/issue-",
+  "workflow_id": "agent-upstream-sync",
+  "memory_path": ".github/agent-memory/upstream-sync.md",
+  "prompt_path": ".github/agent-prompts/upstream-sync.md",
+  "limits": {
+    "max_fix_attempts": 3,
+    "max_ticket_attempts": 2,
+    "max_downstream_plan_attempts": 2,
+    "checks_absent_grace_minutes": 60,
+    "branch_claim_days": 7,
+    "deterministic_steps_per_run": 6
+  },
+  "iterate_authors": ["OWNER", "MEMBER", "COLLABORATOR"]
+}
