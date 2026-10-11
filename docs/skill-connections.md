@@ -583,6 +583,7 @@ These have no workflow edges. Reach for them directly; they neither route onward
 | `resolving-merge-conflicts` | `code-review` | routes to | A resolved head is a new candidate |
 | `setup-git-loopy-skills` | `triage`, `domain-modeling` | reads config from | Writes the labels and domain layout they use |
 | `azure-mcaps-resource-deployment` | `microsoft-foundry` | routes to | Creating or configuring a Foundry resource |
+| `model-scorecard` | `jev-ultrafast` | runs inside | Capturing the live leaderboard for the scorecard |
 | eleven producers | the ticket | publishes to | On completing a transition they own |
 
 ### Chain hook edges

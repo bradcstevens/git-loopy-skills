@@ -1,0 +1,155 @@
+{
+  "schema_version": 1,
+  "fields": [
+    {"id": "success", "label": "Task-fit success", "source": "intelligenceIndex inside the role's band, times the role's benchmarks"},
+    {"id": "first_answer", "label": "Time to first answer token", "source": "medianTimeToFirstAnswerTokenSeconds (thinking + prompt processing)"},
+    {"id": "end_to_end", "label": "End-to-end time", "source": "medianEndToEndResponseTimeSeconds (first answer token + 500 tokens)"},
+    {"id": "token_appetite", "label": "Token appetite", "source": "intelligenceIndexCostPerTask / price1mOutputTokens (tokens spent per task)"},
+    {"id": "consistency", "label": "Consistency", "source": "p95/p05 spread of time to first token and of output tokens/s"},
+    {"id": "throughput", "label": "Output tokens/s", "source": "medianOutputTokensPerSecond"}
+  ],
+  "roles": {
+    "copilot:explore": {
+      "harness": "copilot-cli",
+      "band": [32, 44],
+      "benchmarks": ["lcr", "omniscienceNonHallucination"],
+      "context": "fit",
+      "working_set_k": 82,
+      "why": "Read-only search and synthesis across many short lookups; latency decides the run."
+    },
+    "copilot:task": {
+      "harness": "copilot-cli",
+      "band": [30, 40],
+      "benchmarks": ["terminalBench40", "ifbench"],
+      "context": "fit",
+      "working_set_k": 70,
+      "why": "Runs bounded commands and reports the result faithfully."
+    },
+    "copilot:general-purpose": {
+      "harness": "copilot-cli",
+      "band": [46, 52],
+      "benchmarks": ["terminalBench40", "scicode"],
+      "context": "fit",
+      "working_set_k": 207,
+      "why": "Autonomous multi-step coding with full tools; the same work as git-loopy implementation."
+    },
+    "copilot:rubber-duck": {
+      "harness": "copilot-cli",
+      "band": [50, 56],
+      "benchmarks": ["hle", "critpt", "gdpvalNormalized"],
+      "context": "fit",
+      "working_set_k": 150,
+      "distinct_vendor_from": "main",
+      "why": "Independent critique; a different vendor from the main session model supplies the independence."
+    },
+    "copilot:code-review": {
+      "harness": "copilot-cli",
+      "band": [51, 56],
+      "benchmarks": ["scicode", "terminalBench40", "omniscienceNonHallucination"],
+      "context": "fit",
+      "working_set_k": 188,
+      "distinct_vendor_from": "copilot:general-purpose",
+      "why": "Finds genuine defects with few false positives; reviews a different vendor's code."
+    },
+    "copilot:research": {
+      "harness": "copilot-cli",
+      "band": [46, 54],
+      "benchmarks": ["hle", "lcr", "omniscienceNonHallucination", "gdpvalNormalized"],
+      "context": "fit",
+      "working_set_k": 233,
+      "why": "Searches, verifies and synthesises sources; long reads reward context reasoning and factual reliability."
+    },
+    "copilot:security-review": {
+      "harness": "copilot-cli",
+      "band": [51, 56],
+      "benchmarks": ["scicode", "terminalBench40", "critpt", "omniscienceNonHallucination"],
+      "context": "fit",
+      "working_set_k": 188,
+      "why": "Finds exploitable defects without noise; a miss is silent."
+    },
+    "git-loopy:planning": {
+      "harness": "git-loopy",
+      "band": [51, 56],
+      "benchmarks": ["gdpvalNormalized", "lcr", "hle"],
+      "context": "default",
+      "exclude_efforts": ["max"],
+      "working_set_k": 170,
+      "why": "Decides what gets built; a wrong plan passes every test."
+    },
+    "git-loopy:review": {
+      "harness": "git-loopy",
+      "band": [51, 56],
+      "benchmarks": ["scicode", "terminalBench40", "omniscienceNonHallucination"],
+      "context": "default",
+      "exclude_efforts": ["max"],
+      "working_set_k": 188,
+      "distinct_vendor_from": "git-loopy:implementation",
+      "why": "Judges whether work was built right with push authority; cross-vendor review holds by construction (ADR-0048)."
+    },
+    "git-loopy:implementation": {
+      "harness": "git-loopy",
+      "band": [46, 52],
+      "benchmarks": ["terminalBench40", "scicode"],
+      "context": "default",
+      "exclude_efforts": ["max"],
+      "working_set_k": 213,
+      "why": "Writes most of the code; tests make failure visible. Runs converged ~70% at II 46+ and 34% at II 34."
+    },
+    "git-loopy:test": {
+      "harness": "git-loopy",
+      "band": [46, 51],
+      "benchmarks": ["terminalBench40", "scicode"],
+      "context": "default",
+      "exclude_efforts": ["max"],
+      "working_set_k": 128,
+      "why": "Authors meaningful tests and runs them; a weak test passes silently."
+    },
+    "git-loopy:docs": {
+      "harness": "git-loopy",
+      "band": [40, 46],
+      "benchmarks": ["lcr", "omniscienceNonHallucination"],
+      "context": "default",
+      "exclude_efforts": ["max"],
+      "working_set_k": 98,
+      "why": "Source-grounded writing that doc tests check mechanically."
+    },
+    "git-loopy:chore": {
+      "harness": "git-loopy",
+      "band": [30, 38],
+      "benchmarks": ["terminalBench40"],
+      "context": "default",
+      "exclude_efforts": ["max"],
+      "working_set_k": 74,
+      "why": "Bounded maintenance whose result is mechanically checked."
+    },
+    "git-loopy:bugfix": {
+      "harness": "git-loopy",
+      "band": [51, 54],
+      "benchmarks": ["terminalBench40", "scicode", "critpt"],
+      "context": "default",
+      "exclude_efforts": ["max"],
+      "working_set_k": 170,
+      "why": "Diagnosis; a weaker model ships a plausible wrong fix that goes green (ADR-0035)."
+    }
+  },
+  "sdlc": [
+    {"task": "Requirements and planning", "what": "Turn a goal into a spec and sequenced tickets", "role": "git-loopy:planning"},
+    {"task": "Architecture and design", "what": "Choose structure, interfaces and record decisions", "role": "git-loopy:planning"},
+    {"task": "Plan critique", "what": "Stress-test a plan or design before building it", "role": "copilot:rubber-duck"},
+    {"task": "Codebase exploration", "what": "Find code and answer how-it-works questions", "role": "copilot:explore"},
+    {"task": "Technical research", "what": "Investigate APIs, libraries and prior art with sources", "role": "copilot:research"},
+    {"task": "Feature implementation", "what": "Write new behaviour end to end", "role": "git-loopy:implementation"},
+    {"task": "Refactoring", "what": "Restructure code without changing behaviour", "role": "git-loopy:implementation"},
+    {"task": "Migrations and upgrades", "what": "Move code to a new framework, API or version", "role": "git-loopy:implementation"},
+    {"task": "Bug fixing", "what": "Reproduce, diagnose, repair and regress a defect", "role": "git-loopy:bugfix"},
+    {"task": "Performance work", "what": "Measure, find and remove a bottleneck", "role": "git-loopy:bugfix"},
+    {"task": "Incident triage", "what": "Diagnose a production failure under time pressure", "role": "git-loopy:bugfix"},
+    {"task": "Test authoring", "what": "Write unit, integration and regression tests", "role": "git-loopy:test"},
+    {"task": "Build, test and CI runs", "what": "Run suites and builds and report failures", "role": "copilot:task"},
+    {"task": "Code review", "what": "Find defects in a diff before it merges", "role": "copilot:code-review"},
+    {"task": "Security review", "what": "Find exploitable vulnerabilities in a change", "role": "copilot:security-review"},
+    {"task": "Documentation", "what": "Write READMEs, guides and reference docs", "role": "git-loopy:docs"},
+    {"task": "Dependency and config maintenance", "what": "Bump dependencies and adjust configuration", "role": "git-loopy:chore"},
+    {"task": "Release chores", "what": "Version, changelog and publish steps", "role": "git-loopy:chore"}
+  ]
+}

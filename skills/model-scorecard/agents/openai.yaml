@@ -1,0 +1,5 @@
+interface:
+  display_name: "Model Scorecard"
+  short_description: "Score Copilot models per task type from the live leaderboard"
+policy:
+  allow_implicit_invocation: false

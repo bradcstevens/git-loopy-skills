@@ -1,0 +1,93 @@
+# Model scorecard
+
+Generated 2026-10-11T07:50+00:00 by `/model-scorecard`; regenerate rather than edit.
+Leaderboard: https://artificialanalysis.ai/embed/llm-leaderboard, captured 2026-10-11T07:34:01+00:00: 267 current models; Jev verified 10 visible rows with 0 conflicts.
+Harnesses: installed `copilot` 1.0.96-2 (subagents) and git-loopy's SDK CLI 1.0.92-3 (task types). Compaction triggers at 0.805 of the window.
+
+**Score** is 1–100 fit for the role, weighted by rank (rank-order centroid): Task-fit success 40.8 · Time to first answer token 24.2 · End-to-end time 15.8 · Token appetite 10.3 · Consistency 6.1 · Output tokens/s 2.8.
+**Context** is the prompt cap the recommended tier gives that model. **II** is the Intelligence Index.
+
+## Copilot built-in subagents
+
+Apply with `/subagents`, or `subagents.agents.<agent>` in `~/.copilot/settings.json`: `model`, `effortLevel`, `contextTier`. **Now** reads `~/.copilot/settings.json`; rubber-duck avoids the vendor of the main session model, `claude-opus-5.5`.
+
+| Agent | Model | Effort | Context | Score | II | Runner-up | Now |
+|---|---|---|---|---|---|---|---|
+| explore | `claude-sonnet-5.5` | low | 200K default | 86 | 35.9 | `claude-sonnet-5.5` medium (83) | claude-haiku-5.5 medium long_context |
+| task | `claude-sonnet-5.5` | low | 200K default | 78 | 35.9 | `gpt-5.6-terra` medium (72) | claude-haiku-5.5 medium long_context |
+| general-purpose | `gpt-6.1-sol` | medium | 272K default | 73 | 47.8 | `gpt-6-astra` medium (71) | gpt-6.1-sol high long_context |
+| rubber-duck | `gpt-6.1-sol` | high | 272K default | 63 | 50.2 | `gpt-6-astra` high (60) | claude-sonnet-5.5 xhigh long_context |
+| code-review | `claude-opus-5.5` | medium | 1000K long_context | 66 | 51.2 | `claude-sonnet-5.5` xhigh (62) | claude-opus-5.5 high long_context |
+| research | `gpt-6.1-sol` | medium | 922K long_context | 76 | 47.8 | `gpt-6-astra` medium (74) | gpt-6.1-sol xhigh long_context |
+| security-review | `claude-opus-5.5` | medium | 1000K long_context | 67 | 51.2 | `claude-sonnet-5.5` xhigh (63) | gpt-6.1-sol max long_context |
+
+## git-loopy task types
+
+Apply with `[routing.<type>]` `model` and `effort` in git-loopy's `config.toml`. `context_tier` is run-level (ADR-0017), so Context shows each model's default-tier cap. **Now** reads `~/code/github/bradcstevens/git-loopy/git-loopy/config.toml`.
+
+| Task type | Model | Effort | Context | Score | II | Runner-up | Now |
+|---|---|---|---|---|---|---|---|
+| planning | `claude-opus-5.5` | medium | 200K default | 70 | 51.2 | `claude-sonnet-5.5` xhigh (65) | claude-opus-5.5 xhigh long_context |
+| review | `claude-opus-5.5` | medium | 200K default | 66 | 51.2 | `claude-sonnet-5.5` xhigh (62) | claude-opus-5.5 high long_context |
+| implementation | `gpt-6.1-sol` | medium | 272K default | 73 | 47.8 | `gpt-6-astra` medium (71) | gpt-6.1-sol high long_context |
+| test | `gpt-6.1-sol` | medium | 272K default | 73 | 47.8 | `gpt-6-astra` medium (71) | gpt-6.1-sol high long_context |
+| docs | `claude-sonnet-5.5` | medium | 200K default | 83 | 40.8 | `gpt-6.1-sol` low (83) | gpt-6.1-sol low long_context |
+| chore | `claude-sonnet-5.5` | low | 200K default | 78 | 35.9 | `gpt-5.6-terra` medium (71) | claude-haiku-5.5 medium long_context |
+| bugfix | `claude-opus-5.5` | medium | 200K default | 69 | 51.2 | `claude-sonnet-5.5` xhigh (65) | gpt-6.1-sol xhigh long_context |
+
+## SDLC task types
+
+Each common software-lifecycle task maps to the role whose work it is; its row repeats that role's pick.
+
+| Task | Covers | Role | Model | Effort | Context | Score |
+|---|---|---|---|---|---|---|
+| Requirements and planning | Turn a goal into a spec and sequenced tickets | git-loopy:planning | `claude-opus-5.5` | medium | 200K default | 70 |
+| Architecture and design | Choose structure, interfaces and record decisions | git-loopy:planning | `claude-opus-5.5` | medium | 200K default | 70 |
+| Plan critique | Stress-test a plan or design before building it | copilot:rubber-duck | `gpt-6.1-sol` | high | 272K default | 63 |
+| Codebase exploration | Find code and answer how-it-works questions | copilot:explore | `claude-sonnet-5.5` | low | 200K default | 86 |
+| Technical research | Investigate APIs, libraries and prior art with sources | copilot:research | `gpt-6.1-sol` | medium | 922K long_context | 76 |
+| Feature implementation | Write new behaviour end to end | git-loopy:implementation | `gpt-6.1-sol` | medium | 272K default | 73 |
+| Refactoring | Restructure code without changing behaviour | git-loopy:implementation | `gpt-6.1-sol` | medium | 272K default | 73 |
+| Migrations and upgrades | Move code to a new framework, API or version | git-loopy:implementation | `gpt-6.1-sol` | medium | 272K default | 73 |
+| Bug fixing | Reproduce, diagnose, repair and regress a defect | git-loopy:bugfix | `claude-opus-5.5` | medium | 200K default | 69 |
+| Performance work | Measure, find and remove a bottleneck | git-loopy:bugfix | `claude-opus-5.5` | medium | 200K default | 69 |
+| Incident triage | Diagnose a production failure under time pressure | git-loopy:bugfix | `claude-opus-5.5` | medium | 200K default | 69 |
+| Test authoring | Write unit, integration and regression tests | git-loopy:test | `gpt-6.1-sol` | medium | 272K default | 73 |
+| Build, test and CI runs | Run suites and builds and report failures | copilot:task | `claude-sonnet-5.5` | low | 200K default | 78 |
+| Code review | Find defects in a diff before it merges | copilot:code-review | `claude-opus-5.5` | medium | 1000K long_context | 66 |
+| Security review | Find exploitable vulnerabilities in a change | copilot:security-review | `claude-opus-5.5` | medium | 1000K long_context | 67 |
+| Documentation | Write READMEs, guides and reference docs | git-loopy:docs | `claude-sonnet-5.5` | medium | 200K default | 83 |
+| Dependency and config maintenance | Bump dependencies and adjust configuration | git-loopy:chore | `claude-sonnet-5.5` | low | 200K default | 78 |
+| Release chores | Version, changelog and publish steps | git-loopy:chore | `claude-sonnet-5.5` | low | 200K default | 78 |
+
+## Evidence per role
+
+| Role | II band | Benchmarks | Working set | Top three | Why |
+|---|---|---|---|---|---|
+| copilot:explore | 32–44 | lcr, omniscienceNonHallucination | 96K (p95 of 15 runs) | `claude-sonnet-5.5` low 86, `claude-sonnet-5.5` medium 83, `gpt-6.1-sol` low 83 | Read-only search and synthesis across many short lookups; latency decides the run. |
+| copilot:task | 30–40 | terminalBench40, ifbench | 70K (profile estimate) | `claude-sonnet-5.5` low 78, `gpt-5.6-terra` medium 72, `gpt-5.3-codex` xhigh 67 | Runs bounded commands and reports the result faithfully. |
+| copilot:general-purpose | 46–52 | terminalBench40, scicode | 210K (p95 of 12 runs) | `gpt-6.1-sol` medium 73, `gpt-6-astra` medium 71, `claude-sonnet-5.5` high 68 | Autonomous multi-step coding with full tools; the same work as git-loopy implementation. |
+| copilot:rubber-duck | 50–56 | hle, critpt, gdpvalNormalized | 150K (profile estimate) | `gpt-6.1-sol` high 63, `gpt-6-astra` high 60, `gpt-6.1-sol` xhigh 59; excludes Anthropic | Independent critique; a different vendor from the main session model supplies the independence. |
+| copilot:code-review | 51–56 | scicode, terminalBench40, omniscienceNonHallucination | 196K (p95 of 153 runs) | `claude-opus-5.5` medium 66, `claude-sonnet-5.5` xhigh 62, `claude-opus-5.5` high 60; excludes OpenAI | Finds genuine defects with few false positives; reviews a different vendor's code. |
+| copilot:research | 46–54 | hle, lcr, omniscienceNonHallucination, gdpvalNormalized | 238K (p95 of 18 runs) | `gpt-6.1-sol` medium 76, `gpt-6-astra` medium 74, `claude-sonnet-5.5` high 70 | Searches, verifies and synthesises sources; long reads reward context reasoning and factual reliability. |
+| copilot:security-review | 51–56 | scicode, terminalBench40, critpt, omniscienceNonHallucination | 188K (profile estimate) | `claude-opus-5.5` medium 67, `claude-sonnet-5.5` xhigh 63, `claude-opus-5.5` high 61 | Finds exploitable defects without noise; a miss is silent. |
+| git-loopy:planning | 51–56 | gdpvalNormalized, lcr, hle | 171K (p95 of 5 runs) | `claude-opus-5.5` medium 70, `claude-sonnet-5.5` xhigh 65, `claude-opus-5.5` high 64 | Decides what gets built; a wrong plan passes every test. |
+| git-loopy:review | 51–56 | scicode, terminalBench40, omniscienceNonHallucination | 188K (profile estimate) | `claude-opus-5.5` medium 66, `claude-sonnet-5.5` xhigh 62, `claude-opus-5.5` high 60; excludes OpenAI | Judges whether work was built right with push authority; cross-vendor review holds by construction (ADR-0048). |
+| git-loopy:implementation | 46–52 | terminalBench40, scicode | 214K (p95 of 293 runs) | `gpt-6.1-sol` medium 73, `gpt-6-astra` medium 71, `claude-sonnet-5.5` high 68 | Writes most of the code; tests make failure visible. Runs converged ~70% at II 46+ and 34% at II 34. |
+| git-loopy:test | 46–51 | terminalBench40, scicode | 162K (p95 of 16 runs) | `gpt-6.1-sol` medium 73, `gpt-6-astra` medium 71, `claude-sonnet-5.5` high 68 | Authors meaningful tests and runs them; a weak test passes silently. |
+| git-loopy:docs | 40–46 | lcr, omniscienceNonHallucination | 101K (p95 of 9 runs) | `claude-sonnet-5.5` medium 83, `gpt-6.1-sol` low 83, `gpt-6-astra` low 82 | Source-grounded writing that doc tests check mechanically. |
+| git-loopy:chore | 30–38 | terminalBench40 | 78K (p95 of 14 runs) | `claude-sonnet-5.5` low 78, `gpt-5.6-terra` medium 71, `gpt-5.6-terra` high 62 | Bounded maintenance whose result is mechanically checked. |
+| git-loopy:bugfix | 51–54 | terminalBench40, scicode, critpt | 174K (p95 of 14 runs) | `claude-opus-5.5` medium 69, `claude-sonnet-5.5` xhigh 65, `claude-opus-5.5` high 64 | Diagnosis; a weaker model ships a plausible wrong fix that goes green (ADR-0035). |
+
+## Method
+
+- **Candidates**: each current leaderboard variant whose name maps to a model id and effort the role's harness lists; git-loopy roles skip `max`, which git-loopy keeps as its retry rung.
+- **Task-fit success** = band fit × (0.5 + 0.5 × mean of the role's benchmarks, normalised across the pool). Band fit is 1 inside the band, falls to 0 at 8 points below the floor, and to 0.5 at 20 points above the ceiling. The pick is the best-scoring in-band candidate.
+- **Speed fields** are normalised across the harness's pool on a log scale; a missing value scores 0.5.
+- **Context**: a subagent keeps the default tier unless its p95 working set passes the compaction trigger, then takes `long_context`. git-loopy roles use the default tier.
+- Leaderboard latency ranks models; real agent turns think less, so read the speed fields as order, not seconds.
+
+## Coverage gaps
+
+- Retired on the leaderboard, so unscored: claude-opus-4.8, claude-opus-5, claude-sonnet-5, gpt-5-mini, gpt-5.4, gpt-5.4-mini, gpt-5.5, gpt-5.6-luna, gpt-5.6-sol, gpt-6-sol, grok-4.5, grok-4.6.
+- Not on the leaderboard: claude-haiku-4.5, gpt-5.6-sol-fast, mai-code-1.1-flash.
