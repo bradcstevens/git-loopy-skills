@@ -1113,7 +1113,8 @@ else:
             "EXPECTED",
         }:
             pending_checks.append(name)
-        elif conclusion != "SUCCESS" and state != "SUCCESS":
+        # GitHub treats SKIPPED and NEUTRAL as passing, even for required checks.
+        elif conclusion not in {"SUCCESS", "SKIPPED", "NEUTRAL"} and state != "SUCCESS":
             red_checks.append(name)
 
     if not checks_valid:

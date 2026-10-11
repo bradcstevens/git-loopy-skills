@@ -1421,6 +1421,18 @@ if [ "$1" = "pr" ] && [ "$2" = "view" ]; then
     red-state)
       printf '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"%s","statusCheckRollup":[{"name":"tests","state":"FAILURE"}]}\n' "$CHAIN_GATE_HEAD"
       ;;
+    skipped-check)
+      printf '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"%s","statusCheckRollup":[{"name":"tests","status":"COMPLETED","conclusion":"SUCCESS"},{"name":"Update the Homebrew tap","status":"COMPLETED","conclusion":"SKIPPED"}]}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    neutral-check)
+      printf '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"%s","statusCheckRollup":[{"name":"tests","status":"COMPLETED","conclusion":"NEUTRAL"}]}\n' "$CHAIN_GATE_HEAD"
+      ;;
+    conclusion-*)
+      printf '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"%s","statusCheckRollup":[{"name":"tests","status":"COMPLETED","conclusion":"SUCCESS"},{"name":"other","status":"COMPLETED","conclusion":"%s"}]}\n' "$CHAIN_GATE_HEAD" "${CHAIN_GATE_CASE#conclusion-}"
+      ;;
+    skipped-and-pending)
+      printf '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"%s","statusCheckRollup":[{"name":"release","status":"COMPLETED","conclusion":"SKIPPED"},{"name":"tests","status":"IN_PROGRESS","conclusion":""}]}\n' "$CHAIN_GATE_HEAD"
+      ;;
     pending-check)
       printf '{"mergeable":"MERGEABLE","isDraft":false,"headRefOid":"%s","statusCheckRollup":[{"name":"tests","state":"IN_PROGRESS","conclusion":""}]}\n' "$CHAIN_GATE_HEAD"
       ;;
@@ -1554,6 +1566,16 @@ assert_gate "merge gate refuses red check" red-check 1 \
   '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["checks-green"],"reason":"checks-green"}'
 assert_gate "merge gate refuses state-based red check" red-state 1 \
   '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["checks-green"],"reason":"checks-green"}'
+assert_gate "merge gate treats a skipped check as green" skipped-check 0 \
+  '{"decision":"allow","pull_request":"50","headRefOid":"'"$gate_head"'","reason":"merge-evidence-complete"}'
+assert_gate "merge gate treats a neutral check as green" neutral-check 0 \
+  '{"decision":"allow","pull_request":"50","headRefOid":"'"$gate_head"'","reason":"merge-evidence-complete"}'
+for red_conclusion in FAILURE ERROR CANCELLED TIMED_OUT ACTION_REQUIRED STALE STARTUP_FAILURE; do
+  assert_gate "merge gate refuses $red_conclusion beside a green check" "conclusion-$red_conclusion" 1 \
+    '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["checks-green"],"reason":"checks-green"}'
+done
+assert_gate "merge gate refuses a pending check beside a skipped check" skipped-and-pending 1 \
+  '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["checks-complete"],"reason":"checks-complete"}'
 assert_gate "merge gate refuses pending check" pending-check 1 \
   '{"decision":"refuse","pull_request":"50","headRefOid":"'"$gate_head"'","missing":["checks-complete"],"reason":"checks-complete"}'
 assert_gate "merge gate refuses requested check as pending" requested-check 1 \
