@@ -12,9 +12,9 @@ This skill is the model-invoked router for the skills and engineering flow. Insp
 current state and return one recommendation. Leave source files and the issue
 tracker unchanged. A chain spawn may write its ledger and create its reserved
 branch and worktree; the spawned subagent owns work inside that worktree. Every
-run also appends its session scan to the session log (step 1). `chain.sh` and
-`sessions.py` live in this skill's `scripts/`; the routing references live in
-its `references/`.
+run also appends its session scan to the session log (step 1). `chain.sh`,
+`sessions.py` and `runtime.py` live in this skill's `scripts/`; the routing
+references live in its `references/`.
 
 The merge gate's `review-clean` evidence uses the canonical producer/matcher in
 [`scripts/review-clean-record.py`](../../scripts/review-clean-record.py). Do not
