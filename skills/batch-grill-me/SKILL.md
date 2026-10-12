@@ -1,6 +1,9 @@
 ---
 name: batch-grill-me
 description: A relentless interview that asks every frontier question at once, round by round.
+model: claude-opus-5.5
+effort: medium
+context: 1M
 disable-model-invocation: true
 ---
 

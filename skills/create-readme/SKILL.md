@@ -1,6 +1,9 @@
 ---
 name: create-readme
 description: 'Create a README.md file for the project'
+model: claude-sonnet-5.5
+effort: medium
+context: 200K
 ---
 
 ## Role

@@ -1,6 +1,9 @@
 ---
 name: codebase-audit
 description: "Deep audit before GitHub push: removes junk files, dead code, security holes, and optimization issues. Checks every file line-by-line for production readiness."
+model: claude-opus-5.5
+effort: medium
+context: 1M
 ---
 
 # Pre-Push Codebase Audit

@@ -1,7 +1,10 @@
 ---
 name: push
 description: Publish current work by staging intended changes, committing, pushing, and opening a pull request when needed.
-disable-model-invocation: true
+model: claude-sonnet-5.5
+effort: low
+context: 200K
+disable-model-invocation: false
 ---
 
 # Publish the Current Work

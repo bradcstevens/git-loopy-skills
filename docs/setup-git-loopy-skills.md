@@ -32,8 +32,9 @@ It leads each with a recommended answer you can accept in a word, and skips what
 
 The output is a set of files under `docs/agents/` — `issue-tracker.md`, `domain.md`, and `triage-labels.md` when `triage` is installed — plus an `## Agent skills` block pointing to them in the `AGENTS.md` the repo already uses. It also writes `.github/hooks/git-loopy-chain.json`, repository-scoped `subagentStop` and `agentStop` hooks that invoke the installed `/next` chain script's `complete` and `reenter` subcommands. Those files are the shared substrate the rest of the toolkit stands on.
 
-The hook resolves to the local installed `next/chain.sh`, so install `/next` alongside this
-skill before setup. Setup also copies its bundled `agentStop` decision helper. It previews the
+The hook resolves to the local installed `next/scripts/chain.sh`, so install `/next` alongside this
+skill before setup. A repository configured before `chain.sh` moved into `next/scripts/` must re-run
+setup, because its hook still looks for `next/chain.sh`. Setup also copies its bundled `agentStop` decision helper. It previews the
 exact hook and rewrites the same files on re-runs rather than adding duplicates. Because the
 script path is local to an installation, each clone should run setup after installing the skills.
 

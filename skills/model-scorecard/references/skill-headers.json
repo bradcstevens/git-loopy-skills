@@ -1,0 +1,688 @@
+{
+  "schema_version": 1,
+  "generated": "2026-10-11T19:25+00:00",
+  "compaction_ratio": 0.805,
+  "models": {
+    "claude-haiku-4.5": {
+      "efforts": [],
+      "default_cap": 136000,
+      "long_cap": null
+    },
+    "claude-haiku-5.5": {
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default_cap": 100000,
+      "long_cap": 936000
+    },
+    "claude-opus-4.8": {
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default_cap": 200000,
+      "long_cap": 936000
+    },
+    "claude-opus-5": {
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default_cap": 200000,
+      "long_cap": 936000
+    },
+    "claude-opus-5.5": {
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default_cap": 200000,
+      "long_cap": 1000000
+    },
+    "claude-sonnet-5": {
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default_cap": 200000,
+      "long_cap": 936000
+    },
+    "claude-sonnet-5.5": {
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default_cap": 200000,
+      "long_cap": 936000
+    },
+    "gpt-5-mini": {
+      "efforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "default_cap": 128000,
+      "long_cap": null
+    },
+    "gpt-5.3-codex": {
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "default_cap": 272000,
+      "long_cap": null
+    },
+    "gpt-5.4": {
+      "efforts": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "default_cap": 272000,
+      "long_cap": 922000
+    },
+    "gpt-5.4-mini": {
+      "efforts": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "default_cap": 272000,
+      "long_cap": null
+    },
+    "gpt-5.5": {
+      "efforts": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "default_cap": 272000,
+      "long_cap": 922000
+    },
+    "gpt-5.6-luna": {
+      "efforts": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default_cap": 200000,
+      "long_cap": 922000
+    },
+    "gpt-5.6-sol": {
+      "efforts": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default_cap": 272000,
+      "long_cap": 922000
+    },
+    "gpt-5.6-sol-fast": {
+      "efforts": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default_cap": 272000,
+      "long_cap": 922000
+    },
+    "gpt-5.6-terra": {
+      "efforts": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default_cap": 272000,
+      "long_cap": 922000
+    },
+    "gpt-6-astra": {
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default_cap": 272000,
+      "long_cap": 1050000
+    },
+    "gpt-6-luna": {
+      "efforts": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default_cap": 272000,
+      "long_cap": 872000
+    },
+    "gpt-6-sol": {
+      "efforts": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default_cap": 272000,
+      "long_cap": 872000
+    },
+    "gpt-6.1-sol": {
+      "efforts": [
+        "none",
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default_cap": 272000,
+      "long_cap": 922000
+    },
+    "grok-4.5": {
+      "efforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "default_cap": 200000,
+      "long_cap": 500000
+    },
+    "grok-4.6": {
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "default_cap": 200000,
+      "long_cap": 500000
+    },
+    "grok-4.7": {
+      "efforts": [
+        "low",
+        "medium",
+        "high",
+        "xhigh"
+      ],
+      "default_cap": 200000,
+      "long_cap": 500000
+    },
+    "mai-code-1.1-flash": {
+      "efforts": [
+        "low",
+        "medium",
+        "high"
+      ],
+      "default_cap": 128000,
+      "long_cap": null
+    }
+  },
+  "skills": {
+    "batch-grill-me": {
+      "role": "git-loopy:planning",
+      "model": "claude-opus-5.5",
+      "effort": "medium",
+      "context": "1M",
+      "tier": "long_context",
+      "need": 170832,
+      "need_source": "git-loopy:planning p95 of 5 runs"
+    },
+    "capacity": {
+      "role": "copilot:task",
+      "model": "claude-sonnet-5.5",
+      "effort": "low",
+      "context": "200K",
+      "tier": "default",
+      "need": 70000,
+      "need_source": "copilot:task profile estimate"
+    },
+    "code-review": {
+      "role": "copilot:code-review",
+      "model": "claude-opus-5.5",
+      "effort": "medium",
+      "context": "1M",
+      "tier": "long_context",
+      "need": 188056,
+      "need_source": "copilot:code-review p95 of 164 runs"
+    },
+    "codebase-audit": {
+      "role": "copilot:code-review",
+      "model": "claude-opus-5.5",
+      "effort": "medium",
+      "context": "1M",
+      "tier": "long_context",
+      "need": 188056,
+      "need_source": "copilot:code-review p95 of 164 runs"
+    },
+    "codebase-design": {
+      "role": "git-loopy:planning",
+      "model": "claude-opus-5.5",
+      "effort": "medium",
+      "context": "1M",
+      "tier": "long_context",
+      "need": 170832,
+      "need_source": "git-loopy:planning p95 of 5 runs"
+    },
+    "create-readme": {
+      "role": "git-loopy:docs",
+      "model": "claude-sonnet-5.5",
+      "effort": "medium",
+      "context": "200K",
+      "tier": "default",
+      "need": 100997,
+      "need_source": "git-loopy:docs p95 of 9 runs"
+    },
+    "customize": {
+      "role": "git-loopy:chore",
+      "model": "claude-sonnet-5.5",
+      "effort": "low",
+      "context": "200K",
+      "tier": "default",
+      "need": 78305,
+      "need_source": "git-loopy:chore p95 of 14 runs"
+    },
+    "deploy-model": {
+      "role": "git-loopy:chore",
+      "model": "claude-sonnet-5.5",
+      "effort": "low",
+      "context": "200K",
+      "tier": "default",
+      "need": 78305,
+      "need_source": "git-loopy:chore p95 of 14 runs"
+    },
+    "design-control-loop": {
+      "role": "git-loopy:planning",
+      "model": "claude-opus-5.5",
+      "effort": "medium",
+      "context": "1M",
+      "tier": "long_context",
+      "need": 170832,
+      "need_source": "git-loopy:planning p95 of 5 runs"
+    },
+    "diagnosing-bugs": {
+      "role": "git-loopy:bugfix",
+      "model": "claude-opus-5.5",
+      "effort": "medium",
+      "context": "1M",
+      "tier": "long_context",
+      "need": 174065,
+      "need_source": "git-loopy:bugfix p95 of 14 runs"
+    },
+    "domain-modeling": {
+      "role": "git-loopy:planning",
+      "model": "claude-opus-5.5",
+      "effort": "medium",
+      "context": "1M",
+      "tier": "long_context",
+      "need": 170832,
+      "need_source": "git-loopy:planning p95 of 5 runs"
+    },
+    "grill-me": {
+      "role": "git-loopy:planning",
+      "model": "claude-opus-5.5",
+      "effort": "medium",
+      "context": "1M",
+      "tier": "long_context",
+      "need": 170832,
+      "need_source": "git-loopy:planning p95 of 5 runs"
+    },
+    "grill-with-docs": {
+      "role": "git-loopy:planning",
+      "model": "claude-opus-5.5",
+      "effort": "medium",
+      "context": "1M",
+      "tier": "long_context",
+      "need": 170832,
+      "need_source": "git-loopy:planning p95 of 5 runs"
+    },
+    "grilling": {
+      "role": "git-loopy:planning",
+      "model": "claude-opus-5.5",
+      "effort": "medium",
+      "context": "1M",
+      "tier": "long_context",
+      "need": 170832,
+      "need_source": "git-loopy:planning p95 of 5 runs"
+    },
+    "handoff": {
+      "role": "copilot:task",
+      "model": "claude-sonnet-5.5",
+      "effort": "low",
+      "context": "936K",
+      "tier": "long_context",
+      "need": 511625,
+      "need_source": "p95 of 17 /handoff runs"
+    },
+    "implement": {
+      "role": "git-loopy:implementation",
+      "model": "gpt-6.1-sol",
+      "effort": "medium",
+      "context": "272K",
+      "tier": "default",
+      "need": 209252,
+      "need_source": "p95 of 8 /implement runs"
+    },
+    "improve-codebase-architecture": {
+      "role": "git-loopy:planning",
+      "model": "claude-opus-5.5",
+      "effort": "medium",
+      "context": "1M",
+      "tier": "long_context",
+      "need": 170832,
+      "need_source": "git-loopy:planning p95 of 5 runs"
+    },
+    "jev-ultrafast": {
+      "role": "copilot:task",
+      "model": "claude-sonnet-5.5",
+      "effort": "low",
+      "context": "200K",
+      "tier": "default",
+      "need": 70000,
+      "need_source": "copilot:task profile estimate"
+    },
+    "loop-me": {
+      "role": "git-loopy:planning",
+      "model": "claude-opus-5.5",
+      "effort": "medium",
+      "context": "1M",
+      "tier": "long_context",
+      "need": 170832,
+      "need_source": "git-loopy:planning p95 of 5 runs"
+    },
+    "mermaid-diagrams": {
+      "role": "git-loopy:docs",
+      "model": "claude-sonnet-5.5",
+      "effort": "medium",
+      "context": "200K",
+      "tier": "default",
+      "need": 100997,
+      "need_source": "git-loopy:docs p95 of 9 runs"
+    },
+    "microsoft-code-reference": {
+      "role": "copilot:research",
+      "model": "gpt-6.1-sol",
+      "effort": "medium",
+      "context": "922K",
+      "tier": "long_context",
+      "need": 237887,
+      "need_source": "copilot:research p95 of 18 runs"
+    },
+    "microsoft-docs": {
+      "role": "copilot:research",
+      "model": "gpt-6.1-sol",
+      "effort": "medium",
+      "context": "922K",
+      "tier": "long_context",
+      "need": 237887,
+      "need_source": "copilot:research p95 of 18 runs"
+    },
+    "microsoft-foundry": {
+      "role": "copilot:general-purpose",
+      "model": "gpt-6.1-sol",
+      "effort": "medium",
+      "context": "272K",
+      "tier": "default",
+      "need": 210058,
+      "need_source": "copilot:general-purpose p95 of 12 runs"
+    },
+    "set-task-models": {
+      "role": "copilot:research",
+      "model": "gpt-6.1-sol",
+      "effort": "medium",
+      "context": "922K",
+      "tier": "long_context",
+      "need": 237887,
+      "need_source": "copilot:research p95 of 18 runs"
+    },
+    "model-scorecard": {
+      "role": "copilot:task",
+      "model": "claude-sonnet-5.5",
+      "effort": "low",
+      "context": "200K",
+      "tier": "default",
+      "need": 70000,
+      "need_source": "copilot:task profile estimate"
+    },
+    "narrow-react-prop-types": {
+      "role": "git-loopy:implementation",
+      "model": "gpt-6.1-sol",
+      "effort": "medium",
+      "context": "272K",
+      "tier": "default",
+      "need": 214282,
+      "need_source": "git-loopy:implementation p95 of 293 runs"
+    },
+    "next": {
+      "role": "copilot:explore",
+      "model": "claude-sonnet-5.5",
+      "effort": "low",
+      "context": "936K",
+      "tier": "long_context",
+      "need": 509704,
+      "need_source": "p95 of 19 /next runs"
+    },
+    "playwright-cli": {
+      "role": "copilot:task",
+      "model": "claude-sonnet-5.5",
+      "effort": "low",
+      "context": "200K",
+      "tier": "default",
+      "need": 70000,
+      "need_source": "copilot:task profile estimate"
+    },
+    "preset": {
+      "role": "git-loopy:chore",
+      "model": "claude-sonnet-5.5",
+      "effort": "low",
+      "context": "200K",
+      "tier": "default",
+      "need": 78305,
+      "need_source": "git-loopy:chore p95 of 14 runs"
+    },
+    "prototype": {
+      "role": "git-loopy:implementation",
+      "model": "gpt-6.1-sol",
+      "effort": "medium",
+      "context": "272K",
+      "tier": "default",
+      "need": 214282,
+      "need_source": "git-loopy:implementation p95 of 293 runs"
+    },
+    "push": {
+      "role": "git-loopy:chore",
+      "model": "claude-sonnet-5.5",
+      "effort": "low",
+      "context": "200K",
+      "tier": "default",
+      "need": 78305,
+      "need_source": "git-loopy:chore p95 of 14 runs"
+    },
+    "release": {
+      "role": "git-loopy:chore",
+      "model": "claude-sonnet-5.5",
+      "effort": "low",
+      "context": "200K",
+      "tier": "default",
+      "need": 78305,
+      "need_source": "git-loopy:chore p95 of 14 runs"
+    },
+    "research": {
+      "role": "copilot:research",
+      "model": "gpt-6.1-sol",
+      "effort": "medium",
+      "context": "922K",
+      "tier": "long_context",
+      "need": 237887,
+      "need_source": "copilot:research p95 of 18 runs"
+    },
+    "resolving-merge-conflicts": {
+      "role": "git-loopy:implementation",
+      "model": "gpt-6.1-sol",
+      "effort": "medium",
+      "context": "922K",
+      "tier": "long_context",
+      "need": 480726,
+      "need_source": "p95 of 5 /resolving-merge-conflicts runs"
+    },
+    "setup-git-loopy-skills": {
+      "role": "git-loopy:chore",
+      "model": "claude-sonnet-5.5",
+      "effort": "low",
+      "context": "200K",
+      "tier": "default",
+      "need": 78305,
+      "need_source": "git-loopy:chore p95 of 14 runs"
+    },
+    "show-me": {
+      "role": "git-loopy:docs",
+      "model": "claude-sonnet-5.5",
+      "effort": "medium",
+      "context": "200K",
+      "tier": "default",
+      "need": 100997,
+      "need_source": "git-loopy:docs p95 of 9 runs"
+    },
+    "sync-model-roster": {
+      "role": "git-loopy:chore",
+      "model": "claude-sonnet-5.5",
+      "effort": "low",
+      "context": "200K",
+      "tier": "default",
+      "need": 78305,
+      "need_source": "git-loopy:chore p95 of 14 runs"
+    },
+    "tdd": {
+      "role": "git-loopy:test",
+      "model": "gpt-6.1-sol",
+      "effort": "medium",
+      "context": "272K",
+      "tier": "default",
+      "need": 161743,
+      "need_source": "git-loopy:test p95 of 16 runs"
+    },
+    "teach": {
+      "role": "git-loopy:docs",
+      "model": "claude-sonnet-5.5",
+      "effort": "medium",
+      "context": "200K",
+      "tier": "default",
+      "need": 100997,
+      "need_source": "git-loopy:docs p95 of 9 runs"
+    },
+    "to-questionnaire": {
+      "role": "git-loopy:planning",
+      "model": "claude-opus-5.5",
+      "effort": "medium",
+      "context": "1M",
+      "tier": "long_context",
+      "need": 170832,
+      "need_source": "git-loopy:planning p95 of 5 runs"
+    },
+    "to-spec": {
+      "role": "git-loopy:planning",
+      "model": "claude-opus-5.5",
+      "effort": "medium",
+      "context": "1M",
+      "tier": "long_context",
+      "need": 170832,
+      "need_source": "git-loopy:planning p95 of 5 runs"
+    },
+    "to-tickets": {
+      "role": "git-loopy:planning",
+      "model": "claude-opus-5.5",
+      "effort": "medium",
+      "context": "1M",
+      "tier": "long_context",
+      "need": 170832,
+      "need_source": "git-loopy:planning p95 of 5 runs"
+    },
+    "triage": {
+      "role": "git-loopy:planning",
+      "model": "claude-opus-5.5",
+      "effort": "medium",
+      "context": "1M",
+      "tier": "long_context",
+      "need": 170832,
+      "need_source": "git-loopy:planning p95 of 5 runs"
+    },
+    "wait-what": {
+      "role": "git-loopy:docs",
+      "model": "claude-sonnet-5.5",
+      "effort": "medium",
+      "context": "200K",
+      "tier": "default",
+      "need": 100997,
+      "need_source": "git-loopy:docs p95 of 9 runs"
+    },
+    "wayfinder": {
+      "role": "git-loopy:planning",
+      "model": "claude-opus-5.5",
+      "effort": "medium",
+      "context": "1M",
+      "tier": "long_context",
+      "need": 221399,
+      "need_source": "p95 of 9 /wayfinder runs"
+    },
+    "wizard": {
+      "role": "git-loopy:implementation",
+      "model": "gpt-6.1-sol",
+      "effort": "medium",
+      "context": "272K",
+      "tier": "default",
+      "need": 214282,
+      "need_source": "git-loopy:implementation p95 of 293 runs"
+    },
+    "writing-for-agents": {
+      "role": "git-loopy:docs",
+      "model": "claude-sonnet-5.5",
+      "effort": "medium",
+      "context": "936K",
+      "tier": "long_context",
+      "need": 434046,
+      "need_source": "p95 of 10 /writing-for-agents runs"
+    }
+  }
+}

@@ -1,6 +1,9 @@
 ---
 name: writing-for-agents
 description: Reference for writing the documents agents read — skills, AGENTS.md, and pointed-at docs.
+model: claude-sonnet-5.5
+effort: medium
+context: 936K
 disable-model-invocation: true
 ---
 

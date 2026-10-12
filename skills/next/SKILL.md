@@ -1,6 +1,9 @@
 ---
 name: next
 description: Route the engineering workflow or choose a skill for the current situation. Use when a workflow skill concludes, the user asks what to do next, or needs help choosing a skill or flow.
+model: claude-sonnet-5.5
+effort: low
+context: 936K
 ---
 
 # Route the Workflow
@@ -8,7 +11,10 @@ description: Route the engineering workflow or choose a skill for the current si
 This skill is the model-invoked router for the skills and engineering flow. Inspect the
 current state and return one recommendation. Leave source files and the issue
 tracker unchanged. A chain spawn may write its ledger and create its reserved
-branch and worktree; the spawned subagent owns work inside that worktree.
+branch and worktree; the spawned subagent owns work inside that worktree. Every
+run also appends its session scan to the session log (step 1). `chain.sh` and
+`sessions.py` live in this skill's `scripts/`; the routing references live in
+its `references/`.
 
 The merge gate's `review-clean` evidence uses the canonical producer/matcher in
 [`scripts/review-clean-record.py`](../../scripts/review-clean-record.py). Do not
@@ -25,7 +31,7 @@ decision contract but does not execute a merge.
 
 ## 1. Refresh the durable state
 
-For a **skill-selection** question, read [`SKILL-SELECTION.md`](SKILL-SELECTION.md)
+For a **skill-selection** question, read [`SKILL-SELECTION.md`](references/SKILL-SELECTION.md)
 and identify the desired outcome from the conversation. A standalone request
 uses that conversation as its target; refresh only the files or configuration
 the chosen branch needs. An engineering workstream follows the full refresh
@@ -45,16 +51,27 @@ issues and their relationships to find the active maps, specs, tickets, and PRs.
 Use live records rather than session summaries because concurrent sessions may
 have changed them.
 
-Then account for what is already **in flight**, which no tracker records: the
-worktrees (`git worktree list`), the uncommitted files in each, and the runner
-or agent process holding one. A git-loopy run names the issue it bound in the
-newest `.git-loopy/logs/` file and works in the worktree it was started from.
-Work recommended into a directory another agent is writing collides with it.
+Then account for what is already **in flight**, which no tracker records. Scan the live
+Copilot CLI sessions with this skill's own script:
+
+```bash
+python3 <this skill>/scripts/sessions.py scan
+```
+
+It lists each worktree (`git worktree list`) with the live sessions working in it — session id,
+name, branch, and any chain targets the session holds — and appends the scan to the **session
+log**, `.git-loopy/next/sessions.jsonl` at the repository root. Each session is marked `new` or
+`continuing` against the previous `/next` run, and sessions gone since then come back as
+`ended`; `self: true` marks this one. Then read the uncommitted files in each worktree and any
+git-loopy runner holding one: a git-loopy run names the issue it bound in the newest
+`.git-loopy/logs/` file and works in the worktree it was started from. Work recommended into a
+directory another session is writing collides with it, and an `ended` session's uncommitted
+worktree is abandoned work to name, not free space.
 
 This step is complete when a standalone request has a concrete outcome and its
 branch's required context, or every engineering candidate has current state and
-blocker information from its durable source and every worktree is accounted for
-by the process that holds it.
+blocker information from its durable source, this run's scan is in the session log,
+and every worktree is accounted for by the session or process that holds it.
 
 ## 2. Find the earliest unresolved gate
 
@@ -182,7 +199,7 @@ human named.
 ## 5. Apply the phase-boundary procedure and chain gate
 
 At every intentional phase boundary, apply the full ordered procedure in the co-installed
-[`PHASE-BOUNDARIES.md`](PHASE-BOUNDARIES.md); its first yes wins. The procedure is
+[`PHASE-BOUNDARIES.md`](references/PHASE-BOUNDARIES.md); its first yes wins. The procedure is
 co-installed with `/next`, so a standalone installation carries the full reference.
 
 The procedure's fourth question, “Can the task be done AFK?”, is the reasoning behind the chain's
@@ -276,8 +293,8 @@ second producer of an ownership marker and never passes through the chain's
 `reserve`, so nothing else vouches for it; `claim` writes the same marker
 `reserve` writes and records the pair as a pending worktree, so an interrupted
 prompt cannot leave a worktree a later reader mistakes for abandoned clutter. Give the prompt that one
-command, do not restate the marker format, and splice in this skill's own
-absolute path to `chain.sh`, because the fresh session starts somewhere that has
+command, do not restate the marker format, and splice in the absolute path to this
+skill's `scripts/chain.sh`, because the fresh session starts somewhere that has
 not loaded `/next`.
 
 Carry into the prompt every constraint that came from live state and is absent

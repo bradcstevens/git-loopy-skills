@@ -5,6 +5,7 @@ set -euo pipefail
 #   - lives at skills/<name>/SKILL.md
 #   - has YAML frontmatter with a name and a description
 #   - has a frontmatter name matching its directory name
+#   - names its GitHub Copilot model, effort and context in that frontmatter
 # Also checks that relative links between docs/*.md resolve.
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
@@ -17,7 +18,7 @@ err() {
 }
 
 for reference in PHASE-BOUNDARIES.md SKILL-SELECTION.md; do
-  [ -f "skills/next/$reference" ] || err "skills/next/$reference must be co-installed with next"
+  [ -f "skills/next/references/$reference" ] || err "skills/next/references/$reference must be co-installed with next"
 done
 
 count=0
@@ -50,6 +51,18 @@ while IFS= read -r skill_md; do
   if [ -n "$name" ] && [ "$name" != "$expected" ]; then
     err "$skill_md frontmatter name '$name' does not match directory '$expected'"
   fi
+
+  # Every skill names the GitHub Copilot model, reasoning effort and context size
+  # to run it with. /set-task-models writes them from /model-scorecard's picks.
+  model="$(printf '%s\n' "$frontmatter" | sed -n 's/^model:[[:space:]]*//p' | head -1)"
+  effort="$(printf '%s\n' "$frontmatter" | sed -n 's/^effort:[[:space:]]*//p' | head -1)"
+  context="$(printf '%s\n' "$frontmatter" | sed -n 's/^context:[[:space:]]*//p' | head -1)"
+  [[ "$model" =~ ^[a-z0-9][a-z0-9.-]*$ ]] ||
+    err "$skill_md frontmatter 'model' must be a GitHub Copilot model id, not '$model'"
+  [[ "$effort" =~ ^(none|minimal|low|medium|high|xhigh|max)$ ]] ||
+    err "$skill_md frontmatter 'effort' must be a reasoning effort, not '$effort'"
+  [[ "$context" =~ ^[0-9]+[KM]$ ]] ||
+    err "$skill_md frontmatter 'context' must be a context size such as 200K or 1M, not '$context'"
 done < <(find skills -name SKILL.md -not -path '*/node_modules/*' | sort)
 
 [ "$count" -gt 0 ] || err "no skills found under skills/"
@@ -85,5 +98,6 @@ bash scripts/test-handoff.sh || fail=1
 python3 scripts/test-next-runtime.py || fail=1
 python3 scripts/test-set-task-models.py || fail=1
 python3 scripts/test-model-scorecard.py || fail=1
+python3 scripts/test-next-sessions.py || fail=1
 python3 scripts/test-upstream-sync.py || fail=1
 exit "$fail"

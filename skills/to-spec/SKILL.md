@@ -1,6 +1,9 @@
 ---
 name: to-spec
 description: Turn the current conversation into a spec and publish it to the project issue tracker — no interview, just synthesis of what you've already discussed.
+model: claude-opus-5.5
+effort: medium
+context: 1M
 disable-model-invocation: false
 ---
 
