@@ -20,7 +20,7 @@ It is a prompt-driven skill, not a deterministic script. It reads your `git remo
 
 ## When to reach for it
 
-You invoke this by typing `/setup-git-loopy-skills`; the agent won't reach for it on its own. Its metadata marks it non-invokable on purpose, so no other skill can fire it for you.
+You invoke this by typing `/setup-git-loopy-skills`; the [agent](https://www.aihero.dev/ai-coding-dictionary/agent) won't reach for it on its own. Its metadata marks it non-invokable on purpose, so no other skill can fire it for you.
 
 Reach for it once per repo, before the first use of any other engineering skill. If [triage](./triage.md), [to-spec](./to-spec.md), [to-tickets](./to-tickets.md) or [wayfinder](./wayfinder.md) start guessing where your issues go, or apply labels your tracker doesn't have, this repo has not been set up yet. You can run it in a repo halfway through a project. The skill reads what is already there, so no earlier work is lost.
 
@@ -67,7 +67,7 @@ The tracker options:
 
 The first three ship as templates in the skill and work out of the box. Local markdown is a full option, not a fallback. The skill supports a solo project with no remote. One caveat: don't use local markdown if you use GitHub. They are alternatives, so pick one.
 
-"Other" is a full option too. It is how Jira, Linear, Azure DevOps and Beads all work. You describe the workflow, the skill records your prose in `docs/agents/issue-tracker.md`, and the downstream skills follow the prose. Users have already built this: a Jira-over-MCP variant, a Gitea CLI shaped like `gh`, a hand-built local dashboard.
+"Other" is a full option too. It is how Jira, Linear, Azure DevOps and Beads all work. You describe the workflow, the skill records your prose in `docs/agents/issue-tracker.md`, and the downstream skills follow the prose. Users have already built this: a Jira-over-[MCP](https://www.aihero.dev/ai-coding-dictionary/mcp) variant, a Gitea CLI shaped like `gh`, a hand-built local dashboard.
 
 In git-loopy, the label config also records the non-renameable `parallel-safe`, `priority`, and `idea` assertions and the closed seven-label `task-type:` taxonomy. These are not triage roles. Humans apply the assertions; setup only ensures the label names exist. Tickets carry exactly one task-type label for their dominant risk.
 
@@ -95,7 +95,7 @@ This skill does not create [wayfinder](./wayfinder.md)'s `wayfinder:map` and `wa
 
 Setup offers to move it to `GLOSSARY.md` with `git mv` only when the destination is absent, so Git can follow its history. The same applies to `CONTEXT-MAP.md` and per-context files referenced by a map. It previews the exact moves and updates the map and relevant instruction/config references after you accept. It does not overwrite an existing glossary or copy and delete an untracked source. If you decline, it leaves the files alone and records the legacy paths in the domain configuration.
 
-**Can I configure the other skills' behaviour here (grilling cadence, question format, tone)?**
+**Can I configure the other skills' behaviour here ([grilling](https://www.aihero.dev/ai-coding-dictionary/grilling) cadence, question format, tone)?**
 
 No. It configures three things: tracker, labels, doc layout, plus the git-loopy chain hooks. Users have asked to make it the place for per-user preferences. The answer is that skills stay opinionated and take no per-user config. Preferences belong in your `AGENTS.md` or `.github/copilot-instructions.md` as plain instructions, which every skill already reads.
 
@@ -119,4 +119,4 @@ One long-standing complaint says yes, in these words: *"having a skill to set up
 
 ## Where it fits
 
-`setup-git-loopy-skills` is the **run-once setup** for the engineering flow, the precondition everything else assumes rather than a step in the chain. Its neighbours are its readers: [triage](./triage.md), which applies the label vocabulary written here; [to-spec](./to-spec.md) and [to-tickets](./to-tickets.md), which publish into the tracker named here; and [wayfinder](./wayfinder.md), which reads the "Wayfinding operations" section of the same tracker file to learn how to store maps and child tickets. [domain-modeling](./domain-modeling.md) later fills in the domain-doc layout that setup records. It creates `GLOSSARY.md` and ADRs only when you resolve a term or decision, so a repo with no domain docs after setup is normal. For which skill to reach for next, [next](./next.md) routes the whole set.
+`setup-git-loopy-skills` is the **run-once setup** for the engineering flow, the precondition everything else assumes rather than a step in the chain. Its neighbours are its readers: [triage](./triage.md), which applies the label vocabulary written here; [to-spec](./to-spec.md) and [to-tickets](./to-tickets.md), which publish into the tracker named here; and [wayfinder](./wayfinder.md), which reads the "Wayfinding operations" section of the same tracker file to learn how to store maps and child [tickets](https://www.aihero.dev/ai-coding-dictionary/ticket). [domain-modeling](./domain-modeling.md) later fills in the domain-doc layout that setup records. It creates `GLOSSARY.md` and ADRs only when you resolve a term or decision, so a repo with no domain docs after setup is normal. For which skill to reach for next, [next](./next.md) routes the whole set.
