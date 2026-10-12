@@ -174,14 +174,19 @@ python3 <this skill>/scripts/runtime.py /<route>
 
 It prints one JSON object. Its `runtime` field is the route's **resolved
 runtime**, which the recommendation's `Runtime` line carries, and its `model`,
-`effort` and `tier` fields are the values a launcher passes. The tier in
+`effort` and `tier` fields are the values a launcher passes. `runtime_source`
+is `skill-header` when those settings come from the routed `SKILL.md`, or
+`model-scorecard` when `/model-scorecard`'s generated
+`references/skill-headers.json` supplies missing, incomplete, malformed, or
+unreadable header settings. The tier in
 parentheses is what Copilot CLI's `--context` flag and a subagent's
 `context_tier` take: `long_context` when the header's window is larger than the
 model's default window, otherwise `default`.
 
-A route with no header, such as a built-in like `/compact` or a skill from
-another catalog, reads `current session`: it runs on whatever this session
-already uses. So does a broken header, which exits 1; name its `error`.
+A built-in route such as `/compact` reads `current session`: it runs on whatever
+this session already uses. When neither source provides valid settings, an
+unconfigured skill also reads `current session`; a malformed or unreadable
+header without a usable fallback exits 1, so name its `error`.
 
 A human who wants another model picks it in `/model` when running the prompt.
 Keep the resolved runtime as printed, because a launcher passes its model,

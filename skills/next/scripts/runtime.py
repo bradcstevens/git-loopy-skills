@@ -84,7 +84,7 @@ def tier_for(model: str, context: str, catalog_path: str) -> Tuple[str, str]:
 
 def result(route: str, reason: Optional[str] = None, **runtime: Optional[str]) -> Dict[str, Optional[str]]:
     resolved: Dict[str, Optional[str]] = {"route": route}
-    for key in (*KEYS, "tier", "tier_source"):
+    for key in (*KEYS, "tier", "tier_source", "runtime_source"):
         resolved[key] = runtime.get(key)
     if reason:
         resolved["runtime"] = CURRENT_SESSION
@@ -97,25 +97,66 @@ def result(route: str, reason: Optional[str] = None, **runtime: Optional[str]) -
     return resolved
 
 
+def scorecard_runtime(name: str, catalog_path: str) -> Optional[Dict[str, str]]:
+    """Return a complete skill runtime from model-scorecard's generated catalog."""
+    try:
+        with open(catalog_path, encoding="utf-8") as handle:
+            skills = json.load(handle).get("skills", {})
+    except (OSError, ValueError, AttributeError):
+        return None
+    entry = skills.get(name) if isinstance(skills, dict) else None
+    if not isinstance(entry, dict):
+        return None
+    values: Dict[str, str] = {}
+    for key in KEYS:
+        value = entry.get(key)
+        if not isinstance(value, str) or not VALID[key].fullmatch(value):
+            return None
+        values[key] = value
+    return values
+
+
 def resolve(name: str, skills_dir: str, catalog_path: str) -> Tuple[int, Dict[str, Optional[str]]]:
     route = f"/{name}"
     skill_md = os.path.join(skills_dir, name, "SKILL.md")
-    if not os.path.isfile(skill_md):
-        return 0, result(route, "no-skill")
-    header = frontmatter(skill_md)
+    skill_exists = os.path.isfile(skill_md)
+    read_error: Optional[str] = None
+    try:
+        header = frontmatter(skill_md) if skill_exists else {}
+    except (OSError, UnicodeError) as error:
+        header = {}
+        read_error = f"{skill_md}: {error}"
+
     present = [key for key in KEYS if key in header]
-    if not present:
-        return 0, result(route, "no-header")
-    problems = [f"missing {key}" for key in KEYS if key not in header]
+    problems = [f"missing {key}" for key in KEYS if key not in header] if present else []
     problems += [
-        f"{key} {header[key]!r} is not valid" for key in present if not VALID[key].match(header[key])
+        f"{key} {header[key]!r} is not valid" for key in present if not VALID[key].fullmatch(header[key])
     ]
-    if problems:
+
+    if not read_error and len(present) == len(KEYS) and not problems:
+        values = {key: header[key] for key in KEYS}
+        runtime_source = "skill-header"
+    else:
+        values = scorecard_runtime(name, catalog_path) or {}
+        runtime_source = "model-scorecard"
+
+    if values:
+        tier, source = tier_for(values["model"], values["context"], catalog_path)
+        return 0, result(
+            route,
+            tier=tier,
+            tier_source=source,
+            runtime_source=runtime_source,
+            **values,
+        )
+
+    if not skill_exists:
+        return 0, result(route, "no-skill")
+    if read_error or problems:
         failed = result(route, "invalid-header")
-        failed["error"] = f"{skill_md}: " + "; ".join(problems)
+        failed["error"] = read_error or f"{skill_md}: " + "; ".join(problems)
         return 1, failed
-    tier, source = tier_for(header["model"], header["context"], catalog_path)
-    return 0, result(route, tier=tier, tier_source=source, **{key: header[key] for key in KEYS})
+    return 0, result(route, "no-header")
 
 
 def main(argv: Optional[list] = None) -> int:

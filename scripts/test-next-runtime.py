@@ -21,7 +21,13 @@ CATALOG = {
         "claude-opus-5.5": {"efforts": ["low", "medium", "high"], "default_cap": 200000, "long_cap": 1000000},
         "gpt-5-mini": {"efforts": [], "default_cap": 128000, "long_cap": None},
     },
-    "skills": {},
+    "skills": {
+        "implement": {"model": "gpt-5-mini", "effort": "low", "context": "128K"},
+        "bare": {"model": "gpt-5-mini", "effort": "low", "context": "128K"},
+        "partial": {"model": "gpt-5-mini", "effort": "low", "context": "128K"},
+        "malformed": {"model": "gpt-5-mini", "effort": "low", "context": "128K"},
+        "unreadable": {"model": "gpt-5-mini", "effort": "low", "context": "128K"},
+    },
 }
 
 
@@ -45,8 +51,11 @@ class RuntimeTest(unittest.TestCase):
         skill(self.skills, "research", 'model: "gpt-6.1-sol"\neffort: medium\ncontext: 922K\n')
         skill(self.skills, "summarize", header("gpt-5-mini", "low", "128K"))
         skill(self.skills, "unlisted", header("future-model-1", "high", "400K"))
+        skill(self.skills, "unreadable", header("gpt-6.1-sol", "medium", "272K"))
+        skill(self.skills, "invalid-no-fallback", header("gpt-6.1-sol", "extreme", "272K"))
         # A key in the body is prose, not a header.
         skill(self.skills, "bare", "", body="model: gpt-6.1-sol\neffort: medium\ncontext: 272K\n")
+        skill(self.skills, "unconfigured", "")
         skill(self.skills, "partial", "model: gpt-6.1-sol\n")
         skill(self.skills, "malformed", header("gpt-6.1-sol", "extreme", "272K"))
         catalog_dir = os.path.join(self.skills, "model-scorecard", "references")
@@ -75,6 +84,7 @@ class RuntimeTest(unittest.TestCase):
                 "context": "272K",
                 "tier": "default",
                 "tier_source": "catalog",
+                "runtime_source": "skill-header",
                 "runtime": "model gpt-6.1-sol, effort medium, context 272K (default)",
             },
         )
@@ -128,21 +138,43 @@ class RuntimeTest(unittest.TestCase):
                 "context": None,
                 "tier": None,
                 "tier_source": None,
+                "runtime_source": None,
                 "runtime": "current session",
                 "reason": "no-skill",
             },
         )
 
-    def test_a_skill_without_a_header_runs_on_the_current_session(self) -> None:
+    def test_missing_header_runtime_uses_the_model_scorecard_fallback(self) -> None:
         bare = self.resolve("/bare")
-        self.assertEqual((bare["runtime"], bare["reason"], bare["model"]), ("current session", "no-header", None))
+        self.assertEqual(
+            (bare["model"], bare["effort"], bare["context"], bare["runtime_source"]),
+            ("gpt-5-mini", "low", "128K", "model-scorecard"),
+        )
+        self.assertEqual(bare["runtime"], "model gpt-5-mini, effort low, context 128K (default)")
 
-    def test_a_partial_or_malformed_header_fails_but_still_names_a_runtime(self) -> None:
+    def test_skill_without_header_or_fallback_runs_on_the_current_session(self) -> None:
+        result = self.resolve("/unconfigured")
+        self.assertEqual((result["runtime"], result["reason"]), ("current session", "no-header"))
+
+    def test_partial_and_malformed_headers_use_the_model_scorecard_fallback(self) -> None:
         for route in ("/partial", "/malformed"):
             with self.subTest(route=route):
-                result = self.resolve(route, status=1)
-                self.assertEqual((result["runtime"], result["reason"]), ("current session", "invalid-header"))
-                self.assertTrue(result["error"])
+                result = self.resolve(route)
+                self.assertEqual((result["runtime_source"], result["model"]), ("model-scorecard", "gpt-5-mini"))
+
+    def test_missing_skill_file_uses_the_model_scorecard_fallback(self) -> None:
+        os.remove(os.path.join(self.skills, "unreadable", "SKILL.md"))
+        result = self.resolve("/unreadable")
+        self.assertEqual((result["runtime_source"], result["model"]), ("model-scorecard", "gpt-5-mini"))
+
+    def test_valid_skill_header_takes_precedence_over_scorecard_fallback(self) -> None:
+        result = self.resolve("/implement")
+        self.assertEqual((result["runtime_source"], result["model"]), ("skill-header", "gpt-6.1-sol"))
+
+    def test_invalid_header_without_a_valid_fallback_fails(self) -> None:
+        result = self.resolve("/invalid-no-fallback", status=1)
+        self.assertEqual((result["runtime"], result["reason"]), ("current session", "invalid-header"))
+        self.assertTrue(result["error"])
 
     def test_rejects_a_route_that_is_not_a_skill_name(self) -> None:
         for route in ("../implement", "/Implement", "implement/x", "/", ""):

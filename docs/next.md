@@ -50,6 +50,8 @@ Runtime: model gpt-6.1-sol, effort medium, context 272K (default)
 
 The tier in parentheses, `default` or `long_context`, is the one that window belongs to. Copilot CLI's `--context` flag and a subagent's context tier take the tier, not the window. `runtime.py` reads it from the model catalog `/model-scorecard` keeps in `references/skill-headers.json`: a window larger than the model's default one is `long_context`. Without that catalog, it falls back to `default`. A route that names no header, such as the built-in `/compact`, reads `Runtime: current session`.
 
+`SKILL.md` is the authoritative source for a skill's `model`, `effort` and `context`. If those header settings are missing, incomplete, malformed or unreadable, `/next` resolves them from that skill's entry in `/model-scorecard`'s generated `references/skill-headers.json`. The resolver reports the selected source as `skill-header` or `model-scorecard`; if neither source has a complete valid runtime, it reads `Runtime: current session`.
+
 There is no command to run. Pick the runtime in `/model` and paste the prompt into the session the recommendation names, or run [handoff](./handoff.md), which launches the prompt in the background on the same runtime.
 
 ## The chain it can spawn
