@@ -1,6 +1,9 @@
 ---
 name: release
 description: Release completed work at the next patch version, or the version you specify.
+model: claude-sonnet-5.5
+effort: low
+context: 200K
 disable-model-invocation: true
 ---
 

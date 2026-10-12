@@ -1,6 +1,9 @@
 ---
 name: implement
 description: "Implement a piece of work based on a spec or set of tickets."
+model: gpt-6.1-sol
+effort: medium
+context: 272K
 disable-model-invocation: false
 ---
 

@@ -83,13 +83,13 @@ situation matches. The rest you invoke by name.
 | microsoft-code-reference | automatic | Look up Microsoft API references, find working code samples, and verify SDK code is correct. |
 | microsoft-docs | automatic | Understand Microsoft technologies by querying official documentation. |
 | microsoft-foundry | automatic | Deploy, evaluate, and manage Foundry agents end-to-end: Docker build, ACR push, hosted/prompt agent create, container start, batch eval, continuous eval, prompt optimizer workflows, agent.yaml, dataset curation from traces. |
-| model-fit | `/model-fit` | Research licensed Copilot models and synchronize model, effort, context, and enforcement across Copilot built-ins and git-loopy task routing. |
+| model-fit | `/model-fit` | Research licensed Copilot models and synchronize model, effort, context, and enforcement across Copilot built-ins, git-loopy task routing, and every skill's header. |
 | model-scorecard | `/model-scorecard` | Score Copilot models 1–100 for every SDLC task type, Copilot built-in subagent and git-loopy task type from the live Artificial Analysis leaderboard, and rewrite the scorecard reference. |
 | narrow-react-prop-types | automatic | narrow React component prop types to match live code paths |
 | [next](docs/next.md) | automatic | Route the engineering workflow or choose a skill for the current situation. |
 | playwright-cli | automatic | Automates browser interactions for web testing, form filling, screenshots, and data extraction. |
 | [prototype](docs/prototype.md) | automatic | Build a throwaway prototype to answer a design question. |
-| push | `/push` | Publish current work by staging intended changes, committing, pushing, and opening a pull request when needed. |
+| push | automatic | Publish current work by staging intended changes, committing, pushing, and opening a pull request when needed. |
 | [release](docs/release.md) | `/release` | Release completed work at the next patch version, or the version you specify. |
 | [research](docs/research.md) | automatic | Investigate a question against high-trust primary sources and capture the findings as a Markdown file in the repo. |
 | [resolving-merge-conflicts](docs/resolving-merge-conflicts.md) | automatic | Use when you need to resolve an in-progress git merge/rebase conflict. |

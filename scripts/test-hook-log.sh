@@ -24,8 +24,8 @@ init_repo() {
 }
 
 home="$tmp_dir/home"
-mkdir -p "$home/skills/next"
-cat > "$home/skills/next/chain.sh" <<'CHAIN'
+mkdir -p "$home/skills/next/scripts"
+cat > "$home/skills/next/scripts/chain.sh" <<'CHAIN'
 #!/usr/bin/env bash
 set -euo pipefail
 
@@ -44,7 +44,7 @@ case "$payload" in
     ;;
 esac
 CHAIN
-chmod +x "$home/skills/next/chain.sh"
+chmod +x "$home/skills/next/scripts/chain.sh"
 
 payload() {
   python3 - "$1" <<'PY'

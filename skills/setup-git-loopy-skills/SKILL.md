@@ -1,6 +1,9 @@
 ---
 name: setup-git-loopy-skills
 description: Configure this repo for the engineering skills — set up its issue tracker, triage label vocabulary, and domain doc layout. Run once before first use of the other engineering skills.
+model: claude-sonnet-5.5
+effort: low
+context: 200K
 disable-model-invocation: true
 ---
 
@@ -42,7 +45,7 @@ Lead each section with the recommended answer so the user can accept it in a wor
 
 Resolve the installed chain script before drafting any files. Start with the directory that
 contains this installed `setup-git-loopy-skills` skill, then use its sibling
-`next/chain.sh`; never assume that the current repository is the skill source. A local
+`next/scripts/chain.sh`; never assume that the current repository is the skill source. A local
 `.agents/skills` installation takes precedence over a user installation. The candidate must
 be an executable regular file. If no sibling chain script exists, tell the user that `/next`
 must be installed alongside this skill and stop without writing a hook.
@@ -50,7 +53,7 @@ must be installed alongside this skill and stop without writing a hook.
 Set `setup_skill_dir` to the directory holding the active `SKILL.md`, then resolve and verify:
 
 ```bash
-chain_script="$(cd "$setup_skill_dir/../next" && pwd)/chain.sh"
+chain_script="$(cd "$setup_skill_dir/../next/scripts" && pwd)/chain.sh"
 [ -f "$chain_script" ] && [ -x "$chain_script" ] ||
   { echo "Install /next beside /setup-git-loopy-skills before enabling the chain." >&2; exit 1; }
 [ -f "$setup_skill_dir/git-loopy-agent-stop.py" ] ||
@@ -183,8 +186,8 @@ log_invocation() {
     <<< "$payload" >/dev/null 2>&1 || :
 }
 candidates=(
-  "${COPILOT_HOME:-$HOME/.copilot}/skills/next/chain.sh"
-  "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/skills/next/chain.sh"
+  "${COPILOT_HOME:-$HOME/.copilot}/skills/next/scripts/chain.sh"
+  "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/skills/next/scripts/chain.sh"
 )
 for candidate in "${candidates[@]}"; do
   if [ -x "$candidate" ]; then

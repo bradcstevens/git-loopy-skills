@@ -121,8 +121,8 @@ way: a [`prototype`](#prototype) reference file overwritten by its sibling, and 
   its copy (`9a02742`, "Remove the ask skill in favour of next") and wrote `next` instead: a
   model-invoked router that reads live state (tracker, branch, diff, worktrees), names one action,
   and, when the chain gate allows, reserves and spawns it through `chain.sh` and its helpers. Skill
-  choice lives in `next/SKILL-SELECTION.md`.
-- **Shared:** `next/PHASE-BOUNDARIES.md` is an exact copy of `ask-matt/PHASE-BOUNDARIES.md` at
+  choice lives in `next/references/SKILL-SELECTION.md`.
+- **Shared:** `next/references/PHASE-BOUNDARIES.md` is an exact copy of `ask-matt/PHASE-BOUNDARIES.md` at
   `fa1e322` (2026-08-05); upstream has since only removed its em-dashes.
 - Upstream's router also routes to `implement-spec`, `pr` and `retro`, which have no counterpart
   here.

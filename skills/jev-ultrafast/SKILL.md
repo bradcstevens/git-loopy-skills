@@ -1,6 +1,9 @@
 ---
 name: jev-ultrafast
 description: "Run fast goal-driven browser automation with Jev Ultrafast for navigating, searching, and interacting with visible web pages. Use when a user requests fast browser automation or explicitly asks to use Jev."
+model: claude-sonnet-5.5
+effort: low
+context: 200K
 ---
 
 # Jev Ultrafast
