@@ -63,8 +63,7 @@ situation matches. The rest you invoke by name.
 
 | Skill | Invoke | What it does |
 | --- | --- | --- |
-| batch-grill-me | `/batch-grill-me` | A relentless interview that asks every frontier question at once, round by round. |
-| [code-review](docs/code-review.md) | automatic | Review the changes since a fixed point (commit, branch, tag, or merge-base) along two axes — Standards (does the code follow this repo's documented coding standards?) and Spec (does the code match what the originating issue/spec asked for?). |
+| [code-review](docs/code-review.md) | automatic | Review the changes since a fixed point (commit, branch, tag, or merge-base) along two axes: Standards (does the code follow this repo's documented coding standards?) and Spec (does the code match what the originating issue/spec asked for?). |
 | codebase-audit | automatic | Deep audit before GitHub push: removes junk files, dead code, security holes, and optimization issues. |
 | [codebase-design](docs/codebase-design.md) | automatic | Shared vocabulary for designing deep modules. |
 | create-readme | automatic | Create a README.md file for the project |
@@ -108,7 +107,7 @@ situation matches. The rest you invoke by name.
 | [wait-what](docs/wait-what.md) | `/wait-what` | Stop — that last message did not land, so re-pitch it. |
 | [wayfinder](docs/wayfinder.md) | `/wayfinder` | Plan a huge chunk of work — more than one agent session can hold — as a shared map of decision tickets on your issue tracker, and resolve them one at a time until the way to the destination is clear. |
 | wizard | automatic | Generate an interactive bash wizard that walks a human through steps only they can perform. |
-| [writing-for-agents](docs/writing-for-agents.md) | `/writing-for-agents` | Reference for writing the documents agents read — skills, AGENTS.md, and pointed-at docs. |
+| [writing-for-agents](docs/writing-for-agents.md) | automatic | Writing documents for agents. |
 
 <!-- skills:end -->
 

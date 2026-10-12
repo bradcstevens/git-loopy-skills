@@ -261,15 +261,6 @@
     }
   },
   "skills": {
-    "batch-grill-me": {
-      "role": "git-loopy:planning",
-      "model": "claude-opus-5.5",
-      "effort": "medium",
-      "context": "1M",
-      "tier": "long_context",
-      "need": 170832,
-      "need_source": "git-loopy:planning p95 of 5 runs"
-    },
     "capacity": {
       "role": "copilot:task",
       "model": "claude-sonnet-5.5",
@@ -405,6 +396,15 @@
       "need": 209252,
       "need_source": "p95 of 8 /implement runs"
     },
+    "implement-spec": {
+      "role": "git-loopy:implementation",
+      "model": "gpt-6.1-sol",
+      "effort": "medium",
+      "context": "272K",
+      "tier": "default",
+      "need": 214282,
+      "need_source": "git-loopy:implementation p95 of 293 runs"
+    },
     "improve-codebase-architecture": {
       "role": "git-loopy:planning",
       "model": "claude-opus-5.5",
@@ -468,15 +468,6 @@
       "need": 210058,
       "need_source": "copilot:general-purpose p95 of 12 runs"
     },
-    "set-task-models": {
-      "role": "copilot:research",
-      "model": "gpt-6.1-sol",
-      "effort": "medium",
-      "context": "922K",
-      "tier": "long_context",
-      "need": 237887,
-      "need_source": "copilot:research p95 of 18 runs"
-    },
     "model-scorecard": {
       "role": "copilot:task",
       "model": "claude-sonnet-5.5",
@@ -512,6 +503,15 @@
       "tier": "default",
       "need": 70000,
       "need_source": "copilot:task profile estimate"
+    },
+    "pr": {
+      "role": "git-loopy:docs",
+      "model": "claude-sonnet-5.5",
+      "effort": "medium",
+      "context": "200K",
+      "tier": "default",
+      "need": 100997,
+      "need_source": "git-loopy:docs p95 of 9 runs"
     },
     "preset": {
       "role": "git-loopy:chore",
@@ -566,6 +566,24 @@
       "tier": "long_context",
       "need": 480726,
       "need_source": "p95 of 5 /resolving-merge-conflicts runs"
+    },
+    "retro": {
+      "role": "git-loopy:planning",
+      "model": "claude-opus-5.5",
+      "effort": "medium",
+      "context": "1M",
+      "tier": "long_context",
+      "need": 170832,
+      "need_source": "git-loopy:planning p95 of 5 runs"
+    },
+    "set-task-models": {
+      "role": "copilot:research",
+      "model": "gpt-6.1-sol",
+      "effort": "medium",
+      "context": "922K",
+      "tier": "long_context",
+      "need": 237887,
+      "need_source": "copilot:research p95 of 18 runs"
     },
     "setup-git-loopy-skills": {
       "role": "git-loopy:chore",

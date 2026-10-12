@@ -66,7 +66,6 @@ Each git-loopy-skills skill inherits its role's pick and names it in its `SKILL.
 
 | Skill | Role | Model | Effort | Context | Score | Working set | Now |
 |---|---|---|---|---|---|---|---|
-| batch-grill-me | git-loopy:planning | `claude-opus-5.5` | medium | 1M long_context | 70 | 171K (git-loopy:planning p95 of 5 runs) | claude-opus-5.5 medium 1M |
 | capacity | copilot:task | `claude-sonnet-5.5` | low | 200K default | 78 | 70K (copilot:task profile estimate) | claude-sonnet-5.5 low 200K |
 | code-review | copilot:code-review | `claude-opus-5.5` | medium | 1M long_context | 66 | 188K (copilot:code-review p95 of 164 runs) | claude-opus-5.5 medium 1M |
 | codebase-audit | copilot:code-review | `claude-opus-5.5` | medium | 1M long_context | 66 | 188K (copilot:code-review p95 of 164 runs) | claude-opus-5.5 medium 1M |
@@ -82,6 +81,7 @@ Each git-loopy-skills skill inherits its role's pick and names it in its `SKILL.
 | grilling | git-loopy:planning | `claude-opus-5.5` | medium | 1M long_context | 70 | 171K (git-loopy:planning p95 of 5 runs) | claude-opus-5.5 medium 1M |
 | handoff | copilot:task | `claude-sonnet-5.5` | low | 936K long_context | 78 | 512K (p95 of 17 /handoff runs) | claude-sonnet-5.5 low 936K |
 | implement | git-loopy:implementation | `gpt-6.1-sol` | medium | 272K default | 73 | 209K (p95 of 8 /implement runs) | gpt-6.1-sol medium 272K |
+| implement-spec | git-loopy:implementation | `gpt-6.1-sol` | medium | 272K default | 73 | 214K (git-loopy:implementation p95 of 293 runs) | gpt-6.1-sol medium 272K |
 | improve-codebase-architecture | git-loopy:planning | `claude-opus-5.5` | medium | 1M long_context | 70 | 171K (git-loopy:planning p95 of 5 runs) | claude-opus-5.5 medium 1M |
 | jev-ultrafast | copilot:task | `claude-sonnet-5.5` | low | 200K default | 78 | 70K (copilot:task profile estimate) | claude-sonnet-5.5 low 200K |
 | loop-me | git-loopy:planning | `claude-opus-5.5` | medium | 1M long_context | 70 | 171K (git-loopy:planning p95 of 5 runs) | claude-opus-5.5 medium 1M |
@@ -94,12 +94,14 @@ Each git-loopy-skills skill inherits its role's pick and names it in its `SKILL.
 | narrow-react-prop-types | git-loopy:implementation | `gpt-6.1-sol` | medium | 272K default | 73 | 214K (git-loopy:implementation p95 of 293 runs) | gpt-6.1-sol medium 272K |
 | next | copilot:explore | `claude-sonnet-5.5` | low | 936K long_context | 86 | 510K (p95 of 19 /next runs) | claude-sonnet-5.5 low 936K |
 | playwright-cli | copilot:task | `claude-sonnet-5.5` | low | 200K default | 78 | 70K (copilot:task profile estimate) | claude-sonnet-5.5 low 200K |
+| pr | git-loopy:docs | `claude-sonnet-5.5` | medium | 200K default | 83 | 101K (git-loopy:docs p95 of 9 runs) | claude-sonnet-5.5 medium 200K |
 | preset | git-loopy:chore | `claude-sonnet-5.5` | low | 200K default | 78 | 78K (git-loopy:chore p95 of 14 runs) | claude-sonnet-5.5 low 200K |
 | prototype | git-loopy:implementation | `gpt-6.1-sol` | medium | 272K default | 73 | 214K (git-loopy:implementation p95 of 293 runs) | gpt-6.1-sol medium 272K |
 | push | git-loopy:chore | `claude-sonnet-5.5` | low | 200K default | 78 | 78K (git-loopy:chore p95 of 14 runs) | claude-sonnet-5.5 low 200K |
 | release | git-loopy:chore | `claude-sonnet-5.5` | low | 200K default | 78 | 78K (git-loopy:chore p95 of 14 runs) | claude-sonnet-5.5 low 200K |
 | research | copilot:research | `gpt-6.1-sol` | medium | 922K long_context | 76 | 238K (copilot:research p95 of 18 runs) | gpt-6.1-sol medium 922K |
 | resolving-merge-conflicts | git-loopy:implementation | `gpt-6.1-sol` | medium | 922K long_context | 73 | 481K (p95 of 5 /resolving-merge-conflicts runs) | gpt-6.1-sol medium 922K |
+| retro | git-loopy:planning | `claude-opus-5.5` | medium | 1M long_context | 70 | 171K (git-loopy:planning p95 of 5 runs) | claude-opus-5.5 medium 1M |
 | setup-git-loopy-skills | git-loopy:chore | `claude-sonnet-5.5` | low | 200K default | 78 | 78K (git-loopy:chore p95 of 14 runs) | claude-sonnet-5.5 low 200K |
 | show-me | git-loopy:docs | `claude-sonnet-5.5` | medium | 200K default | 83 | 101K (git-loopy:docs p95 of 9 runs) | claude-sonnet-5.5 medium 200K |
 | sync-model-roster | git-loopy:chore | `claude-sonnet-5.5` | low | 200K default | 78 | 78K (git-loopy:chore p95 of 14 runs) | claude-sonnet-5.5 low 200K |
