@@ -1,6 +1,6 @@
 ---
 name: triage
-description: Move issues and external PRs through a state machine of triage roles — categorise, verify, grill if needed, and write agent-ready briefs.
+description: Move issues and external PRs through a state machine of triage roles, categorise, verify, grill if needed, and write agent-ready briefs.
 model: claude-opus-5.5
 effort: medium
 context: 1M
@@ -51,11 +51,11 @@ State transitions: an unlabeled issue normally goes to `needs-triage` first; fro
 
 An issue whose title begins `PRD:` or `Spec:` (case-insensitive) is a **planning document**, not an executable ticket. It never takes `ready-for-agent`:
 
-- **Refuse the label.** Do not apply `ready-for-agent` to such a title — including when the maintainer asks for it directly, and including the quick state override below. Say why, and offer `ready-for-human` instead, the role a planning document belongs in.
-- **Remove it when found.** If the label is already there, take it off (`--remove-label`). Do **not** close the document, and do **not** touch its other labels — it stays open and otherwise exactly as it was.
+- **Refuse the label.** Do not apply `ready-for-agent` to such a title, including when the maintainer asks for it directly, and including the quick state override below. Say why, and offer `ready-for-human` instead, the role a planning document belongs in.
+- **Remove it when found.** If the label is already there, take it off (`--remove-label`). Do **not** close the document, and do **not** touch its other labels: it stays open and otherwise exactly as it was.
 - **Route the work instead.** A planning document is triaged by decomposing it: run `/to-tickets` on it, which publishes one issue per ticket and links each to the document as a native sub-issue.
 
-`ready-for-agent` belongs on a **standalone issue** — one that specifies its own work end to end — or on a **child of a planning document**, which is what `/to-tickets` produces. Never on the planning document itself.
+`ready-for-agent` belongs on a **standalone issue** (one that specifies its own work end to end) or on a **child of a planning document**, which is what `/to-tickets` produces. Never on the planning document itself.
 
 An AFK runner enforces this at pickup regardless of what triage did, so a mislabelled planning document is not merely unworked: it is a permanent candidate that is re-excluded every iteration.
 
@@ -104,23 +104,23 @@ Show counts and a one-line summary per item. Let the maintainer pick.
 
 ## Record the triage outcome
 
-Triage decides what happens to an item next, so the next session — human or agent — should
+Triage decides what happens to an item next, so the next session (human or agent) should
 read that decision from the ticket itself rather than reconstruct it from labels alone.
 
 **Only record once the transition is durable:** apply the state role and post the outcome
-comment from step 5 first — the agent brief, the ready-for-human brief, or the triage notes.
+comment from step 5 first: the agent brief, the ready-for-human brief, or the triage notes.
 That comment *is* the durable evidence a later reader relies on.
 
-- `ready-for-agent` — the agent brief comment says everything a later `/implement` session
+- `ready-for-agent`: the agent brief comment says everything a later `/implement` session
   needs: what to build, the acceptance criteria, and any codebase context gathered during
   triage. Once posted, the item is ready for the natural next step.
-- `ready-for-human` — same brief structure, but note plainly in the comment why this needs a
+- `ready-for-human`: same brief structure, but note plainly in the comment why this needs a
   person (judgment calls, external access, design decisions, manual testing) rather than an
   agent.
-- `needs-info` — the triage notes comment records what's established and what's still needed
+- `needs-info`: the triage notes comment records what's established and what's still needed
   from the reporter. The item returns to `needs-triage` once they reply; there is nothing
   further to record until then.
-- `wontfix` — the close comment already explains why (already implemented, rejected bug,
+- `wontfix`: the close comment already explains why (already implemented, rejected bug,
   rejected enhancement written to `.out-of-scope/`). Closing the ticket is itself the durable
   record; there is no successor to route to.
 
@@ -131,7 +131,7 @@ successor yet.
 
 If the maintainer says "move #42 to ready-for-agent", trust them and apply the role directly. Confirm what you're about to do (role changes, comment, close), then act. Skip grilling. If moving to `ready-for-agent` without a grilling session, ask whether they want to write an agent brief.
 
-The one thing this override does **not** cover is `ready-for-agent` on a `PRD:`- or `Spec:`-titled planning document. Refuse it, explain that a runner excludes the document at pickup anyway, and offer `ready-for-human` plus a `/to-tickets` pass — see [Planning documents are never agent-ready](#planning-documents-are-never-agent-ready).
+The one thing this override does **not** cover is `ready-for-agent` on a `PRD:`- or `Spec:`-titled planning document. Refuse it, explain that a runner excludes the document at pickup anyway, and offer `ready-for-human` plus a `/to-tickets` pass: see [Planning documents are never agent-ready](#planning-documents-are-never-agent-ready).
 
 ## Needs-info template
 
