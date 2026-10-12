@@ -1,0 +1,19 @@
+{
+  "type": "hook.start",
+  "data": {
+    "hookInvocationId": "27c8f81f-a92c-4102-8b3d-7efd21e0c253",
+    "hookType": "subagentStop",
+    "input": {
+      "timestamp": 1787531736813,
+      "cwd": "/Users/bradcstevens/code/github/bradcstevens/git-loopy",
+      "sessionId": "85ca751d-5fad-41ab-8d8e-c679937a2d4e",
+      "transcriptPath": "/Users/bradcstevens/.copilot/session-state/85ca751d-5fad-41ab-8d8e-c679937a2d4e/events.jsonl",
+      "agentName": "code-review",
+      "agentDisplayName": "Code Review Agent",
+      "stopReason": "end_turn"
+    }
+  },
+  "id": "653f760e-7189-4cec-a247-71e104500bb9",
+  "timestamp": "2026-08-24T00:35:36.813Z",
+  "parentId": "0eda2e5a-a1d8-43a2-87a3-079abee13aa8"
+}

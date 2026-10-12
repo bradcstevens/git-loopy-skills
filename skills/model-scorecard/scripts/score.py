@@ -4,6 +4,8 @@
 Reads a run directory holding ``leaderboard.json`` (capture_leaderboard.py),
 ``models-copilot.json`` and ``models-git-loopy.json`` (list_models.py) and
 ``working-sets.json`` (measure_context.py), plus the skill's ``profiles.json``.
+Beside the scorecard it writes ``skill-headers.json``: each skill's role pick and
+fitted context, which `/set-task-models` projects into that skill's SKILL.md header.
 """
 
 from __future__ import annotations
@@ -189,14 +191,28 @@ def rank(role: dict, pool: list[dict], scales, fields, blocked_vendor: str | Non
     return ranked
 
 
+def fit_tier(need: int, default_cap: int | None, long_cap: int | None, ratio: float | None) -> tuple[str, int | None]:
+    """The default tier, unless ``need`` passes its compaction trigger and the model has a long tier."""
+    if default_cap and long_cap and need > (ratio or DEFAULT_COMPACTION_RATIO) * default_cap:
+        return "long_context", long_cap
+    return "default", default_cap
+
+
+def context_size(tokens: int) -> str:
+    """A prompt cap as a skill header writes it: whole millions as ``1M``, otherwise thousands as ``272K``."""
+    thousands = round(tokens / 1000)
+    return f"{thousands // 1000}M" if thousands >= 1000 and thousands % 1000 == 0 else f"{thousands}K"
+
+
 def context_choice(role: dict, pick: dict, working_set: dict | None, ratio: float | None) -> dict:
     if working_set and working_set["n"] >= MIN_SAMPLES:
         need, source = working_set["p95"], f"p95 of {working_set['n']} runs"
     else:
         need, source = role["working_set_k"] * 1000, "profile estimate"
-    tier, cap = "default", pick["default_cap"]
-    if role["context"] == "fit" and cap and need > (ratio or DEFAULT_COMPACTION_RATIO) * cap and pick["long_cap"]:
-        tier, cap = "long_context", pick["long_cap"]
+    if role["context"] == "fit":
+        tier, cap = fit_tier(need, pick["default_cap"], pick["long_cap"], ratio)
+    else:
+        tier, cap = "default", pick["default_cap"]
     return {"tier": tier, "cap": cap, "need": need, "source": source}
 
 
@@ -252,6 +268,81 @@ def recommend(profiles: dict, pools: dict[str, list[dict]], working_sets: dict, 
         if not progressed:
             raise SystemExit(f"unresolvable distinct_vendor_from cycle: {sorted(pending)}")
     return picks
+
+
+def recommend_skills(profiles: dict, picks: dict, working_sets: dict, listing: dict) -> dict:
+    """Each skill's header: its role's pick, with context fitted to the skill's own runs, else its role's.
+
+    A skill runs in a Copilot CLI session, which chooses its own context tier, so every skill takes
+    the fit rule whatever its role's context policy.
+    """
+    ratio = (working_sets.get("compaction") or {}).get("ratio")
+    models = {model["id"]: model for model in listing["models"] if model.get("policy") != "disabled"}
+    measured = working_sets.get("skills") or {}
+    headers = {}
+    for name, role_id in profiles.get("skills", {}).items():
+        if role_id not in picks:
+            raise SystemExit(f"skill {name}: unknown role {role_id!r}")
+        result = picks[role_id]
+        pick, model = result["pick"], models.get(result["pick"]["id"])
+        selectable = model is not None and (
+            pick["effort"] in model["efforts"] if model["efforts"] else pick["effort"] is None
+        )
+        if not selectable:
+            raise SystemExit(f"skill {name}: {role_id} picks {pick['id']} {pick['effort']}, which copilot cannot select")
+        own = measured.get(name)
+        if own and own["n"] >= MIN_SAMPLES:
+            need, source = own["p95"], f"p95 of {own['n']} /{name} runs"
+        else:
+            need, source = result["context"]["need"], f"{role_id} {result['context']['source']}"
+        tier, cap = fit_tier(need, model["default_cap"], model["long_cap"], ratio)
+        if not cap:
+            raise SystemExit(f"skill {name}: copilot lists no prompt cap for {pick['id']}")
+        headers[name] = {
+            "role": role_id, "model": pick["id"], "effort": pick["effort"] or "none", "context": context_size(cap),
+            "tier": tier, "need": need, "need_source": source, "score": pick["score"],
+        }
+    return headers
+
+
+def current_headers(root: Path) -> dict[str, str]:
+    """Each skill's present ``model effort context`` header under ``root``, keyed by its directory name."""
+    now: dict[str, str] = {}
+    for skill_md in sorted(root.rglob("SKILL.md")):
+        if "node_modules" in skill_md.parts:
+            continue
+        try:
+            lines = skill_md.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        if not lines or lines[0] != "---":
+            continue
+        values: dict[str, str] = {}
+        for line in lines[1:]:
+            if line == "---":
+                break
+            key, separator, value = line.partition(":")
+            if separator and not line[:1].isspace():
+                values[key.strip()] = value.strip().strip("'\"")
+        now[skill_md.parent.name] = " ".join(values[k] for k in ("model", "effort", "context") if values.get(k)) or "—"
+    return now
+
+
+def headers_document(skills: dict, listing: dict, meta: dict) -> dict:
+    """The machine-readable skill headers `/set-task-models` projects into each SKILL.md."""
+    return {
+        "schema_version": 1,
+        "generated": meta["generated"],
+        "compaction_ratio": meta["ratio"],
+        "models": {
+            model["id"]: {key: model[key] for key in ("efforts", "default_cap", "long_cap")}
+            for model in listing["models"] if model.get("policy") != "disabled"
+        },
+        "skills": {
+            name: {key: entry[key] for key in ("role", "model", "effort", "context", "tier", "need", "need_source")}
+            for name, entry in sorted(skills.items())
+        },
+    }
 
 
 def _skip_string(text: str, start: int) -> int:
@@ -346,7 +437,7 @@ def _row(role_id: str, result: dict, now: dict) -> str:
     )
 
 
-def render(profiles: dict, picks: dict, meta: dict, now: dict) -> str:
+def render(profiles: dict, picks: dict, meta: dict, now: dict, skills: dict | None = None, skill_now: dict | None = None) -> str:
     fields = profiles["fields"]
     weights = roc_weights(len(fields))
     weight_line = " · ".join(f"{field['label']} {100 * weight:.1f}" for field, weight in zip(fields, weights))
@@ -361,6 +452,11 @@ def render(profiles: dict, picks: dict, meta: dict, now: dict) -> str:
             f"| {entry['task']} | {entry['what']} | {entry['role']} | `{pick['id']}` | "
             f"{pick['effort'] or 'n/a'} | {_k(result['context']['cap'])} {result['context']['tier']} | {pick['score']} |"
         )
+    skill_rows = [
+        f"| {name} | {entry['role']} | `{entry['model']}` | {entry['effort']} | {entry['context']} {entry['tier']} | "
+        f"{entry['score']} | {_k(entry['need'])} ({entry['need_source']}) | {(skill_now or {}).get(name, '—')} |"
+        for name, entry in sorted((skills or {}).items())
+    ]
     evidence_rows = []
     for role_id, role in profiles["roles"].items():
         result = picks[role_id]
@@ -411,6 +507,17 @@ def render(profiles: dict, picks: dict, meta: dict, now: dict) -> str:
         "|---|---|---|---|---|---|---|",
         *sdlc_rows,
         "",
+        "## Skills",
+        "",
+        "Each git-loopy-skills skill inherits its role's pick and names it in its `SKILL.md` header as `model`, "
+        "`effort` and `context`, the settings to choose in `/model` before running it; `/set-task-models` writes the "
+        f"headers. Context fits the skill's own p95 main-session working set once it has {MIN_SAMPLES} local "
+        f"runs, else its role's. **Now** reads each header under `{meta.get('skills_root', 'nothing')}`.",
+        "",
+        "| Skill | Role | Model | Effort | Context | Score | Working set | Now |",
+        "|---|---|---|---|---|---|---|---|",
+        *skill_rows,
+        "",
         "## Evidence per role",
         "",
         "| Role | II band | Benchmarks | Working set | Top three | Why |",
@@ -426,7 +533,8 @@ def render(profiles: dict, picks: dict, meta: dict, now: dict) -> str:
         f"{BAND_CEILING_SLOPE:g} points above the ceiling. The pick is the best-scoring in-band candidate.",
         "- **Speed fields** are normalised across the harness's pool on a log scale; a missing value scores 0.5.",
         "- **Context**: a subagent keeps the default tier unless its p95 working set passes the compaction "
-        "trigger, then takes `long_context`. git-loopy roles use the default tier.",
+        "trigger, then takes `long_context`. git-loopy roles use the default tier. A skill takes the subagent "
+        "rule, because the Copilot CLI session that runs it chooses its own tier.",
         "- Leaderboard latency ranks models; real agent turns think less, so read the speed fields as order, "
         "not seconds.",
         "",
@@ -462,6 +570,13 @@ def main() -> int:
     )
     parser.add_argument("--main-model", help="main session model id; defaults to `model` in the settings file")
     parser.add_argument("--git-loopy", type=Path, help="git-loopy checkout whose config.toml shows current routes")
+    parser.add_argument(
+        "--skills-root",
+        type=Path,
+        default=Path(__file__).resolve().parents[2],
+        help="directory of skills whose SKILL.md headers the Skills table's Now column reads",
+    )
+    parser.add_argument("--headers-out", type=Path, help="skill header picks as JSON; defaults to skill-headers.json beside --out")
     args = parser.parse_args()
 
     load = lambda name: json.loads((args.run_dir / name).read_text())
@@ -472,6 +587,7 @@ def main() -> int:
     settings_main, now, now_sources = current_settings(args.settings, args.git_loopy)
     main_model = args.main_model or settings_main
     picks = recommend(profiles, pools, working_sets, main_model)
+    skills = recommend_skills(profiles, picks, working_sets, listings["copilot-cli"])
 
     for role_id, result in picks.items():
         pick, context = result["pick"], result["context"]
@@ -493,14 +609,20 @@ def main() -> int:
         "gaps": coverage(list(listings.values()), list(pools.values()), leaderboard["models"]),
         "now_sources": {key: value.replace(str(Path.home()), "~") for key, value in now_sources.items()},
         "main_model": main_model,
+        "skills_root": str(args.skills_root).replace(str(Path.home()), "~"),
     }
     args.out.parent.mkdir(parents=True, exist_ok=True)
-    args.out.write_text(render(profiles, picks, meta, now), encoding="utf-8")
+    args.out.write_text(render(profiles, picks, meta, now, skills, current_headers(args.skills_root)), encoding="utf-8")
+    headers_out = args.headers_out or args.out.with_name("skill-headers.json")
+    headers_out.write_text(
+        json.dumps(headers_document(skills, listings["copilot-cli"], meta), indent=2) + "\n", encoding="utf-8"
+    )
     summary = {
         role_id: f"{r['pick']['id']} {r['pick']['effort'] or 'n/a'} {_k(r['context']['cap'])} {r['context']['tier']} score {r['pick']['score']}"
         for role_id, r in picks.items()
     }
     print(json.dumps(summary, indent=1))
+    print(f"skill headers: {len(skills)} skills in {headers_out}")
     return 0
 
 

@@ -3,11 +3,14 @@
 
 import importlib.util
 import json
+import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
-SKILL = Path(__file__).resolve().parents[1] / "skills/model-scorecard"
+REPO = Path(__file__).resolve().parents[1]
+SKILL = REPO / "skills/model-scorecard"
 
 
 def load(name):
@@ -42,6 +45,25 @@ def listing(*models):
 
 
 ROLE = {"harness": "copilot-cli", "band": [46, 52], "benchmarks": ["scicode"], "context": "fit", "working_set_k": 100, "why": "w"}
+
+
+def tracked_skills():
+    """Skill directory names in this repo, minus git-ignored local-only skills."""
+    names = set()
+    for skill_md in (REPO / "skills").rglob("SKILL.md"):
+        relative = f"{skill_md.parent.relative_to(REPO).as_posix()}/"
+        ignored = subprocess.run(["git", "-C", str(REPO), "check-ignore", "-q", relative], capture_output=True)
+        if "node_modules" not in skill_md.parts and ignored.returncode != 0:
+            names.add(skill_md.parent.name)
+    return names
+
+
+def synthetic_picks():
+    pool = scorer.build_candidates([row("Alpha 1 (high)", 53), row("Beta 2 (high)", 47, creator="Vendor B"),
+                                    row("Gamma 3 (low)", 35, creator="Vendor C")],
+                                   listing(("alpha-1", ["high"], "enabled"), ("beta-2", ["high"], "enabled"),
+                                           ("gamma-3", ["low"], "enabled")))
+    return scorer.recommend(PROFILES, {"copilot-cli": pool, "git-loopy": pool}, {"roles": {}}, "alpha-1")
 
 
 class WeightsAndNames(unittest.TestCase):
@@ -133,6 +155,71 @@ class Scoring(unittest.TestCase):
         estimate = scorer.context_choice(ROLE, pick, {"n": 2, "p95": 999999}, 0.8)
         self.assertEqual((estimate["need"], estimate["source"]), (100000, "profile estimate"))
 
+    def test_context_size_writes_whole_millions_as_m(self):
+        sizes = {1_000_000: "1M", 2_000_000: "2M", 922_000: "922K", 272_000: "272K", 1_048_576: "1049K"}
+        self.assertEqual({tokens: scorer.context_size(tokens) for tokens in sizes}, sizes)
+
+
+class SkillWorkingSets(unittest.TestCase):
+    EVENTS = [
+        {"type": "skill.invoked", "data": {"name": "next"}},
+        {"type": "user.message", "data": {"content": "/next"}},
+        {"type": "session.usage_record", "data": {"usage": {"inputTokens": 50_000}}},
+        {"type": "subagent.started", "agentId": "a1", "data": {"agentName": "explore"}},
+        {"type": "session.usage_record", "agentId": "a1", "data": {"usage": {"inputTokens": 90_000}}},
+        {"type": "user.message", "data": {"content": "go ahead"}},
+        {"type": "session.usage_record", "data": {"usage": {"inputTokens": 80_000}}},
+        {"type": "user.message", "data": {"content": "/model gpt-6.1-sol"}},
+        {"type": "session.usage_record", "data": {"usage": {"inputTokens": 85_000}}},
+        {"type": "skill.invoked", "data": {"name": "wayfinder"}},
+        {"type": "user.message", "data": {"content": "/wayfinder continue the map"}},
+        {"type": "session.usage_record", "data": {"usage": {"inputTokens": 120_000}}},
+        {"type": "skill.invoked", "data": {"name": "jev-ultrafast"}},
+        {"type": "session.usage_record", "data": {"usage": {"inputTokens": 150_000}}},
+        {"type": "skill.invoked", "data": {"name": "model-scorecard"}},
+        {"type": "user.message", "data": {"content": "per the results of /model-scorecard, which model?"}},
+        {"type": "session.usage_record", "data": {"usage": {"inputTokens": 170_000}}},
+    ]
+
+    def test_a_run_starts_at_a_confirmed_slash_command_and_ends_at_the_next(self):
+        with tempfile.TemporaryDirectory() as home:
+            session = Path(home) / "session-state" / "s1"
+            session.mkdir(parents=True)
+            (session / "events.jsonl").write_text("".join(json.dumps(e) + "\n" for e in self.EVENTS))
+            peaks, skill_peaks, _ = measure.scan_copilot(Path(home), 10)
+        self.assertEqual(dict(skill_peaks), {"next": [85_000], "wayfinder": [170_000]})
+        self.assertEqual(dict(peaks), {"copilot:explore": [90_000]})
+
+
+class Skills(unittest.TestCase):
+    LISTING = listing(("alpha-1", ["high"], "enabled"), ("beta-2", ["high"], "enabled"), ("gamma-3", ["low"], "enabled"))
+
+    def test_a_skill_inherits_its_role_pick_and_fits_its_own_runs(self):
+        picks = synthetic_picks()
+        profiles = {**PROFILES, "skills": {"plan": "git-loopy:planning", "route": "copilot:explore", "big": "copilot:explore"}}
+        working_sets = {"roles": {}, "compaction": {"ratio": 0.8}, "skills": {
+            "big": {"n": 6, "p50": 1, "p95": 190_000, "max": 1},
+            "route": {"n": 2, "p50": 1, "p95": 999_999, "max": 1},
+        }}
+        skills = scorer.recommend_skills(profiles, picks, working_sets, self.LISTING)
+        for name, role_id in profiles["skills"].items():
+            self.assertEqual((skills[name]["model"], skills[name]["effort"]),
+                             (picks[role_id]["pick"]["id"], picks[role_id]["pick"]["effort"]))
+        self.assertEqual((skills["plan"]["need"], skills["plan"]["context"]), (170_000, "900K"))
+        self.assertEqual((skills["route"]["need"], skills["route"]["context"]), (82_000, "200K"))
+        self.assertEqual((skills["big"]["context"], skills["big"]["need_source"]), ("900K", "p95 of 6 /big runs"))
+
+    def test_an_unknown_role_is_refused(self):
+        with self.assertRaises(SystemExit):
+            scorer.recommend_skills({**PROFILES, "skills": {"x": "copilot:nope"}}, synthetic_picks(), {}, self.LISTING)
+
+    def test_now_reads_each_skill_header(self):
+        with tempfile.TemporaryDirectory() as root:
+            for name, header in {"a": "model: m\neffort: low\ncontext: 1M\n", "b": ""}.items():
+                (Path(root) / name).mkdir()
+                (Path(root) / name / "SKILL.md").write_text(f"---\nname: {name}\ndescription: d\n{header}---\nmodel: body\n")
+            self.assertEqual(scorer.current_headers(Path(root)), {"a": "m low 1M", "b": "—"})
+
 
 class ProfilesAndRender(unittest.TestCase):
     def test_profiles_cover_every_role_once(self):
@@ -149,20 +236,27 @@ class ProfilesAndRender(unittest.TestCase):
             self.assertTrue(dependency in (None, "main") or dependency in roles, role_id)
         self.assertTrue(all(entry["role"] in roles for entry in PROFILES["sdlc"]))
 
-    def test_render_lists_every_role_and_sdlc_task(self):
-        pool = scorer.build_candidates([row("Alpha 1 (high)", 53), row("Beta 2 (high)", 47, creator="Vendor B"),
-                                        row("Gamma 3 (low)", 35, creator="Vendor C")],
-                                       listing(("alpha-1", ["high"], "enabled"), ("beta-2", ["high"], "enabled"),
-                                               ("gamma-3", ["low"], "enabled")))
-        picks = scorer.recommend(PROFILES, {"copilot-cli": pool, "git-loopy": pool}, {"roles": {}}, "alpha-1")
+    def test_profiles_map_every_skill_to_a_role(self):
+        self.assertEqual(set(PROFILES["skills"]), tracked_skills())
+        self.assertTrue(set(PROFILES["skills"].values()) <= set(PROFILES["roles"]))
+
+    def test_render_lists_every_role_sdlc_task_and_skill(self):
+        picks = synthetic_picks()
+        listed = listing(("alpha-1", ["high"], "enabled"), ("beta-2", ["high"], "enabled"), ("gamma-3", ["low"], "enabled"))
+        skills = scorer.recommend_skills(PROFILES, picks, {"roles": {}}, listed)
         meta = {"generated": "now", "page": "p", "captured": "c", "current_models": 3, "rows_matched": 5,
                 "copilot_version": "1", "sdk_version": "2", "ratio": 0.8, "gaps": {"retired": [], "absent": []}}
-        text = scorer.render(PROFILES, picks, meta, {})
+        text = scorer.render(PROFILES, picks, meta, {}, skills, {})
         for role_id in PROFILES["roles"]:
             self.assertIn(f"| {role_id.split(':', 1)[1]} |", text)
         for entry in PROFILES["sdlc"]:
             self.assertIn(entry["task"], text)
+        for name in PROFILES["skills"]:
+            self.assertIn(f"| {name} | {PROFILES['skills'][name]} |", text)
         self.assertNotEqual(picks["copilot:rubber-duck"]["pick"]["vendor"], "Vendor A")
+        document = scorer.headers_document(skills, listed, meta)
+        self.assertEqual(set(document["skills"]), set(PROFILES["skills"]))
+        self.assertEqual(document["models"]["alpha-1"], {"efforts": ["high"], "default_cap": 200000, "long_cap": 900000})
 
     def test_coverage_separates_retired_from_absent(self):
         rows = [row("Alpha 1 (high)", 50), {**row("Old 2 (high)", 40), "deprecated": True}]

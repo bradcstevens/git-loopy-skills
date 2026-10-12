@@ -12,7 +12,7 @@ npx skills update next
 
 ## What it does
 
-`next` is the router over the skills in this repo. It reads the live state of your work and returns a single recommendation: the one action to take now, the skill that performs it, the exact invocation to paste, and the runtime to run it on — model, reasoning effort, and context tier. For a narrowly defined set of **AFK-safe** delivery routes, it can also spawn that recommendation as an in-session subagent.
+`next` is the router over the skills in this repo. It reads the live state of your work and returns a single recommendation: the one action to take now, the skill that performs it, the exact invocation to paste, and the runtime to run it on — the model, reasoning effort, and context window that skill's own header sets. For a narrowly defined set of **AFK-safe** delivery routes, it can also spawn that recommendation as an in-session subagent.
 
 It also replaces `/skill-router`: ask `/next` which skill or flow fits the current
 situation. Its co-installed `SKILL-SELECTION.md` covers interview wrappers, build
@@ -34,11 +34,23 @@ The idea `next` runs on is the **gate** — the first unresolved condition stand
 
 Every recommendation is labelled **HITL** or **AFK-safe** — whether the next action needs your judgement, or is specified tightly enough to be left to run on its own. Blocked actions are still returned, but must name the condition that would make them ready.
 
-## The runtime it sizes
+## The sessions it tracks
 
-A recommendation also names the **runtime** to run it on: `--model`, `--effort`, and `--context`, sized to the demand of the route it picked. Open judgement — grilling, wayfinding, spec writing, hard diagnosis — draws the strongest reasoning model at `xhigh`; ordinary build and review work draws a strong general model at `high`; mechanical, fully specified work draws a fast model at `medium`. An **AFK-safe** action gets one level more effort only when its runtime pair came from the fallback table, because no human is mid-flight to catch a thin pass; configured pairs are already calibrated for AFK-safe runs. `long_context` is reserved for runs that must hold more at once than one default window holds. The flags come out verbatim, so [handoff](./handoff.md) can splice them straight into the background agent it launches.
+Before ranking anything, `next` runs `scripts/sessions.py scan` to see which GitHub Copilot CLI sessions are live in the repository. A session counts as live when its `~/.copilot/session-state/<id>/inuse.<pid>.lock` names a running `copilot` process. The session's `workspace.yaml` places it in the main checkout or in one of its worktrees. The scan reports each worktree with the sessions working in it, along with their names, branches, and any chain targets they hold. An action another session already holds is left to that session.
 
-When the route calls for a fresh session, the recommendation also comes with the whole thing already assembled: a `Command` block holding the prompt in a quoted heredoc and the sized flags spliced into a `copilot --yolo -n "..." --model ... --effort ... --context ... -p "$PROMPT"` invocation. Select it, paste it, and the next session starts — named, so `copilot --yolo --resume="<name>"` finds it again. It carries the same prompt and runtime that [handoff](./handoff.md) launches detached in the background, while this copyable command remains in your terminal.
+Each run appends its scan to the **session log**, `.git-loopy/next/sessions.jsonl` at the repository root. The `.git-loopy/` runtime directory is gitignored and shared by every worktree. Each line records when the scan ran, which session invoked `/next`, and the sessions it saw. The next scan compares against that line, so it reports each session as `new` or `continuing` and lists the ones that have `ended` since. Pass `--no-record` to look without logging.
+
+## The runtime it names
+
+A recommendation also names the **runtime** to run it on, and `next` reads that runtime rather than sizing one. A skill's `SKILL.md` header sets the GitHub Copilot `model`, reasoning `effort`, and `context` window to choose in `/model` before running it. `next` reads the header of the skill it routes to with `scripts/runtime.py`, so a route to a skill whose header sets `gpt-6.1-sol`, `medium`, and `272K` comes back as:
+
+```text
+Runtime: model gpt-6.1-sol, effort medium, context 272K (default)
+```
+
+The tier in parentheses, `default` or `long_context`, is the one that window belongs to. Copilot CLI's `--context` flag and a subagent's context tier take the tier, not the window. `runtime.py` reads it from the model catalog `/model-scorecard` keeps in `references/skill-headers.json`: a window larger than the model's default one is `long_context`. Without that catalog, it falls back to `default`. A route that names no header, such as the built-in `/compact`, reads `Runtime: current session`.
+
+There is no command to run. Pick the runtime in `/model` and paste the prompt into the session the recommendation names, or run [handoff](./handoff.md), which launches the prompt in the background on the same runtime.
 
 ## The chain it can spawn
 
@@ -93,10 +105,10 @@ subagent.
 - You get back exactly one action, with a live target — a linked issue, PR, spec, branch, or the current conversation — and never a menu of possibilities.
 - Fan-out never turns that into a menu either: the chain reaches its ten concurrent worktrees by asking for one recommendation at a time, and names which of the three limits stopped it — the ceiling of ten, no ready action left, or every remaining candidate waiting on a worktree another agent holds.
 - Once the ten are running, the chain keeps itself full: each finished run frees its slot, and the batch of runs that finished since the last turn comes back as one re-entry that refills every one of them while ready work remains.
-- A recommendation that opens a fresh session arrives as a runnable `copilot` command, not as flags you assemble yourself.
+- A recommendation names the model, effort, and context window its routed skill's header sets, and carries no command to run.
 - An AFK-safe recommendation for one of the five allowlisted routes arrives with its in-session
   subagent already running only when `chain.sh plan` returns `spawn`; on `decline`, it remains at
-  the checkpoint boundary as a prompt or a copyable fresh-session command.
+  the checkpoint boundary as a prompt.
 - The recommendation names whether to continue in this context, start a fresh session, or run as a
   subagent, matching the flow's own rules: grill → spec → tickets stays in one context, while the
   chain starts only approved delivery work.

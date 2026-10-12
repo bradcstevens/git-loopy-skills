@@ -164,6 +164,12 @@ sequenceDiagram
 A genuinely small change may skip the middle and go straight from grilling to
 [`implement`](./implement.md).
 
+To build a whole spec in one sitting instead of one ticket per fresh session, invoke
+`/implement-spec` after `/to-tickets`. It treats the tickets as a task graph, fans the ready
+frontier out to background implementer subagents that each run `/tdd` in their own worktree,
+merges each into a single integration branch, then runs `/code-review` over that branch. It is
+user-invoked only; `/next` does not route to it.
+
 After integration, the human may invoke [`/release`](./release.md) to publish one
 release for the unreleased completed batch. Unlike `/push`, which publishes a
 branch, it follows the target project's versioning and release gates. It is a
@@ -193,7 +199,7 @@ sequenceDiagram
         U->>SK: paste the prompt into this conversation
     else Fresh session, you drive
         NX-->>U: one action, HITL or AFK-safe, plus model, effort, context
-        U->>BG: run the copyable copilot command block
+        U->>BG: pick that runtime in /model and paste the prompt
     else AFK-safe allowlisted route
         NX->>NX: chain.sh plan checks the spawn ledger and concurrency
         alt plan returns spawn
@@ -210,7 +216,7 @@ sequenceDiagram
         NX-->>U: one action, HITL or AFK-safe, plus model, effort, context
         U->>HO: /handoff
         HO->>NX: run /next first if it is not the last output
-        HO->>BG: handoff.sh launches a detached session with the same flags
+        HO->>BG: handoff.sh launches a detached session on the same runtime
         BG-->>U: resume by session name
         BG-->>HO: the session exits
         HO->>NX: /next on the state the run left
@@ -261,8 +267,7 @@ sequenceDiagram
     GD->>GD: post the grilled decision as an evidence comment
 ```
 
-`/batch-grill-me` is a standalone variant of the same discipline — it asks the whole frontier at
-once instead of one question at a time, and calls nothing else. `/grill-with-docs` is the only
+`/grill-with-docs` is the only
 member that leaves an evidence comment; a grilling nested inside `/triage` or `/wayfinder` records
 nothing of its own.
 
@@ -531,11 +536,12 @@ These have no workflow edges. Reach for them directly; they neither route onward
 
 | Skill | What it stands alone for |
 | --- | --- |
-| `/batch-grill-me` | Grilling, whole frontier per round instead of one question at a time |
 | `/codebase-audit` | Line-by-line pre-push sweep for junk, dead code, and security holes |
 | `/create-readme` | Write a project README |
 | `/mermaid-diagrams` | Author diagrams in Mermaid |
 | `/playwright-cli` | Drive a browser for testing, screenshots, and extraction |
+| `/pr` | A PR-body template: summary sketch, before/after evidence, merge danger |
+| `/retro` | A retrospective that suggests improvements to the agent's environment, read through `/writing-for-agents` |
 | [`/teach`](./teach.md) | A stateful, multi-session learning workspace |
 | [`/to-questionnaire`](./to-questionnaire.md) | Turn a decision only another person can answer into a document to send |
 | [`/wait-what`](./wait-what.md) | Re-pitch the last message when it did not land |
@@ -553,7 +559,7 @@ These have no workflow edges. Reach for them directly; they neither route onward
 | `next` | `handoff` | routes to | A detached session must outlive the current one |
 | `next` | `setup-git-loopy-skills` | reads config from | `docs/agents/issue-tracker.md` is missing |
 | `handoff` | `next` | routes to | Runs `/next` first if it is not the last output |
-| `handoff` | fresh session | routes to | Launches the sized runtime in the background |
+| `handoff` | fresh session | routes to | Launches the prompt on its runtime in the background |
 | `grilling` | `next` | routes to | At the conclusion of every grilling session |
 | `grill-me` | `grilling` | runs inside | Always — it is a one-line wrapper |
 | `loop-me` | `grilling` | runs inside | Stateful grilling over workflow specs |
@@ -575,6 +581,8 @@ These have no workflow edges. Reach for them directly; they neither route onward
 | `implement` | `codebase-design`, `domain-modeling` | runs inside | Shape or vocabulary questions mid-build |
 | `implement` | `prototype` | runs inside | A tracer bullet needs a concrete answer |
 | `implement` | `code-review` | routes to | The candidate head is committed and pushed |
+| `implement-spec` | `tdd` | runs inside | Each implementer subagent builds its ticket test-first |
+| `implement-spec` | `code-review` | runs inside | Every ticket is merged to the integration branch |
 | `tdd` | `codebase-design` | runs inside | The interface shape is itself in question |
 | `code-review` | `implement` | routes to | Review found defects |
 | `code-review` | `push` | routes to | Review came back clean |

@@ -1,6 +1,9 @@
 ---
 name: handoff
-description: Launch a `/next` recommendation — its prompt and its sized runtime — as a background agent, then watch it to its exit and route on. Use when `/next` routes to `/implement`, when work moves to a fresh session that runs on its own, or when a detached run needs watching to completion.
+description: Launch a `/next` recommendation — its prompt and the runtime its routed skill names — as a background agent, then watch it to its exit and route on. Use when `/next` routes to `/implement`, when work moves to a fresh session that runs on its own, or when a detached run needs watching to completion.
+model: claude-sonnet-5.5
+effort: low
+context: 936K
 ---
 
 A `/next` recommendation is the seed: its prompt and its `Runtime` line are what this skill launches. If that output isn't the last part of this conversation, run `/next` before anything else.
@@ -19,19 +22,21 @@ When the user passed arguments, treat them as a description of what the next ses
 
 ## 2. Launch the session
 
-Run the launcher from the current working directory, by its path beside this file, splicing in the three flags of the `Runtime` line:
+Run the launcher from the current working directory, by its path beside this file, splicing in the model, effort and tier of the `Runtime` line:
 
 ```bash
 <this skill's directory>/handoff.sh \
   --name "<a few bare words drawn from the action>" \
-  --model "<model>" --auto-tier "<efficiency | balance | intelligence>" \
+  --model "<model>" --effort "<effort>" \
   --context "<default | long_context>" \
   --prompt-file "$TMPDIR/handoff-prompt.txt"
 ```
 
-When the runtime explicitly names a reasoning effort instead of an Auto tier,
-pass `--effort "<level>"`; the launcher translates it to Copilot CLI's
-`--reasoning-effort` flag. Use exactly one of `--auto-tier` or `--effort`.
+`--context` takes the tier in the `Runtime` line's parentheses, not its window,
+because Copilot CLI's `--context` accepts only `default` or `long_context`. The
+launcher passes `--effort` on as Copilot CLI's `--reasoning-effort`. A `Runtime`
+of `current session` names none: pass the model, effort and tier this session
+runs on.
 
 Name the session, because a detached session has no terminal to identify it and that name is how the user finds it again.
 
