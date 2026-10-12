@@ -9,7 +9,7 @@ rules for the upstream-sync loop; spec #85 recorded the same decisions for the f
   `.github/upstream-sync.json` lists under `also_in_scope` or maps through `renames`.
 - Out of scope: the rest of `misc/` and `in-progress/`. A spec names them under *Out of Scope*;
   nothing tickets them.
-- Not synced: skills with no upstream counterpart (`release`, `model-fit`, `sync-model-roster`,
+- Not synced: skills with no upstream counterpart (`release`, `set-task-models`, `sync-model-roster`,
   `codebase-audit`, `create-readme`, `mermaid-diagrams`, `playwright-cli`, `jev-ultrafast`, the
   `microsoft-*` skills, `design-control-loop`, `narrow-react-prop-types`, `show-me`, and any later
   local-only skill). `/push` changes only where a ticket says so.

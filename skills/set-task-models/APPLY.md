@@ -110,6 +110,32 @@ If the installed git-loopy resolves to a different checkout or built artifact,
 report that distinction. Update/install it only with explicit authorization; a
 source edit alone does not prove that the installed binary uses the new defaults.
 
+### Skill headers
+
+Every skill in the git-loopy-skills clone names the settings to run it with in
+its `SKILL.md` header: `model` (a Copilot model ID), `effort`, and `context` (the
+prompt cap of the chosen tier, such as `200K` or `1M`). Nothing applies these at
+runtime; they tell whoever starts the session what to select. A skill takes the
+profile of its role. model-scorecard's `profiles.json` `skills` map names the role,
+and its regenerated `references/skill-headers.json` carries each skill's measured
+working set and every selectable model's prompt caps. Context is re-fitted to the
+profile's model by the scorecard's rule: the default tier unless the skill's p95
+working set passes the compaction trigger.
+
+Project this run's decision, review the reported changes, then write them:
+
+```bash
+python3 <skill-dir>/sync_skill_headers.py --skills-repo <clone> --decision <run-dir>/decision.json
+python3 <skill-dir>/sync_skill_headers.py --skills-repo <clone> --decision <run-dir>/decision.json --write
+```
+
+Only those three keys change; every other header line and the body stay
+byte-for-byte, and a git-ignored local skill is left alone. The projection writes
+nothing when a skill has no role in `profiles.json`, or a decided model is
+missing from `skill-headers.json`. Map the skill or rebuild the scorecard, never
+hand-edit a header. The clone's `scripts/validate-skills.sh` requires every
+header.
+
 ## Persistence gate
 
 Recheck hashes immediately before each write and stop on conflicting concurrent
@@ -130,7 +156,8 @@ After applying:
    to avoid incidental lockfile changes. Billable benchmark runs require separate
    authorization.
 4. Compare effective triples across every equivalence group and verify unrelated
-   settings are unchanged. Re-run the projection comparison: it must be a no-op.
+   settings are unchanged. Re-run the projection comparison: it must be a no-op,
+   and `sync_skill_headers.py --check` with the same inputs must exit 0.
 
 If a later write or check fails, report the failure and restore only this run's
 changes when the current content still matches what this run wrote. A newer

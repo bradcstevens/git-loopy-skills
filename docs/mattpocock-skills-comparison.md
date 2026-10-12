@@ -7,8 +7,9 @@ counterpart here. It is organised by the folders upstream sorts its skills into 
 `productivity`, `misc`, `in-progress` and `deprecated`.
 
 **Compared:** the fork at `49dd158` (2026-10-09), level with upstream `main` (release 1.3.1 plus
-unreleased changesets), against this repo at `231919d`. Snapshot taken 2026-10-10; both sides keep
-moving. Short SHAs are upstream commits unless the text says they are this repo's, and
+unreleased changesets), against this repo at `231919d`. Snapshot taken 2026-10-10; `grilling`,
+`implement-spec`, `pr` and `retro` re-compared 2026-10-12, after `batch-grill-me` was removed. Both
+sides keep moving. Short SHAs are upstream commits unless the text says they are this repo's, and
 `mattpocock/skills#N` are upstream pull requests.
 
 ## How to read this
@@ -71,12 +72,12 @@ These are not repeated per skill:
 | Rating | Count | Upstream skills |
 | --- | --- | --- |
 | Identical | 0 | — |
-| Semi-identical | 5 | [codebase-design](#codebase-design), [domain-modeling](#domain-modeling), [grill-me](#grill-me), [to-questionnaire](#to-questionnaire), [loop-me](#loop-me) |
-| Minor differences | 8 | [diagnosing-bugs](#diagnosing-bugs), [improve-codebase-architecture](#improve-codebase-architecture), [tdd](#tdd), [wizard](#wizard), [grilling](#grilling) (as `batch-grill-me`), [teach](#teach), [wait-what](#wait-what), [writing-for-agents](#writing-for-agents) |
-| Several differences | 8 | [code-review](#code-review), [grill-with-docs](#grill-with-docs), [prototype](#prototype), [research](#research), [to-spec](#to-spec), [to-tickets](#to-tickets), [triage](#triage), [wayfinder](#wayfinder) |
+| Semi-identical | 8 | [codebase-design](#codebase-design), [domain-modeling](#domain-modeling), [grill-me](#grill-me), [to-questionnaire](#to-questionnaire), [loop-me](#loop-me), [implement-spec](#implement-spec), [pr](#pr), [retro](#retro) |
+| Minor differences | 7 | [diagnosing-bugs](#diagnosing-bugs), [improve-codebase-architecture](#improve-codebase-architecture), [tdd](#tdd), [wizard](#wizard), [teach](#teach), [wait-what](#wait-what), [writing-for-agents](#writing-for-agents) |
+| Several differences | 9 | [code-review](#code-review), [grill-with-docs](#grill-with-docs), [grilling](#grilling), [prototype](#prototype), [research](#research), [to-spec](#to-spec), [to-tickets](#to-tickets), [triage](#triage), [wayfinder](#wayfinder) |
 | Significant differences | 4 | [ask-matt](#ask-matt) (→ `next`), [implement](#implement), [setup-matt-pocock-skills](#setup-matt-pocock-skills) (→ `setup-git-loopy-skills`), [claude-handoff](#claude-handoff) (→ `handoff`) |
-| Partial overlap | 2 | [pr](#pr) (→ `show-me`), [handoff](#handoff) (→ `handoff`, a different job) |
-| Missing | 11 | implement-spec, retro, git-guardrails-claude-code, migrate-to-shoehorn, scaffold-exercises, setup-pre-commit, chief-of-staff, setup-ts-deep-modules, writing-beats, writing-fragments, writing-shape — see [Missing here](#missing-here) |
+| Partial overlap | 1 | [handoff](#handoff) (→ `handoff`, a different job) |
+| Missing | 9 | git-guardrails-claude-code, migrate-to-shoehorn, scaffold-exercises, setup-pre-commit, chief-of-staff, setup-ts-deep-modules, writing-beats, writing-fragments, writing-shape — see [Missing here](#missing-here) |
 
 Of upstream's 38 skills, 27 have a counterpart here. Two defects in this repo turned up along the
 way: a [`prototype`](#prototype) reference file overwritten by its sibling, and a broken anchor in
@@ -95,12 +96,12 @@ way: a [`prototype`](#prototype) reference file overwritten by its sibling, and 
 | [domain-modeling](#domain-modeling) | `domain-modeling` | Semi-identical | 97% | 97% / 3% | model |
 | [grill-with-docs](#grill-with-docs) | `grill-with-docs` | Several differences | — ¹ | — ¹ | user |
 | [implement](#implement) | `implement` | Significant differences | 20% | 52% / 88% | user → model |
-| implement-spec | — | Missing | | | user |
+| [implement-spec](#implement-spec) | `implement-spec` | Semi-identical | 100% | 100% / 0% | user |
 | [improve-codebase-architecture](#improve-codebase-architecture) | `improve-codebase-architecture` | Minor differences | 97% | 97% / 4% | user |
-| [pr](#pr) | `show-me` (and `push`) | Partial overlap | 72% | 64% / 18% | model |
+| [pr](#pr) | `pr` | Semi-identical | 100% | 100% / 0% | model |
 | [prototype](#prototype) | `prototype` | Several differences | 79% | 100% / 34% | model |
 | [research](#research) | `research` | Several differences | 42% | 99% / 73% | model |
-| retro | — | Missing | | | user |
+| [retro](#retro) | `retro` | Semi-identical | 99% | 99% / 0% | user |
 | [setup-matt-pocock-skills](#setup-matt-pocock-skills) | `setup-git-loopy-skills` | Significant differences | 60% | 93% / 56% | user |
 | [tdd](#tdd) | `tdd` | Minor differences | 98% | 96% / 1% | model |
 | [to-spec](#to-spec) | `to-spec` | Several differences | 78% | 97% / 35% | user → model |
@@ -121,11 +122,11 @@ way: a [`prototype`](#prototype) reference file overwritten by its sibling, and 
   its copy (`9a02742`, "Remove the ask skill in favour of next") and wrote `next` instead: a
   model-invoked router that reads live state (tracker, branch, diff, worktrees), names one action,
   and, when the chain gate allows, reserves and spawns it through `chain.sh` and its helpers. Skill
-  choice lives in `next/SKILL-SELECTION.md`.
-- **Shared:** `next/PHASE-BOUNDARIES.md` is an exact copy of `ask-matt/PHASE-BOUNDARIES.md` at
+  choice lives in `next/references/SKILL-SELECTION.md`.
+- **Shared:** `next/references/PHASE-BOUNDARIES.md` is an exact copy of `ask-matt/PHASE-BOUNDARIES.md` at
   `fa1e322` (2026-08-05); upstream has since only removed its em-dashes.
-- Upstream's router also routes to `implement-spec`, `pr` and `retro`, which have no counterpart
-  here.
+- Upstream's router also routes to `implement-spec`, `pr` and `retro`. All three exist here now,
+  but `next` does not route to them; they are reached by name.
 
 ### `code-review`
 
@@ -199,6 +200,15 @@ from `658d53e` (2026-05-31)
 - **Upstream since:** mattpocock/skills#1196 — fetch a passed ticket reference and state its title
   before starting, and ask if the reference is ambiguous.
 
+### `implement-spec`
+
+**Here:** [`implement-spec`](../skills/implement-spec/SKILL.md) · **Semi-identical** · copy of
+`e484a80` (2026-09-24)
+
+- One word differs: it tells the user to run `/setup-git-loopy-skills` rather than
+  `/setup-matt-pocock-skills`. Same task-graph run: implementer sub-agents per ticket in their own
+  worktrees, a merger sub-agent onto one integration branch, then `code-review`.
+
 ### `improve-codebase-architecture`
 
 **Here:** [`improve-codebase-architecture`](../skills/improve-codebase-architecture/SKILL.md) ·
@@ -211,19 +221,14 @@ from `658d53e` (2026-05-31)
 
 ### `pr`
 
-**Here:** [`show-me`](../skills/show-me/SKILL.md), and in part [`push`](../skills/push/SKILL.md) ·
-**Partial overlap**
+**Here:** [`pr`](../skills/pr/SKILL.md) · **Semi-identical** · copy of `e484a80` (2026-09-24),
+`CREDITS.md` included
 
-- Upstream `pr` (new on 2026-09-17, graduated in 1.3.0) is the shape of a pull request body:
-  **Summary**, the smallest visual that makes the change clear; **Evidence**, before and after,
-  screenshots first and execution output second; **Merge Danger**, a one-way or two-way door plus
-  the blast radius.
-- Its Summary guidance is Dex Horthy's HumanLayer `show-me`, credited in its `CREDITS.md`. `show-me`
-  here is that same HumanLayer skill, imported directly into this repo (`83c1c4f`, 2026-09-14) and
-  model-invoked — hence the 72%. It explains things visually in conversation; it does not write PR
-  bodies.
-- `/push` opens the pull request, but builds the body from the commit range, validation results and
-  issue references, without the Summary / Evidence / Merge Danger shape.
+- The shape of a pull request body: **Summary**, the smallest visual that makes the change clear;
+  **Evidence**, before and after; **Merge Danger**, a one-way or two-way door plus the blast radius.
+  Only the generated model header differs.
+- Its Summary guidance is Dex Horthy's HumanLayer `show-me`, which is also here as its own skill.
+  `/push` still builds its PR body from the commit range rather than this template.
 
 ### `prototype`
 
@@ -252,6 +257,13 @@ from `658d53e` (2026-05-31)
   research invoked on its own ticket commits the findings, posts a resolution comment and closes
   the ticket, or posts partial findings and leaves it open. Then `/to-spec` or `/implement`.
 - **Upstream since:** em-dashes only.
+
+### `retro`
+
+**Here:** [`retro`](../skills/retro/SKILL.md) · **Semi-identical** · copy of `e484a80` (2026-09-24)
+
+- One line differs: the **Files** reference names only `AGENTS.md` where upstream names
+  `CLAUDE.md`/`AGENTS.md`.
 
 ### `setup-matt-pocock-skills`
 
@@ -345,8 +357,7 @@ differences** · forked from `c66bdee` (2026-08-05)
 | Upstream skill | Closest here | Rating | Similarity | Kept / added | Invocation |
 | --- | --- | --- | --- | --- | --- |
 | [grill-me](#grill-me) | `grill-me` | Semi-identical | — ¹ | — ¹ | user |
-| [grilling](#grilling) | `batch-grill-me` | Minor differences | 91% | 84% / 2% | model → user |
-| | `grilling` (same name) | Several differences | 88% | 86% / 11% | model |
+| [grilling](#grilling) | `grilling` | Several differences | 89% | 89% / 11% | model |
 | [handoff](#handoff) | `handoff` (a different job) | Partial overlap | 8% | 33% / 96% | user → model |
 | [teach](#teach) | `teach` | Minor differences | 99% | 97% / 0% | user |
 | [to-questionnaire](#to-questionnaire) | `to-questionnaire` | Semi-identical | 100% | 100% / 0% | user |
@@ -366,20 +377,21 @@ added clause moves the number a long way.
 
 ### `grilling`
 
-**Here:** [`batch-grill-me`](../skills/batch-grill-me/SKILL.md) (closest) and
-[`grilling`](../skills/grilling/SKILL.md) (same name) · both forked from `a4b2009` (2026-07-16)
+**Here:** [`grilling`](../skills/grilling/SKILL.md) · **Several differences** · forked from
+`a4b2009` (2026-07-16)
 
 Upstream interviews in **rounds**. It asks the whole frontier — every question whose prerequisites
 are settled — at once, in a pinned format (`❓ **Q1** - **title**`, the body, then the recommendation
 after `➡️`, with a rule between questions), and words each question so "yes" accepts the
 recommendation.
 
-- **`batch-grill-me` — Minor differences.** Upstream's `grilling` as of the round-by-round rewrite,
-  renamed and made user-invoked. It lacks the pinned question format (`294a2c9` through `85f83d3`)
-  and the "yes accepts" wording (mattpocock/skills#1193).
-- **`grilling` — Several differences.** The same fork, plus "Ask the questions one at a time …
+- **Kept:** the rounds, the frontier, sub-agent fact-finding and the "yes accepts" wording
+  (mattpocock/skills#1193).
+- **Differs here:** it drops the pinned question format, adds "Ask the questions one at a time …
   Asking multiple questions at once is bewildering." — which contradicts the rounds paragraph it
-  keeps — and a hand-off to `/to-spec`. It lacks the same upstream additions.
+  keeps — and ends with a hand-off to `/to-spec`.
+- A user-invoked `batch-grill-me` copy of upstream's round-by-round version used to live here; it
+  was removed.
 
 ### `handoff`
 
@@ -495,9 +507,6 @@ Upstream skills with no counterpart here, or only a partial one — candidates t
 
 | Upstream skill | Folder · invocation | What it does | Nearest thing here | Worth knowing |
 | --- | --- | --- | --- | --- |
-| **implement-spec** | engineering · user | Implements a whole spec in one run: treats its tickets as a task graph, runs implementer sub-agents in their own worktrees across the ready frontier, merges each onto one integration branch through a merger sub-agent, then runs `code-review` | `/implement` works one ticket at a time; the git-loopy runner works `parallel-safe` tickets concurrently, outside this repo | Graduated in 1.3.0; upstream's router offers it as the parallel alternative to `implement` |
-| **retro** | engineering · user | Looks back at a session and proposes changes to the agent's environment, most severe first: navigation pointers, automated checks (a mechanical violation gets a lint rule, pre-commit hook or CI job), coding standards, steering files, tool economy, no-ops, information access | None — `codebase-audit` audits code, not the agent's environment | Upstream's router runs it last in the main flow, after `code-review`, and after a `diagnosing-bugs` fix |
-| **pr** *(partial)* | engineering · model | Shapes a PR body: Summary visual, before/after Evidence, Merge Danger | `show-me` covers the Summary visuals; `/push` opens the PR with a plain body | Could become `/push`'s PR-body format rather than a new skill. HumanLayer also publishes a `visual-pr` plugin |
 | **handoff** *(partial)* | productivity · user | Writes a handoff document for a fresh agent, then stops | `handoff` here launches and watches a background session instead | The name is taken here, so it would need another |
 | **chief-of-staff** | in-progress · user | Pursues a long-running goal in one session by coordinating background sub-agents and suggesting recurring schedules, on two tracks: finish the task, and improve the agents' environment for the next one | `/next` and the chain; `design-control-loop` for scheduled loops | Beta, and unlisted in upstream's README |
 | **setup-ts-deep-modules** | in-progress · user | Wires dependency-cruiser into a TypeScript repo so each package is a deep module, reachable only through its entry points; ships the config | `codebase-design` supplies the vocabulary, not the enforcement | TypeScript only; beta |
@@ -507,7 +516,7 @@ Upstream skills with no counterpart here, or only a partial one — candidates t
 | **git-guardrails-claude-code** | misc · model | Installs Claude Code hooks (`scripts/block-dangerous-git.sh`) that block `push`, `reset --hard`, `clean`, `branch -D` and the like before they run | `setup-git-loopy-skills` writes Copilot CLI hooks, but for chaining, not safety | Claude Code-specific; a port would target `.github/hooks` |
 | **migrate-to-shoehorn** | misc · model | Migrates test files from `as` type assertions to `@total-typescript/shoehorn` | — | TypeScript; niche |
 | **scaffold-exercises** | misc · model | Scaffolds course exercise directories — sections, problems, solutions, explainers — that pass linting | — | Specific to Matt's course tooling |
-| **setup-pre-commit** | misc · model | Sets up Husky pre-commit hooks with lint-staged (Prettier), type checking and tests | — | JS/TS; the kind of guardrail `retro` recommends |
+| **setup-pre-commit** | misc · model | Sets up Husky pre-commit hooks with lint-staged (Prettier), type checking and tests | — | JS/TS; the kind of guardrail `/retro` recommends |
 
 ## Here but not upstream
 

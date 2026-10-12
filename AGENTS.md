@@ -14,6 +14,23 @@ relative to the repository root and resolve their tools through `PATH`.
 | Skill validation and script suites | `scripts/validate-skills.sh` | Any change under `skills/`, `docs/`, `scripts/` or `.github/hooks/`, or edits `.gitignore` |
 | README skill index | `node scripts/build-readme.mjs --check` | Any change that adds, removes, renames or re-describes a skill, changes its invocation mode, adds or removes `docs/<skill>.md`, or edits `scripts/build-readme.mjs`, `.gitignore` or `README.md` |
 
+## Skill headers
+
+Every `SKILL.md` names the GitHub Copilot model, reasoning effort and context size
+to choose in `/model` before running the skill, directly after its `description`:
+
+```yaml
+model: claude-opus-5.5
+effort: medium
+context: 1M
+```
+
+These values are generated, so do not hand-tune them. `skills/model-scorecard/profiles.json`
+maps each skill to the role whose work it is, `/model-scorecard` scores that role and fits
+the context to the skill's measured runs (`references/skill-headers.json`), and `/set-task-models`
+writes the headers with `skills/set-task-models/sync_skill_headers.py`. A new skill needs a
+`skills` entry in `profiles.json` and a header; `scripts/validate-skills.sh` enforces both.
+
 ## Agent skills
 
 ### Issue tracker
