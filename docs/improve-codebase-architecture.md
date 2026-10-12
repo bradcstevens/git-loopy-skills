@@ -37,13 +37,13 @@ Where it is confusable with siblings:
 - For a whole effort too big to hold in one session, use [wayfinder](./wayfinder.md).
 - For "this specific thing is broken," use [diagnosing-bugs](./diagnosing-bugs.md). If that diagnosis finds no good seam to lock the bug down, you can start this survey yourself; diagnosis does not invoke it.
 
-### Prerequisites
+## Prerequisites
 
 None to run it. If `GLOSSARY.md` or ADRs in `docs/adr/` exist, it reads them and uses your domain's own nouns. A candidate then reads as "deepen the Order intake module," not "refactor the FooBarHandler."
 
 It writes in two places. The report goes to `<tmpdir>/architecture-review-<timestamp>.html`, outside the repo. During the grilling loop it adds or sharpens terms in `GLOSSARY.md`, and creates that file if it does not exist. It also offers to record a rejected candidate as an ADR, so a future run does not suggest it again.
 
-### Depth, and the report that hunts for it
+## Depth, and the report that hunts for it
 
 The skill rests on one idea: **depth**. A deep module puts a lot of behaviour behind a small, stable interface. A shallow module exposes its implementation through an interface nearly as wide as the code beneath it. The report looks for three forms of shallowness:
 
@@ -65,11 +65,11 @@ The report ends with a **Top recommendation**, the candidate it would do first. 
 
 Here the report is **dark mode only**: one dark palette for the page, candidate cards, badges and Mermaid diagrams, with no light variant or theme toggle.
 
-### What happens after you pick one
+## What happens after you pick one
 
 When you pick a candidate, a [grilling](./grilling.md) session starts on it. It covers the constraints, what goes behind the seam, which tests survive, and what the deepened interface should look like. The output of that session is a decision, not a refactor diff. At its conclusion the skill calls [next](./next.md) to route the transition. From there the normal flow applies: take the decision into [to-spec](./to-spec.md), then [to-tickets](./to-tickets.md), then [implement](./implement.md).
 
-### Common questions
+## Common questions
 
 **It grilled me for an hour about one idea instead of showing me options. Can I turn that off?**
 
@@ -101,7 +101,7 @@ Rarely, so know that before you start. The skill exists to output findings, so i
 
 **Does it work in Copilot CLI or another harness?**
 
-The pinned exploration step says to spawn a sub-agent without naming a harness-specific tool or agent type. A [harness](https://www.aihero.dev/ai-coding-dictionary/harness) can use its own sub-agent dispatch. It no longer requires Claude Code's `Agent` tool or `subagent_type=Explore`.
+Yes. The exploration step says to spawn a sub-agent without naming a tool or agent type, so any [harness](https://www.aihero.dev/ai-coding-dictionary/harness) can use its own sub-agent dispatch.
 
 **How do I actually implement deep modules in TypeScript?**
 

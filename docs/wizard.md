@@ -31,11 +31,11 @@ Reach for it when the next thing blocking you is a trip through a dashboard:
 
 Don't reach for it to *decide* what to build; for that, [grill-with-docs](./grill-with-docs.md) and [to-spec](./to-spec.md) are the tools.
 
-### Prerequisites
+## Prerequisites
 
 None to generate one. The wizard it writes runs on bash, and uses `gh` when a stage sets a GitHub secret or variable. If `gh` is missing or not authenticated, the run does not fail. That stage shows a warning, and the closing summary tells you what to set by hand.
 
-### Stages
+## Stages
 
 A **stage** is one focused task on one screen. The script clears the terminal between stages, so a stage that overflows the screen loses the part that scrolled away. You author stages in dependency order and set `TOTAL_STAGES`, which drives the progress display.
 
@@ -51,7 +51,7 @@ For each captured value, scoping decides where it goes:
 | Both `.env` and a secret | Local dev and CI both need it |
 | Nowhere | The stage is a pure action: a switch flipped, a plan upgraded |
 
-### The template already solves the UX
+## The template already solves the UX
 
 The [template](../skills/wizard/template.sh) ships the whole experience: stage progress, confirmation gates, cross-platform URL opening including WSL, hidden entry for secrets, idempotent `.env` upserts, `gh secret` / `gh variable` writes, and a closing summary of everything it had to skip. Everything above the `STAGES` marker is a fixed library, identical in every wizard and never hand-edited. Because the library never changes, every wizard behaves the same way. The only work per wizard is to scope the procedure and author its stages.
 
@@ -59,14 +59,14 @@ The pinned template uses Readline for visible input, quotes values when writing 
 
 The agent that writes a wizard never runs it end to end, because the script opens browsers and waits for human input. The agent checks it statically instead: `bash -n`, `shellcheck` where available, and a trace that every value lands where scoping said it would, with every `set_secret` name matching a real `secrets.*` reference in CI. So the first full run is yours.
 
-### Ephemeral by default
+## Ephemeral by default
 
 | What you have | What to do with the script |
 | --- | --- |
 | A one-off migration, a personal setup, a transition you'll never repeat | Save it to a scratch or `scripts/` path, run it, delete it |
 | A setup path the next person on the repo will also need | Commit it and link it from the README, so they run the script instead of re-asking an agent |
 
-### Common questions
+## Common questions
 
 **Do my API keys end up in the model's context?**
 

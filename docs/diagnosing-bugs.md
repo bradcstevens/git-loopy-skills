@@ -33,7 +33,7 @@ Reach for it on the hard ones: a bug you can't solve at first look, an intermitt
 | Asking what would have prevented the bug, once it is fixed | `/retro`, run in the same session |
 | No good seam exists to lock the bug down | [improve-codebase-architecture](./improve-codebase-architecture.md), which you start yourself |
 
-### The tight loop is the skill
+## The tight loop is the skill
 
 Phase 1 gets the most effort because it is the only hard phase. The skill lists ways to build the loop, roughly in order of preference:
 
@@ -52,7 +52,7 @@ Phase 1 gets the most effort because it is the only hard phase. The skill lists 
 
 When the agent cannot build one, the skill tells it to stop and say so, list what it tried, and ask you for [environment](https://www.aihero.dev/ai-coding-dictionary/environment) access, a captured artifact, or permission to add temporary instrumentation. It must not go on to form hypotheses anyway.
 
-### The gates between phases
+## The gates between phases
 
 The phases are gates, not a checklist. The agent cannot enter a phase until a specific condition is true.
 
@@ -68,7 +68,7 @@ Phase 5 has one exception. The agent writes the regression test before the fix, 
 
 If the red was forced by mutating code or a fixture, the agent diffs against a pristine copy to prove the mutation landed before trusting the result.
 
-### Common questions
+## Common questions
 
 **It fires on quick questions where I just wanted a direct answer.**
 This is the most-reported problem with the skill. On GPT-5.6-Sol especially, users report it triggering on a plain description of a problem: "the model triggers the rather formal diagnosing-bugs skill instead. It then goes on to construct a reproduction scenario (often building a mock scenario with limited value) before giving me a response or suggestion. This results in considerable reply delays." Four separate people reported the same problem on [mattpocock/skills#578](https://github.com/mattpocock/skills/issues/578). The accepted fix is to start with a lighter approach and move to the full diagnosis only when the problem needs it, but that change has not shipped at the pin. Invocation behaviour varies by [model](https://www.aihero.dev/ai-coding-dictionary/model) and [harness](https://www.aihero.dev/ai-coding-dictionary/harness). Until the fix ships, say what you want ("just answer this, don't diagnose") or disable model invocation for it.
@@ -103,6 +103,6 @@ v1.0.0 renamed it to `/diagnosing-bugs`. The old name no longer exists. Anything
 
 ## Where it fits
 
-`diagnosing-bugs` is a reach-for-it-anytime standalone. You start it when something is broken, and it ends when the fix and its regression test are in. It keeps no state and needs no prior setup. [next](./next.md) routes "Something's broken" here and owns routing after the fix.
+`diagnosing-bugs` is a reach-for-it-anytime standalone. You start it when something is broken, and it ends when the fix and its regression test are in. It keeps no state and needs no prior setup. [next](./next.md) routes a hard bug that lacks a tight command reproducing it here, and owns routing after the fix.
 
 Two neighbours matter. `/retro` comes after it: once the fix is in, run it in the same session to ask what would have prevented the bug, while the session has more information than it had at the start. `diagnosing-bugs` never invokes `retro` itself, because `retro` is user-invoked. [triage](./triage.md) comes before it for bugs that arrive as raw reports from other people, and does a shallower version of the same first two phases. A missing test seam is recorded as a finding, not an automatic hand-off to [improve-codebase-architecture](./improve-codebase-architecture.md).
