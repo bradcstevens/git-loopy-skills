@@ -44,6 +44,8 @@ Install `/next` alongside this skill before setup. Setup resolves its sibling `n
 
 The committed JSON names a repository-relative resolver, not a machine-specific absolute path. Setup previews that exact JSON for approval and rewrites the same files on re-runs rather than adding duplicates. The resolver finds the installed chain at run time. Each clone should run setup after installing the skills; repositories configured before `chain.sh` moved into `next/scripts/` need to re-run it.
 
+The helper and chain script record ledger lock owner start times in UTC, regardless of the machine's timezone. Re-run setup after updating the skills to refresh the copied helper in existing consumer repos; updating the installed skill alone does not replace that copy.
+
 > Copilot silently skips repository hooks in folders outside its `trustedFolders` setting. Add the repository path (or an appropriate parent) to that setting before relying on the chain; otherwise a fresh clone can appear to have a broken trigger with no error.
 
 ## The three decisions
