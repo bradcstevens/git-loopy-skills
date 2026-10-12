@@ -2,7 +2,7 @@
 
 The architectural review is rendered as a single self-contained HTML file in the OS temp directory. Tailwind and Mermaid both come from CDNs. Mermaid handles graph-shaped diagrams reliably; hand-built divs and inline SVG handle the more editorial visuals (mass diagrams, cross-sections). Mix the two: don't lean on Mermaid for everything, it'll start to look generic.
 
-The report is **dark mode only**. There is no light theme and no theme toggle â€” one palette, tuned for a dark background.
+The report is **dark mode only**. Use one palette tuned for a dark background, with no light theme or theme toggle.
 
 ## Scaffold
 
@@ -12,7 +12,7 @@ The report is **dark mode only**. There is no light theme and no theme toggle â€
   <head>
     <meta charset="utf-8" />
     <meta name="color-scheme" content="dark" />
-    <title>Architecture review â€” {{repo name}}</title>
+    <title>Architecture review for {{repo name}}</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script type="module">
       import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
@@ -46,7 +46,7 @@ The report is **dark mode only**. There is no light theme and no theme toggle â€
       .seam { stroke-dasharray: 4 4; stroke: #64748b; }
       .leak { stroke: #f87171; }
       .deep { background: linear-gradient(135deg, #1e293b, #0f172a); }
-      /* Mermaid injects its own label colours â€” force them onto the dark palette. */
+      /* Keep Mermaid's injected label colours on the dark palette. */
       .mermaid .nodeLabel, .mermaid .edgeLabel { color: #e2e8f0; fill: #e2e8f0; }
       .mermaid .edgeLabel rect { fill: #0b1120; }
     </style>
