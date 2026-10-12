@@ -232,6 +232,88 @@ if [ "$(TZ=America/Denver python3 "$REPO/skills/next/scripts/claim-recovery.py" 
   err "claim recovery treated a live parent as gone after a timezone change"
 fi
 
+# agentStop and chain.sh must agree on live lock owners even outside UTC.
+if ! TZ=America/Denver python3 - "$REPO" "$tmp_dir" <<'PY'
+import contextlib
+import importlib.util
+import io
+import json
+import os
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import time
+from unittest.mock import patch
+
+repo = Path(sys.argv[1])
+helper_path = repo / "skills/setup-git-loopy-skills/git-loopy-agent-stop.py"
+recovery_path = repo / "skills/next/scripts/claim-recovery.py"
+utc_env = {**os.environ, "TZ": "UTC"}
+ps_command = ["ps", "-o", "lstart=", "-p", str(os.getpid())]
+utc_start = " ".join(subprocess.check_output(ps_command, text=True, env=utc_env).split())
+local_start = " ".join(subprocess.check_output(ps_command, text=True).split())
+assert local_start != utc_start, "regression must run with a genuinely non-UTC ps clock"
+
+with tempfile.TemporaryDirectory(dir=sys.argv[2]) as directory:
+    root = Path(directory)
+    subprocess.run(["git", "init", "--quiet", directory], check=True)
+    ledger_path = root / ".git-loopy/subagents.jsonl"
+    ledger_path.parent.mkdir()
+    ledger_before = json.dumps({"target": "issue-utc-lock", "finish_time": "2026-10-11T00:00:00Z"}) + "\n"
+    ledger_path.write_text(ledger_before, encoding="utf-8")
+    lock_dir = Path(str(ledger_path) + ".lock")
+    lock_dir.mkdir()
+    owner_path = lock_dir / "pid"
+    owner_before = f"{os.getpid()}\t{utc_start}\n"
+    owner_path.write_text(owner_before, encoding="utf-8")
+
+    started = time.monotonic()
+    result = subprocess.run(
+        [sys.executable, str(helper_path)],
+        input=json.dumps({"cwd": directory}),
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=10,
+    )
+    elapsed = time.monotonic() - started
+    assert json.loads(result.stdout) == {"decision": "allow", "reason": "ledger-busy"}, result.stdout
+    assert elapsed >= 0.9, f"helper did not wait for its busy-lock deadline: {elapsed}"
+    assert owner_path.read_text(encoding="utf-8") == owner_before, "helper replaced a live UTC owner"
+    assert ledger_path.read_text(encoding="utf-8") == ledger_before, "helper changed a locked ledger"
+    owner_path.unlink()
+    lock_dir.rmdir()
+
+    # Load the helper's actual functions without running a ledger decision.
+    spec = importlib.util.spec_from_file_location("agent_stop", helper_path)
+    helper = importlib.util.module_from_spec(spec)
+    with patch("sys.stdin", io.StringIO("{}")), contextlib.redirect_stdout(io.StringIO()):
+        try:
+            spec.loader.exec_module(helper)
+        except SystemExit as exit_result:
+            assert exit_result.code == 0, exit_result.code
+
+    assert helper.acquire_lock(str(lock_dir)), "helper could not acquire an available lock"
+    try:
+        pid_text, owner_start = owner_path.read_text(encoding="utf-8").rstrip("\n").split("\t", 1)
+        assert pid_text == str(os.getpid()), pid_text
+        assert owner_start == utc_start, (owner_start, utc_start)
+        assert not helper.lock_is_stale(str(lock_dir)), "helper rejected its own live lock"
+        gone = subprocess.check_output(
+            [sys.executable, str(recovery_path), "owner-gone", pid_text, owner_start],
+            text=True,
+        ).strip()
+        assert gone == "false", f"chain recovery rejected the helper's live lock: {gone}"
+        assert os.environ["TZ"] == "America/Denver", "helper changed its caller's timezone"
+    finally:
+        helper.release_lock(str(lock_dir))
+print("ok: agentStop ledger locks use UTC under America/Denver")
+PY
+then
+  err "agentStop and chain recovery disagreed on a live lock under a non-UTC clock"
+fi
+
 claim_ps_bin="$tmp_dir/claim-ps-bin"
 mkdir -p "$claim_ps_bin"
 cat > "$claim_ps_bin/ps" <<'SH'

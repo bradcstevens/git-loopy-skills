@@ -471,7 +471,7 @@ assert_ledger_intact "the orphaned replacement cleanup"
 write_fixture_ledger
 cp "$fixture_ledger" "$fixture_ledger.before-busy"
 mkdir "$fixture_ledger.lock"
-printf '%s\t%s\n' "$$" "$(ps -o lstart= -p $$ | xargs)" > "$fixture_ledger.lock/pid"
+printf '%s\t%s\n' "$$" "$(TZ=UTC ps -o lstart= -p $$ | xargs)" > "$fixture_ledger.lock/pid"
 assert_decision "a held ledger lock" "$(reenter false)" \
   '{"decision":"allow","reason":"ledger-busy"}'
 if ! cmp -s "$fixture_ledger.before-busy" "$fixture_ledger"; then
