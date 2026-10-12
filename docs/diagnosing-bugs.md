@@ -74,7 +74,7 @@ If the red was forced by mutating code or a fixture, the agent diffs against a p
 This is the most-reported problem with the skill. On GPT-5.6-Sol especially, users report it triggering on a plain description of a problem: "the model triggers the rather formal diagnosing-bugs skill instead. It then goes on to construct a reproduction scenario (often building a mock scenario with limited value) before giving me a response or suggestion. This results in considerable reply delays." Four separate people reported the same problem on [mattpocock/skills#578](https://github.com/mattpocock/skills/issues/578). The accepted fix is to start with a lighter approach and move to the full diagnosis only when the problem needs it, but that change has not shipped at the pin. Invocation behaviour varies by [model](https://www.aihero.dev/ai-coding-dictionary/model) and [harness](https://www.aihero.dev/ai-coding-dictionary/harness). Until the fix ships, say what you want ("just answer this, don't diagnose") or disable model invocation for it.
 
 **Can I point it at a codebase and ask where the performance problems are?**
-No. It diagnoses one failure you can already name. Its performance branch is for a regression with a symptom (establish a baseline measurement, then bisect, measure first and fix second), not for a proactive sweep. A skill for the proactive version was [proposed and closed](https://github.com/mattpocock/skills/issues/431); no skill does it at the pin.
+No. It diagnoses one failure you can already name. Its performance branch is for a regression with a symptom (establish a baseline measurement, then bisect, measure first and fix second), not for a proactive sweep. A skill for the proactive version was [proposed and closed](https://github.com/mattpocock/skills/issues/431) upstream, which has no skill for it at the pin.
 
 **Does it stop and ask me before it writes the fix?**
 No. Only Phase 3 has a human checkpoint: the ranked hypothesis list is shown to you before any is tested, and the agent continues with its own ranking if you are away. There is no gate between instrumentation and the fix, so the agent can start writing code before you have agreed with its root cause. [mattpocock/skills#124](https://github.com/mattpocock/skills/issues/124) asks for that gate. If you want it, say so when you invoke the skill.
@@ -89,7 +89,7 @@ The pinned skill explicitly requires redaction before showing commands, outputs 
 Upstream reports a Snyk flag on the shipped shell script and instructions to run it and curl a dev server. That is not itself proof of an exploit. The bundled `hitl-loop.template.sh` prompts for human input. Inspect what the generated loop will execute and where captured output will go rather than treating a static flag as a diagnosis.
 
 **What happened to `/diagnose`?**
-v1.0.0 renamed it to `/diagnosing-bugs`. The old name no longer exists. Anything of yours that chains `/diagnose` (a wrapper skill, a saved prompt) needs updating.
+Upstream's v1.0.0 renamed it to `/diagnosing-bugs`. This repo has only ever shipped `/diagnosing-bugs`, so `/diagnose` exists in neither. If you came from upstream, anything of yours that chains `/diagnose` (a wrapper skill, a saved prompt) needs updating.
 
 ## It's working if
 

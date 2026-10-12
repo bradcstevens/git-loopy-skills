@@ -67,7 +67,7 @@ Here the report is **dark mode only**: one dark palette for the page, candidate 
 
 ## What happens after you pick one
 
-When you pick a candidate, a [grilling](./grilling.md) session starts on it. It covers the constraints, what goes behind the seam, which tests survive, and what the deepened interface should look like. The output of that session is a decision, not a refactor diff. At its conclusion the skill calls [next](./next.md) to route the transition. From there the normal flow applies: take the decision into [to-spec](./to-spec.md), then [to-tickets](./to-tickets.md), then [implement](./implement.md).
+When you pick a candidate, a [grilling](./grilling.md) session starts on it. It covers the constraints, what goes behind the seam, which tests survive, and what the deepened interface should look like. The output of that session is a decision, not a refactor diff. At its conclusion the skill calls [next](./next.md), which takes the decision into [grill-with-docs](./grill-with-docs.md) as an idea. From there the normal flow applies: [to-spec](./to-spec.md), then [to-tickets](./to-tickets.md), then [implement](./implement.md).
 
 ## Common questions
 
@@ -81,7 +81,7 @@ The report loads Tailwind and Mermaid from CDNs, so it needs network access when
 
 **It gave me twelve candidates. Do I work through them in the same session or start a new one?**
 
-Use one candidate per session. If you work through several in one conversation, the [context window](https://www.aihero.dev/ai-coding-dictionary/context-window) fills with the report, the grilling, the domain-model edits and the code changes all at once. The report is only a temp file, so carry the candidate forward, not the file. Pick one, grill it, and take the decision into `/to-spec`. Turn the rest into [tickets](https://www.aihero.dev/ai-coding-dictionary/ticket) that you can pick up separately later. Put the chosen improvement into a spec instead of going straight to implementation.
+Use one candidate per session. If you work through several in one conversation, the [context window](https://www.aihero.dev/ai-coding-dictionary/context-window) fills with the report, the grilling, the domain-model edits and the code changes all at once. The report is only a temp file, so carry the candidate forward, not the file. Pick one, grill it, and let `/next` take the decision into `/grill-with-docs`. Turn the rest into [tickets](https://www.aihero.dev/ai-coding-dictionary/ticket) that you can pick up separately later. Put the chosen improvement into a spec instead of going straight to implementation.
 
 **How should I prompt it?**
 
@@ -124,4 +124,4 @@ The skill does not ship a good answer. People often ask for a `TYPESCRIPT.md` wi
 - [grilling](./grilling.md) walks the decision tree after you choose a candidate.
 - [domain-modeling](./domain-modeling.md) keeps `GLOSSARY.md` and the ADRs current as you make the decision.
 
-Its output is an idea, which goes back into the main build flow at [grill-with-docs](./grill-with-docs.md) or [to-spec](./to-spec.md). Its counterpart at the end of the main flow is `/retro`. This skill improves the code the agent works in, and `retro` improves the environment around it (checks, standards, steering files) after a build. Here, [next](./next.md) owns the closing transition after grilling, as well as routing when you are unsure which skill fits.
+Its output is an idea, which goes back into the main build flow at [grill-with-docs](./grill-with-docs.md). Its counterpart at the end of the main flow is `/retro`. This skill improves the code the agent works in, and `retro` improves the environment around it (checks, standards, steering files) after a build. Here, [next](./next.md) owns the closing transition after grilling, as well as routing when you are unsure which skill fits.

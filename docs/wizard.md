@@ -74,11 +74,11 @@ No. The agent writes a script; it doesn't run it end to end. You run the script 
 
 **Can I go back and fix a value I mistyped?**
 
-Not mid-run. There is no back button. The stages run forward, and a wrong answer on stage 3 means Ctrl-C and re-run. Re-running is cheap, because any value already written to `.env` is offered back as a default, so you press Enter through the stages you got right and retype only the wrong one. Users asked for this in launch week: "loved it! One thing though, is there a way to go back and correct what you've entered?"
+Not mid-run. There is no back button. The stages run forward, and a wrong answer on stage 3 means Ctrl-C and re-run. Re-running is cheap, because any value already written to `.env` is offered back as a default, so you press Enter through the stages you got right and retype only the wrong one. Upstream users asked for this in its launch week: "loved it! One thing though, is there a way to go back and correct what you've entered?"
 
 **Does it know what I've already set up?**
 
-Partly, and less than the launch reactions assumed. It reads the repo before it asks (your `.env` files, `docker-compose`, framework config, the `secrets.*` references in CI), so it scopes to values that are missing rather than starting from zero the way a README does. What it doesn't do is check the third-party service. If a key exists in your `.env` the wizard offers it back and Enter keeps it; if you already created the Stripe account but never saved the key, the wizard still sends you to the dashboard for it.
+Partly, and less than upstream's launch reactions assumed. It reads the repo before it asks (your `.env` files, `docker-compose`, framework config, the `secrets.*` references in CI), so it scopes to values that are missing rather than starting from zero the way a README does. What it doesn't do is check the third-party service. If a key exists in your `.env` the wizard offers it back and Enter keeps it; if you already created the Stripe account but never saved the key, the wizard still sends you to the dashboard for it.
 
 **Where does it sit in the workflow, after grilling and the spec?**
 
@@ -90,7 +90,7 @@ The script does. It's plain bash, and it runs the same whatever [harness](https:
 
 **Didn't this used to be user-invoked?**
 
-It did. It's now model-invoked, so the agent reaches for it unprompted when it hits a step you have to take. Nothing you could do before stopped working. Model invocation lets the agent call the skill as well as you, so `/wizard` behaves as it did. The change fixes one failure. Before, an agent that hit a credentials wall mid-build dumped six numbered steps into the chat for you to follow by hand. Now it writes a wizard.
+It did upstream, where it started user-invoked and was later made model-invoked. Here it has been model-invoked since it was added, so the agent reaches for it unprompted when it hits a step you have to take, and you can still type `/wizard`. Upstream's switch fixed one failure. Before, an agent that hit a credentials wall mid-build dumped six numbered steps into the chat for you to follow by hand. Now it writes a wizard.
 
 **It used to be in `in-progress/`. Where is it now?**
 
