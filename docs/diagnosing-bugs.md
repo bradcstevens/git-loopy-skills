@@ -30,7 +30,7 @@ Reach for it on the hard ones: a bug you can't solve at first look, an intermitt
 | A raw bug report from someone else, not yet confirmed or written up | [triage](./triage.md) first |
 | Throwaway code to answer a design question, not chase a defect | [prototype](./prototype.md) |
 | Building a planned behaviour test-first | [tdd](./tdd.md) |
-| Asking what would have prevented the bug, once it is fixed | Upstream's `/retro`, planned here in [bradcstevens/git-loopy-skills#97](https://github.com/bradcstevens/git-loopy-skills/issues/97) |
+| Asking what would have prevented the bug, once it is fixed | `/retro`, run in the same session |
 | No good seam exists to lock the bug down | [improve-codebase-architecture](./improve-codebase-architecture.md), which you start yourself |
 
 ### The tight loop is the skill
@@ -105,4 +105,4 @@ v1.0.0 renamed it to `/diagnosing-bugs`. The old name no longer exists. Anything
 
 `diagnosing-bugs` is a reach-for-it-anytime standalone. You start it when something is broken, and it ends when the fix and its regression test are in. It keeps no state and needs no prior setup. [next](./next.md) routes "Something's broken" here and owns routing after the fix.
 
-Two neighbours matter. Upstream's `/retro` asks what would have prevented the bug, in the same session after the fix; its local addition is tracked in [bradcstevens/git-loopy-skills#97](https://github.com/bradcstevens/git-loopy-skills/issues/97). `diagnosing-bugs` never invokes it itself. [triage](./triage.md) comes before diagnosis for bugs that arrive as raw reports from other people, and does a shallower version of the same first two phases. A missing test seam is recorded as a finding, not an automatic hand-off to [improve-codebase-architecture](./improve-codebase-architecture.md).
+Two neighbours matter. `/retro` comes after it: once the fix is in, run it in the same session to ask what would have prevented the bug, while the session has more information than it had at the start. `diagnosing-bugs` never invokes `retro` itself, because `retro` is user-invoked. [triage](./triage.md) comes before it for bugs that arrive as raw reports from other people, and does a shallower version of the same first two phases. A missing test seam is recorded as a finding, not an automatic hand-off to [improve-codebase-architecture](./improve-codebase-architecture.md).
