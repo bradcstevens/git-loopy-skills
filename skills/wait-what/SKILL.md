@@ -4,7 +4,7 @@ description: Stop — that last message did not land, so re-pitch it.
 model: claude-sonnet-5.5
 effort: medium
 context: 200K
-disable-model-invocation: true
+disable-model-invocation: false
 ---
 
 Wait — I don't understand where you've got to here. Re-pitch that: give me a little bit of context, talk in ASD-STE100 Simplified Technical English, and use the ubiquitous language from `CONTEXT.md`.

@@ -1,7 +1,7 @@
 ---
 name: implement-spec
 description: "Implement the result of /to-spec and /to-tickets in code."
-model: gpt-6.1-sol
+model: gpt-6-astra
 effort: medium
 context: 272K
 disable-model-invocation: true

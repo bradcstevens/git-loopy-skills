@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "generated": "2026-10-11T19:25+00:00",
+  "generated": "2026-10-12T22:59+00:00",
   "compaction_ratio": 0.805,
   "models": {
     "claude-haiku-4.5": {
@@ -274,19 +274,19 @@
       "role": "copilot:code-review",
       "model": "claude-opus-5.5",
       "effort": "medium",
-      "context": "1M",
-      "tier": "long_context",
-      "need": 188056,
-      "need_source": "copilot:code-review p95 of 164 runs"
+      "context": "200K",
+      "tier": "default",
+      "need": 88752,
+      "need_source": "copilot:code-review p95 of 231 runs"
     },
     "codebase-audit": {
       "role": "copilot:code-review",
       "model": "claude-opus-5.5",
       "effort": "medium",
-      "context": "1M",
-      "tier": "long_context",
-      "need": 188056,
-      "need_source": "copilot:code-review p95 of 164 runs"
+      "context": "200K",
+      "tier": "default",
+      "need": 88752,
+      "need_source": "copilot:code-review p95 of 231 runs"
     },
     "codebase-design": {
       "role": "git-loopy:planning",
@@ -366,8 +366,8 @@
       "effort": "medium",
       "context": "1M",
       "tier": "long_context",
-      "need": 170832,
-      "need_source": "git-loopy:planning p95 of 5 runs"
+      "need": 330092,
+      "need_source": "p95 of 6 /grill-with-docs runs"
     },
     "grilling": {
       "role": "git-loopy:planning",
@@ -384,21 +384,21 @@
       "effort": "low",
       "context": "936K",
       "tier": "long_context",
-      "need": 511625,
-      "need_source": "p95 of 17 /handoff runs"
+      "need": 463150,
+      "need_source": "p95 of 9 /handoff runs"
     },
     "implement": {
       "role": "git-loopy:implementation",
-      "model": "gpt-6.1-sol",
+      "model": "gpt-6-astra",
       "effort": "medium",
-      "context": "272K",
-      "tier": "default",
-      "need": 209252,
-      "need_source": "p95 of 8 /implement runs"
+      "context": "1050K",
+      "tier": "long_context",
+      "need": 447740,
+      "need_source": "p95 of 10 /implement runs"
     },
     "implement-spec": {
       "role": "git-loopy:implementation",
-      "model": "gpt-6.1-sol",
+      "model": "gpt-6-astra",
       "effort": "medium",
       "context": "272K",
       "tier": "default",
@@ -443,30 +443,30 @@
     },
     "microsoft-code-reference": {
       "role": "copilot:research",
-      "model": "gpt-6.1-sol",
+      "model": "gpt-6-astra",
       "effort": "medium",
-      "context": "922K",
+      "context": "1050K",
       "tier": "long_context",
-      "need": 237887,
-      "need_source": "copilot:research p95 of 18 runs"
+      "need": 233000,
+      "need_source": "copilot:research profile estimate"
     },
     "microsoft-docs": {
       "role": "copilot:research",
-      "model": "gpt-6.1-sol",
+      "model": "gpt-6-astra",
       "effort": "medium",
-      "context": "922K",
+      "context": "1050K",
       "tier": "long_context",
-      "need": 237887,
-      "need_source": "copilot:research p95 of 18 runs"
+      "need": 233000,
+      "need_source": "copilot:research profile estimate"
     },
     "microsoft-foundry": {
       "role": "copilot:general-purpose",
-      "model": "gpt-6.1-sol",
+      "model": "gpt-6-astra",
       "effort": "medium",
       "context": "272K",
       "tier": "default",
-      "need": 210058,
-      "need_source": "copilot:general-purpose p95 of 12 runs"
+      "need": 143879,
+      "need_source": "copilot:general-purpose p95 of 159 runs"
     },
     "model-scorecard": {
       "role": "copilot:task",
@@ -479,7 +479,7 @@
     },
     "narrow-react-prop-types": {
       "role": "git-loopy:implementation",
-      "model": "gpt-6.1-sol",
+      "model": "gpt-6-astra",
       "effort": "medium",
       "context": "272K",
       "tier": "default",
@@ -492,7 +492,7 @@
       "effort": "low",
       "context": "936K",
       "tier": "long_context",
-      "need": 509704,
+      "need": 281656,
       "need_source": "p95 of 19 /next runs"
     },
     "playwright-cli": {
@@ -524,7 +524,7 @@
     },
     "prototype": {
       "role": "git-loopy:implementation",
-      "model": "gpt-6.1-sol",
+      "model": "gpt-6-astra",
       "effort": "medium",
       "context": "272K",
       "tier": "default",
@@ -551,21 +551,21 @@
     },
     "research": {
       "role": "copilot:research",
-      "model": "gpt-6.1-sol",
+      "model": "gpt-6-astra",
       "effort": "medium",
-      "context": "922K",
+      "context": "1050K",
       "tier": "long_context",
-      "need": 237887,
-      "need_source": "copilot:research p95 of 18 runs"
+      "need": 233000,
+      "need_source": "copilot:research profile estimate"
     },
     "resolving-merge-conflicts": {
       "role": "git-loopy:implementation",
-      "model": "gpt-6.1-sol",
+      "model": "gpt-6-astra",
       "effort": "medium",
-      "context": "922K",
+      "context": "1050K",
       "tier": "long_context",
-      "need": 480726,
-      "need_source": "p95 of 5 /resolving-merge-conflicts runs"
+      "need": 601065,
+      "need_source": "p95 of 6 /resolving-merge-conflicts runs"
     },
     "retro": {
       "role": "git-loopy:planning",
@@ -578,12 +578,12 @@
     },
     "set-task-models": {
       "role": "copilot:research",
-      "model": "gpt-6.1-sol",
+      "model": "gpt-6-astra",
       "effort": "medium",
-      "context": "922K",
+      "context": "1050K",
       "tier": "long_context",
-      "need": 237887,
-      "need_source": "copilot:research p95 of 18 runs"
+      "need": 233000,
+      "need_source": "copilot:research profile estimate"
     },
     "setup-git-loopy-skills": {
       "role": "git-loopy:chore",
@@ -614,7 +614,7 @@
     },
     "tdd": {
       "role": "git-loopy:test",
-      "model": "gpt-6.1-sol",
+      "model": "gpt-6-astra",
       "effort": "medium",
       "context": "272K",
       "tier": "default",
@@ -681,12 +681,12 @@
       "effort": "medium",
       "context": "1M",
       "tier": "long_context",
-      "need": 221399,
-      "need_source": "p95 of 9 /wayfinder runs"
+      "need": 282119,
+      "need_source": "p95 of 17 /wayfinder runs"
     },
     "wizard": {
       "role": "git-loopy:implementation",
-      "model": "gpt-6.1-sol",
+      "model": "gpt-6-astra",
       "effort": "medium",
       "context": "272K",
       "tier": "default",
@@ -697,10 +697,10 @@
       "role": "git-loopy:docs",
       "model": "claude-sonnet-5.5",
       "effort": "medium",
-      "context": "936K",
-      "tier": "long_context",
-      "need": 434046,
-      "need_source": "p95 of 10 /writing-for-agents runs"
+      "context": "200K",
+      "tier": "default",
+      "need": 100997,
+      "need_source": "git-loopy:docs p95 of 9 runs"
     }
   }
 }
