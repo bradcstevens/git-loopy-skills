@@ -27,13 +27,16 @@ the remaining smart zone. At a phase boundary where it no longer fits, apply
 | Desired outcome | Recommend | Scope |
 | --- | --- | --- |
 | Design and build a recurring agentic loop to move a codebase property toward a target | `/design-control-loop` | Interview on the set point and scope, then build and validate the locally runnable loop and its workflow. |
+| Build a whole published spec in one run, its ticket frontier in parallel on one integration branch | `/implement-spec` | User-invoked alternative to ticket-by-ticket `/implement`; ends with `/code-review` of the integration branch. |
+| Write a pull request body | `/pr` | Summary visual, before/after evidence, and merge danger. |
+| Look back at a session for improvements to the agent's environment | `/retro` | Navigation, automated checks, coding standards, steering files, tool economy, and information access; user-invoked. |
 | Publish completed, integrated work as a project-versioned GitHub release | `/release` | Follow the target project's release gates; user-invoked, outside the delivery chain. |
 | Perform a step only a human can take | `/wizard` | Generate an interactive bash wizard for provisioning, credentials, dashboards, or cutovers. Agent-executable work stays with the agent. |
 | Re-pitch the last message with its missing context | `/wait-what` | Stay in this conversation and use the project's domain vocabulary. |
 | Learn a concept across sessions | `/teach` | Use the current directory as the learning workspace. |
 | Write or revise a skill, `AGENTS.md`, or a pointed-at agent document | `/writing-for-agents` | Apply the agent-writing reference; disclose skill mechanics only when writing a skill. |
 | Reconcile git-loopy's pinned SDK model roster and one configuration scope | `/sync-model-roster` | Repair the roster first, then align model, effort, context, and task-route capabilities. |
-| Research licensed Copilot models and align their routing and enforcement | `/model-fit` | Synchronize Copilot built-ins and git-loopy; `research-only` leaves configuration unchanged. |
+| Set the model, effort, and context of Copilot subagents and git-loopy task types | `/set-task-models` | Research licensed models first and enforce the result; `research-only` leaves configuration unchanged. |
 
 Research, prototypes, questionnaires, vocabulary work, and conflict resolution
 also have standalone entry points in the route table. Select them for the

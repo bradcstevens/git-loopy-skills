@@ -1,10 +1,13 @@
 ---
-name: model-fit
-description: Research licensed Copilot models and synchronize model, effort, context, and enforcement across Copilot built-ins and git-loopy task routing.
+name: set-task-models
+description: Set the model, effort, and context of every Copilot built-in subagent and git-loopy task type from fresh model research, and enforce them.
+model: gpt-6.1-sol
+effort: medium
+context: 922K
 disable-model-invocation: true
 ---
 
-# Model fit
+# Set task models
 
 Calibrate from evidence, then apply one shared decision map. Run this skill only
 when the user invokes it. An ordinary invocation authorizes the configuration
@@ -28,11 +31,15 @@ working-tree changes. Default targets:
 | Copilot user settings | `~/.copilot/settings.json`, respecting `COPILOT_HOME` |
 | git-loopy global routing | `~/.config/git-loopy/config.toml`, respecting its configured config home |
 | git-loopy source defaults | `~/code/github/bradcstevens/git-loopy` |
+| Skill headers | `~/code/github/bradcstevens/git-loopy-skills`, every `skills/**/SKILL.md` |
 
 Scope is every discovered Copilot **built-in**, including `explore`, `task`,
 `general-purpose`, `rubber-duck`, `code-review`, `research`, and `security-review`,
 plus git-loopy's `planning`, `review`, `implementation`, `test`, `docs`, `chore`,
-and `bugfix`. Leave custom agents and unrelated settings alone.
+and `bugfix`, plus the `model`, `effort` and `context` header of every skill in
+git-loopy-skills. A skill takes the profile of the role that model-scorecard's
+`profiles.json` `skills` map assigns it. Leave custom agents and unrelated
+settings alone.
 
 Use exact selectable IDs as the candidate allowlist. Exclude unavailable entries
 and unverified aliases. `auto` is a router, not a fixed-model recommendation.
@@ -45,7 +52,7 @@ every candidate's selectable status and runtime capabilities are recorded.
 ## 2. Collect the evidence
 
 Read [EVIDENCE.md](EVIDENCE.md). Create a private, dated run directory under
-`~/.config/git-loopy/model-fit/` or the configured equivalent, with directory mode
+`~/.config/git-loopy/set-task-models/` or the configured equivalent, with directory mode
 `0700`. Keep inventory, evidence, decisions, and before/after records there,
 outside the source tree.
 
@@ -106,13 +113,15 @@ confidence, and material limitations. In `research-only`, save these results and
 stop without touching any target.
 
 Otherwise follow APPLY.md: preflight every target before the first write, preserve
-unrelated edits, update the global routes and actual source defaults, and set
-`modelPolicy: "required"` on every in-scope Copilot built-in. Respect narrower
-instructions from the current invocation. Ask before resolving an architectural
-conflict or adding unsupported runtime configuration features.
+unrelated edits, update the global routes and actual source defaults, project each
+skill's header, and set `modelPolicy: "required"` on every in-scope Copilot built-in.
+Respect narrower instructions from the current invocation. Ask before resolving an
+architectural conflict or adding unsupported runtime configuration features.
 
 **Done:** all authorized targets read back as the intended effective values,
-equivalent roles still agree, relevant existing checks pass, and an idempotent
-second comparison produces no change. Report the applied table and evidence
-location, or name every blocked/unapplied target. Leave commits, publication,
-running processes, and the main Copilot model unchanged.
+equivalent roles still agree, every skill header matches its role's profile,
+relevant existing checks pass, and an idempotent second comparison, including
+`sync_skill_headers.py --check`, produces no change. Report the applied table,
+the skill headers that changed, and the evidence location, or name every
+blocked/unapplied target. Leave commits, publication, running processes, and the
+main Copilot model unchanged.

@@ -46,4 +46,4 @@ The skill:
 5. Apply the requested defaults or task routes to the one Config scope.
 6. Read back both the persisted file and effective merged values.
 
-This is the narrow repair loop for roster drift, not a general model-research skill; `model-fit` remains the deeper research-and-routing calibration path.
+This is the narrow repair loop for roster drift, not a general model-research skill; `set-task-models` remains the deeper research-and-routing calibration path.

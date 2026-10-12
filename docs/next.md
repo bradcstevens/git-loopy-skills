@@ -34,6 +34,12 @@ The idea `next` runs on is the **gate** — the first unresolved condition stand
 
 Every recommendation is labelled **HITL** or **AFK-safe** — whether the next action needs your judgement, or is specified tightly enough to be left to run on its own. Blocked actions are still returned, but must name the condition that would make them ready.
 
+## The sessions it tracks
+
+Before ranking anything, `next` runs `scripts/sessions.py scan` to see which GitHub Copilot CLI sessions are live in the repository. A session counts as live when its `~/.copilot/session-state/<id>/inuse.<pid>.lock` names a running `copilot` process. The session's `workspace.yaml` places it in the main checkout or in one of its worktrees. The scan reports each worktree with the sessions working in it, along with their names, branches, and any chain targets they hold. An action another session already holds is left to that session.
+
+Each run appends its scan to the **session log**, `.git-loopy/next/sessions.jsonl` at the repository root. The `.git-loopy/` runtime directory is gitignored and shared by every worktree. Each line records when the scan ran, which session invoked `/next`, and the sessions it saw. The next scan compares against that line, so it reports each session as `new` or `continuing` and lists the ones that have `ended` since. Pass `--no-record` to look without logging.
+
 ## The runtime it sizes
 
 A recommendation also names the **runtime** to run it on: `--model`, `--effort`, and `--context`, sized to the demand of the route it picked. Open judgement — grilling, wayfinding, spec writing, hard diagnosis — draws the strongest reasoning model at `xhigh`; ordinary build and review work draws a strong general model at `high`; mechanical, fully specified work draws a fast model at `medium`. An **AFK-safe** action gets one level more effort only when its runtime pair came from the fallback table, because no human is mid-flight to catch a thin pass; configured pairs are already calibrated for AFK-safe runs. `long_context` is reserved for runs that must hold more at once than one default window holds. The flags come out verbatim, so [handoff](./handoff.md) can splice them straight into the background agent it launches.

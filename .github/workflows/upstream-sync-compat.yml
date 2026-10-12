@@ -1,0 +1,85 @@
+# Dampener for the upstream-sync loop.
+#
+# Proves every pull request's skill catalog against git-loopy's cross-repo
+# contract (`python -m git_loopy.skill_candidate`: Required Skills, Skill
+# references, Label vocabulary), judged by git-loopy's main, and reports what the
+# change would break once git-loopy moves its pin past it. Teammates, other agents
+# and the loop itself all change this repository; this keeps the breakage visible
+# before it lands.
+#
+# Advisory by design: the job always succeeds, because git-loopy adapts in the
+# loop's per-sync pin move, not in the pull request that broke the contract. A
+# failing proof adds a warning and a sticky PR comment; a later pass updates it.
+# See docs/upstream-sync-loop.md, Dampener.
+
+name: Upstream-sync compat
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  skill-contract:
+    name: git-loopy skill contract (advisory)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: skills
+
+      - uses: actions/checkout@v4
+        with:
+          repository: bradcstevens/git-loopy
+          path: git-loopy
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990 # v8.3.2
+
+      - name: Prove the candidate catalog
+        id: proof
+        run: |
+          set +e
+          uv run --project git-loopy/git-loopy/python python -m git_loopy.skill_candidate "$GITHUB_WORKSPACE/skills" \
+            > /tmp/proof.txt 2>&1
+          echo "status=$?" >> "$GITHUB_OUTPUT"
+          echo "judge=$(git -C git-loopy rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+          cat /tmp/proof.txt
+
+      - name: Report
+        env:
+          GH_TOKEN: ${{ github.token }}
+          STATUS: ${{ steps.proof.outputs.status }}
+          JUDGE: ${{ steps.proof.outputs.judge }}
+          PR: ${{ github.event.pull_request.number }}
+          HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ "$STATUS" = "0" ]; then verdict="holds"; else verdict="would break"; fi
+          {
+            echo "### git-loopy skill contract ${verdict}"
+            echo
+            echo "\`python -m git_loopy.skill_candidate\` against this PR's head \`${HEAD:0:12}\`, judged by git-loopy \`${JUDGE}\`:"
+            echo
+            echo '```'
+            tail -n 40 /tmp/proof.txt
+            echo '```'
+            echo
+            echo "Advisory. git-loopy adapts when the upstream-sync loop moves its skill pin (docs/upstream-sync-loop.md)."
+            echo
+            echo "<!-- upstream-sync:compat -->"
+          } > /tmp/compat.md
+          cat /tmp/compat.md >> "$GITHUB_STEP_SUMMARY"
+          if [ "$STATUS" != "0" ]; then
+            echo "::warning::This change would break git-loopy's skill contract once git-loopy pins past it."
+          fi
+          existing="$(gh api "repos/$GITHUB_REPOSITORY/issues/$PR/comments?per_page=100" --paginate \
+            --jq '.[] | select(.body | contains("<!-- upstream-sync:compat -->")) | .id' 2>/dev/null | tail -n 1)"
+          if [ -n "$existing" ]; then
+            gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$existing" -F body=@/tmp/compat.md >/dev/null \
+              || echo "::warning::Could not update the compat comment."
+          elif [ "$STATUS" != "0" ]; then
+            gh pr comment "$PR" --repo "$GITHUB_REPOSITORY" --body-file /tmp/compat.md \
+              || echo "::warning::Could not post the compat comment."
+          fi

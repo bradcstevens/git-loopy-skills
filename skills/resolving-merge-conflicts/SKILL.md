@@ -1,6 +1,9 @@
 ---
 name: resolving-merge-conflicts
 description: "Use when you need to resolve an in-progress git merge/rebase conflict."
+model: gpt-6.1-sol
+effort: medium
+context: 922K
 ---
 
 1. **See the current state** of the merge/rebase. Check git history, and the conflicting files.

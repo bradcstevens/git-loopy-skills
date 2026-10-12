@@ -37,8 +37,8 @@ log_invocation() {
 }
 
 candidates=(
-  "${COPILOT_HOME:-$HOME/.copilot}/skills/next/chain.sh"
-  "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/skills/next/chain.sh"
+  "${COPILOT_HOME:-$HOME/.copilot}/skills/next/scripts/chain.sh"
+  "$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)/skills/next/scripts/chain.sh"
 )
 
 for candidate in "${candidates[@]}"; do

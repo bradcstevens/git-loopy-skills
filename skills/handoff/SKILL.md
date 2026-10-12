@@ -1,6 +1,9 @@
 ---
 name: handoff
 description: Launch a `/next` recommendation — its prompt and its sized runtime — as a background agent, then watch it to its exit and route on. Use when `/next` routes to `/implement`, when work moves to a fresh session that runs on its own, or when a detached run needs watching to completion.
+model: claude-sonnet-5.5
+effort: low
+context: 936K
 ---
 
 A `/next` recommendation is the seed: its prompt and its `Runtime` line are what this skill launches. If that output isn't the last part of this conversation, run `/next` before anything else.

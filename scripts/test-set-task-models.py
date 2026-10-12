@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
-"""Offline contract tests for the co-installed model-fit manifest guard."""
+"""Offline contract tests for set-task-models' co-installed manifest guard and skill header sync."""
 
+import contextlib
 import copy
 import importlib.util
+import io
 import json
 import subprocess
 import sys
@@ -11,8 +13,8 @@ import unittest
 from datetime import datetime, timezone
 from pathlib import Path
 
-SCRIPT = Path(__file__).resolve().parents[1] / "skills/model-fit/validate_manifest.py"
-SPEC = importlib.util.spec_from_file_location("model_fit", SCRIPT)
+SCRIPT = Path(__file__).resolve().parents[1] / "skills/set-task-models/validate_manifest.py"
+SPEC = importlib.util.spec_from_file_location("set_task_models", SCRIPT)
 assert SPEC is not None and SPEC.loader is not None
 guard = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(guard)
@@ -235,8 +237,138 @@ class ManifestTests(unittest.TestCase):
             path.write_text("{", encoding="utf-8")
             result = subprocess.run(command, capture_output=True, text=True, check=False)
             self.assertNotEqual(result.returncode, 0)
-            self.assertIn("model-fit:", result.stderr)
+            self.assertIn("set-task-models:", result.stderr)
             self.assertNotIn("Traceback", result.stderr)
+
+
+SYNC_SCRIPT = SCRIPT.with_name("sync_skill_headers.py")
+SYNC_SPEC = importlib.util.spec_from_file_location("sync_skill_headers", SYNC_SCRIPT)
+assert SYNC_SPEC is not None and SYNC_SPEC.loader is not None
+sync = importlib.util.module_from_spec(SYNC_SPEC)
+SYNC_SPEC.loader.exec_module(sync)
+SCORE_SCRIPT = Path(__file__).resolve().parents[1] / "skills/model-scorecard/scripts/score.py"
+SCORE_SPEC = importlib.util.spec_from_file_location("model_scorecard_score", SCORE_SCRIPT)
+assert SCORE_SPEC is not None and SCORE_SPEC.loader is not None
+scorecard = importlib.util.module_from_spec(SCORE_SPEC)
+SCORE_SPEC.loader.exec_module(scorecard)
+
+SKILL_FILES = {
+    "plan": "---\nname: plan\ndescription: Plan things.\ndisable-model-invocation: true\n---\n\n# Plan\n\nmodel: body text, not a key\n",
+    "build": "---\nname: build\ndescription: Build things.\nmodel: old-model\neffort: high\ncontext: 200K\n"
+             "argument-hint: \"<x>\"\n---\nBody.\n",
+    "vendor/nested": "---\nname: nested\ndescription: \"Quoted, with: colon.\"\nlicense: MIT\nmetadata:\n"
+                     "  author: Someone\n  version: \"1.0.0\"\n---\nBody.\n",
+    "local": "---\nname: local\ndescription: Local only.\n---\n",
+}
+SKILL_PICKS = {
+    "schema_version": 1, "generated": "now", "compaction_ratio": 0.8,
+    "models": {
+        "big-model": {"efforts": ["medium"], "default_cap": 200000, "long_cap": 1000000},
+        "wide-model": {"efforts": ["low", "medium"], "default_cap": 272000, "long_cap": 922000},
+    },
+    "skills": {
+        "plan": {"role": "git-loopy:planning", "model": "big-model", "effort": "medium", "context": "1M",
+                 "tier": "long_context", "need": 171000, "need_source": "fixture"},
+        "build": {"role": "git-loopy:implementation", "model": "wide-model", "effort": "medium", "context": "272K",
+                  "tier": "default", "need": 214000, "need_source": "fixture"},
+        "nested": {"role": "copilot:task", "model": "wide-model", "effort": "low", "context": "272K",
+                   "tier": "default", "need": 70000, "need_source": "fixture"},
+    },
+}
+
+
+class SkillHeaderTests(unittest.TestCase):
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.repo = Path(self.directory.name)
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+        (self.repo / ".gitignore").write_text("skills/local/\n", encoding="utf-8")
+        for relative, text in SKILL_FILES.items():
+            path = self.repo / "skills" / relative / "SKILL.md"
+            path.parent.mkdir(parents=True)
+            path.write_text(text, encoding="utf-8")
+        self.picks = self.repo / "skill-headers.json"
+        self.picks.write_text(json.dumps(SKILL_PICKS), encoding="utf-8")
+
+    def tearDown(self):
+        self.directory.cleanup()
+
+    def run_sync(self, *flags):
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(output):
+            code = sync.main(["--skills-repo", str(self.repo), "--headers", str(self.picks), *flags])
+        return code, output.getvalue()
+
+    def read(self, relative):
+        return (self.repo / "skills" / relative / "SKILL.md").read_text(encoding="utf-8")
+
+    def test_dry_run_reports_without_writing(self):
+        code, output = self.run_sync()
+        self.assertEqual(code, 0, output)
+        self.assertIn("skills/plan/SKILL.md: (no header) -> big-model medium 1M", output)
+        self.assertIn("skills/build/SKILL.md: old-model high 200K -> wide-model medium 272K", output)
+        self.assertIn("3 of 3 skill headers differ", output)
+        for relative, text in SKILL_FILES.items():
+            self.assertEqual(self.read(relative), text)
+        self.assertEqual(self.run_sync("--check")[0], 1)
+
+    def test_write_sets_only_the_three_keys_and_is_idempotent(self):
+        mode = 0o640
+        (self.repo / "skills/build/SKILL.md").chmod(mode)
+        code, output = self.run_sync("--write")
+        self.assertEqual(code, 0, output)
+        self.assertEqual(self.read("plan"), SKILL_FILES["plan"].replace(
+            "description: Plan things.\n", "description: Plan things.\nmodel: big-model\neffort: medium\ncontext: 1M\n"))
+        self.assertEqual(self.read("build"), SKILL_FILES["build"].replace(
+            "model: old-model\neffort: high\ncontext: 200K\n", "model: wide-model\neffort: medium\ncontext: 272K\n"))
+        self.assertEqual(self.read("vendor/nested"), SKILL_FILES["vendor/nested"].replace(
+            "colon.\"\n", "colon.\"\nmodel: wide-model\neffort: low\ncontext: 272K\n"))
+        self.assertEqual(self.read("local"), SKILL_FILES["local"])
+        self.assertEqual((self.repo / "skills/build/SKILL.md").stat().st_mode & 0o777, mode)
+        self.assertEqual(sorted(p.name for p in (self.repo / "skills/build").iterdir()), ["SKILL.md"])
+        self.assertEqual(self.run_sync("--check"), (0, "0 of 3 skill headers differ\n"))
+
+    def test_an_unmapped_skill_stops_every_write(self):
+        extra = self.repo / "skills/extra/SKILL.md"
+        extra.parent.mkdir()
+        extra.write_text("---\nname: extra\ndescription: New.\n---\n", encoding="utf-8")
+        code, output = self.run_sync("--write")
+        self.assertEqual(code, 2)
+        self.assertIn("no role is mapped for extra", output)
+        self.assertEqual(self.read("plan"), SKILL_FILES["plan"])
+
+    def test_decision_profiles_replace_picks_and_refit_context(self):
+        decision = {
+            "profiles": {"p": {"model": "wide-model", "effort": "low"}, "q": {"model": "big-model", "effort": None}},
+            "copilot": {"task": "q"}, "git_loopy": {"planning": "p", "implementation": "p"},
+        }
+        self.assertEqual(sync.targets(SKILL_PICKS, decision), {
+            "plan": {"model": "wide-model", "effort": "low", "context": "272K"},
+            "build": {"model": "wide-model", "effort": "low", "context": "272K"},
+            "nested": {"model": "big-model", "effort": "none", "context": "200K"},
+        })
+        del decision["git_loopy"]["planning"]
+        with self.assertRaisesRegex(sync.HeaderError, "binds no profile to git-loopy:planning"):
+            sync.targets(SKILL_PICKS, decision)
+        decision["git_loopy"]["planning"] = "r"
+        decision["profiles"]["r"] = {"model": "unscored-model", "effort": "low"}
+        with self.assertRaisesRegex(sync.HeaderError, "rebuild the scorecard"):
+            sync.targets(SKILL_PICKS, decision)
+
+    def test_crlf_headers_keep_their_line_endings(self):
+        text = "---\r\nname: w\r\ndescription: d\r\n---\r\nBody.\r\n"
+        values = {"model": "m", "effort": "low", "context": "1M"}
+        self.assertEqual(sync.set_header(text, values),
+                         "---\r\nname: w\r\ndescription: d\r\nmodel: m\r\neffort: low\r\ncontext: 1M\r\n---\r\nBody.\r\n")
+
+    def test_context_rule_matches_the_scorecard(self):
+        for need, default_cap, long_cap, ratio in [(171000, 200000, 1000000, 0.805), (161000, 200000, 1000000, 0.805),
+                                                   (219000, 272000, 922000, 0.805), (500000, 200000, None, 0.805),
+                                                   (90000, 200000, 936000, None)]:
+            self.assertEqual(sync.fit_tier(need, default_cap, long_cap, ratio),
+                             scorecard.fit_tier(need, default_cap, long_cap, ratio))
+        for tokens in (200000, 272000, 922000, 936000, 1000000, 1048576, 2000000):
+            self.assertEqual(sync.context_size(tokens), scorecard.context_size(tokens))
 
 
 if __name__ == "__main__":

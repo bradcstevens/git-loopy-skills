@@ -54,9 +54,9 @@ own context.
 `subagent_type=Explore` to walk the codebase"*, noting friction points organically rather than by
 rigid heuristic. That is what Explore is good at — broad, cheap, unstructured reading.
 
-**Also rides here:** the fact-finding half of `/grilling` and `/batch-grill-me` (both say to
-dispatch a sub-agent for any frontier question answerable from the environment), and the
-codebase-orientation phase of `/diagnosing-bugs` and `/domain-modeling`.
+**Also rides here:** the fact-finding half of `/grilling` (it says to dispatch a sub-agent
+for any frontier question answerable from the environment), the optional exploration step of
+`/implement-spec`, and the codebase-orientation phase of `/diagnosing-bugs` and `/domain-modeling`.
 
 **Don't** use it for a single continuous chain of "find the symbol, read the file, edit it" — that
 is faster done directly.
@@ -162,7 +162,7 @@ the fixes yourself.
 Not everything belongs in a subagent. A subagent starts with a fresh context and cannot talk to the
 user, which rules out two whole families.
 
-**Human-in-the-loop.** `/grilling`, `/grill-me`, `/batch-grill-me`, `/grill-with-docs`, `/loop-me`,
+**Human-in-the-loop.** `/grilling`, `/grill-me`, `/grill-with-docs`, `/loop-me`,
 `/teach`, `/to-questionnaire`, `/triage` in its interactive roles. Each works in
 rounds of question and answer; the decisions are the user's. Delegate the fact-finding *inside*
 them, never the interview.
@@ -190,7 +190,6 @@ are read into whatever session needs them rather than dispatched anywhere.
 | Skill | Subagent | Mode |
 | --- | --- | --- |
 | `/az-mcaps-resource-deployment` | `task` | Verification commands only |
-| `/batch-grill-me` | — (`explore` for facts) | Main session |
 | `/code-review` | `code-review`; `code-review-agent` when chain-spawned | Two in parallel, one per axis |
 | `/codebase-audit` | `security-review` | Detect in agent, fix in main |
 | `/codebase-design` | `rubber-duck` | Parallel drafts, one critic |
@@ -200,6 +199,7 @@ are read into whatever session needs them rather than dispatched anywhere.
 | `/grill-me`, `/grill-with-docs`, `/grilling` | — (`explore`, `research` for facts) | Main session |
 | `/handoff` | `general-purpose` | Background — it is the launcher |
 | `/implement` | `general-purpose`; `implement-agent` when chain-spawned | Background |
+| `/implement-spec` | `general-purpose` per ticket and per merge (+ `explore`) | Background, frontier in parallel |
 | `/improve-codebase-architecture` | `explore` | Parallel threads |
 | `/loop-me` | — | Main session |
 | `/mermaid-diagrams` | — | Reference |
@@ -208,10 +208,12 @@ are read into whatever session needs them rather than dispatched anywhere.
 | `/microsoft-foundry` | `task` | Deploy and eval runs |
 | `/next` | — | Main session |
 | `/playwright-cli` | `task` | Sync |
+| `/pr` | — | Main session |
 | `/prototype` | `general-purpose` | Background |
 | `/push` | `push-agent`, via the `/next` chain only | Background when AFK-safe, else main session |
 | `/research` | `research`; `research-agent` when chain-spawned | Background |
 | `/resolving-merge-conflicts` | `resolving-merge-conflicts-agent`, via the `/next` chain only | Background when AFK-safe, else main session |
+| `/retro` | — (`explore` to read session logs) | Main session |
 | `/setup-git-loopy-skills` | — | Main session |
 | `/tdd` | `task` | Sync, per red/green step |
 | `/teach` | — | Main session |

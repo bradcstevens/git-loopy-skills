@@ -2,7 +2,7 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
-CHAIN="$REPO/skills/next/chain.sh"
+CHAIN="$REPO/skills/next/scripts/chain.sh"
 RECORD="$REPO/scripts/review-clean-record.py"
 tmp_dir="$(python3 -c 'import os; import sys; print(os.path.realpath(sys.argv[1]))' "$(mktemp -d)")"
 fail=0
@@ -186,7 +186,7 @@ SH
 chmod +x "$fake_bin/gh"
 export PATH="$fake_bin:$PATH"
 
-PYTHONPATH="$REPO/skills/next" python3 - <<'PY'
+PYTHONPATH="$REPO/skills/next/scripts" python3 - <<'PY'
 import subprocess
 from unittest.mock import patch
 
@@ -228,7 +228,7 @@ assert tracker_run.call_args.kwargs["timeout"] == 30
 PY
 
 timezone_stable_start="$(TZ=UTC ps -o lstart= -p "$$" | xargs)"
-if [ "$(TZ=America/Denver python3 "$REPO/skills/next/claim-recovery.py" owner-gone "$$" "$timezone_stable_start")" != "false" ]; then
+if [ "$(TZ=America/Denver python3 "$REPO/skills/next/scripts/claim-recovery.py" owner-gone "$$" "$timezone_stable_start")" != "false" ]; then
   err "claim recovery treated a live parent as gone after a timezone change"
 fi
 
@@ -255,7 +255,7 @@ chmod +x "$claim_ps_bin/ps"
 for claim_ps_mode in failure empty malformed impossible inconsistent; do
   if [ "$(
     PATH="$claim_ps_bin:$PATH" CLAIM_PS_MODE="$claim_ps_mode" \
-      python3 "$REPO/skills/next/claim-recovery.py" \
+      python3 "$REPO/skills/next/scripts/claim-recovery.py" \
         owner-gone "$$" "$timezone_stable_start"
   )" != "false" ]; then
     err "claim recovery treated a live parent as gone after a $claim_ps_mode ps result"
@@ -263,14 +263,14 @@ for claim_ps_mode in failure empty malformed impossible inconsistent; do
 done
 
 if [ "$(
-  python3 "$REPO/skills/next/claim-recovery.py" \
+  python3 "$REPO/skills/next/scripts/claim-recovery.py" \
     owner-gone "$$" "not a recorded process start"
 )" != "false" ]; then
   err "claim recovery treated a malformed recorded parent identity as pid reuse"
 fi
 
 if [ "$(
-  python3 "$REPO/skills/next/claim-recovery.py" \
+  python3 "$REPO/skills/next/scripts/claim-recovery.py" \
     owner-gone "$$" "Tue Jan 01 00:00:00 2001"
 )" != "false" ]; then
   err "claim recovery treated an inconsistent recorded parent identity as pid reuse"

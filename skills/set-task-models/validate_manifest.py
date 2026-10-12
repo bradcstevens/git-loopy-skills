@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate a model-fit decision manifest without modifying its targets."""
+"""Validate a set-task-models decision manifest without modifying its targets."""
 
 import argparse
 import json
@@ -192,7 +192,7 @@ def main():
                                  parse_constant=invalid_constant)
         result = validate(manifest, now)
     except (OSError, UnicodeError, ValueError) as error:
-        print(f"model-fit: {error}", file=sys.stderr)
+        print(f"set-task-models: {error}", file=sys.stderr)
         return 1
     print(json.dumps(result, sort_keys=True))
     return 0
