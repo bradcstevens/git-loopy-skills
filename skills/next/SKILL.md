@@ -173,12 +173,10 @@ python3 <this skill>/scripts/runtime.py /<route>
 ```
 
 It prints one JSON object. Its `runtime` field is the recommendation's `Runtime`
-line; for `/implement` that is
-`model gpt-6.1-sol, effort medium, context 272K (default)`. Its `model`, `effort`
-and `tier` fields are the values a launcher passes. The tier in parentheses is
-what Copilot CLI's `--context` flag and a subagent's `context_tier` take:
-`long_context` when the header's window is larger than the model's default
-window, otherwise `default`.
+line, and its `model`, `effort` and `tier` fields are the values a launcher
+passes. The tier in parentheses is what Copilot CLI's `--context` flag and a
+subagent's `context_tier` take: `long_context` when the header's window is
+larger than the model's default window, otherwise `default`.
 
 A route with no header, such as a built-in like `/compact` or a skill from
 another catalog, reads `current session`: it runs on whatever this session
@@ -187,14 +185,15 @@ and use `current session`.
 
 If a human explicitly asks for a named model, select it from Copilot CLI's
 `/model` list and use that exact identifier in place of the header's model.
+That is the only change the printed runtime takes, and the result is the
+route's **resolved runtime**.
 
 Mark the action `AFK-safe` only when its target is fully specified and requires
 no new human judgment; otherwise mark it `HITL`. Either mark leaves the runtime
 as the header sets it.
 
 This step is complete when the action is marked `HITL` or `AFK-safe` and its
-runtime is the one `runtime.py` printed for the route, or carries the model a
-human named.
+resolved runtime is named.
 
 ## 5. Apply the phase-boundary procedure and chain gate
 
@@ -209,8 +208,8 @@ spawn gate. Only when it is the first yes does the procedure select `Subagent`. 
 action reaches the checkpoint boundary instead; it does not become safe because the chain can run it.
 
 Only for that `Subagent` outcome, consult `chain.sh plan` with the route, target, `--safety
-AFK-safe`, custom agent, runtime, and proposed worktree. The runtime's `model`, `effort` and `tier`
-fill `--model`, `--effort` and `--context-tier`, each `inherit` when the runtime is the current
+AFK-safe`, custom agent, runtime, and proposed worktree. The resolved runtime's `model`, `effort`
+and `tier` fill `--model`, `--effort` and `--context-tier`, each `inherit` when it is the current
 session. Treat its returned JSON decision as authoritative. A `decline` means do not spawn; report
 its reason and leave the action at the checkpoint boundary. A `spawn` proceeds to step 7. The
 script owns the ledger, collision, and concurrency decisions; do not reimplement them in this skill.
@@ -267,8 +266,7 @@ Prompt:
 ```
 ````
 
-Write `Runtime` exactly as step 4's `runtime.py` printed it, or `current session` for a
-route that names none.
+Write the route's resolved runtime from step 4 as `Runtime`.
 
 Write the prompt **paste-safe**: one physical line of plain ASCII that opens with
 the exact skill invocation and names its target in bare words, so the shell
@@ -311,8 +309,7 @@ directory, because the prompt opens with the `chain.sh claim` that makes the
 worktree and moves the agent before it writes.
 
 For `/handoff`, use `Continue here` and say that its output opens the fresh
-session. Its `Runtime` is the runtime of the skill that fresh session runs, not
-`/handoff`'s own, because `/handoff` launches the session on it.
+session.
 
 For a terminal workstream, return:
 
@@ -320,8 +317,8 @@ For a terminal workstream, return:
 **Complete:** <why no further workflow skill is needed>.
 ```
 
-This step is complete when the recommendation names its live target, state, context, the routed
-skill's runtime, and a paste-safe prompt, and carries no launch command.
+This step is complete when the recommendation names its live target, state, context, resolved
+runtime, and a paste-safe prompt, and carries no launch command.
 
 ## 7. Spawn a chain-approved route
 
@@ -339,7 +336,7 @@ command: pass `--parent-pid "$PPID"` from that shell, whose own parent is the se
 reclaims an unbound orphan when that parent is gone, with the configured timeout as a backstop. It
 reclaims a bound abandoned run only when that parent is proven gone. `plan` runs that recovery before
 it evaluates concurrency, so an orphan cannot make a later candidate appear to be at the ceiling.
-Launch the agent on the recommendation's paste-safe prompt and runtime: the runtime's `model`,
+Launch the agent on the recommendation's paste-safe prompt and resolved runtime: its `model`,
 `effort` and `tier` become the `task` invocation's `model`, `reasoning_effort` and `context_tier`,
 and a current-session runtime sets none of them. Bind the run immediately after launch. Do not
 launch a declined action, an action that reaches the checkpoint boundary, or an action whose
@@ -369,5 +366,5 @@ Every other route ends at step 6 and leaves a user-launched fresh session, conti
 
 Routing is complete when every active candidate has been classified and every
 recommendation names a live target, an exact invocation, a paste-safe prompt in
-its own code fence, the correct context, the routed skill's runtime, and any
+its own code fence, the correct context, its resolved runtime, and any
 blocker — and every `Subagent` recommendation has a live, bound in-session agent.
