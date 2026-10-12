@@ -172,21 +172,21 @@ than sizing your own:
 python3 <this skill>/scripts/runtime.py /<route>
 ```
 
-It prints one JSON object. Its `runtime` field is the recommendation's `Runtime`
-line, and its `model`, `effort` and `tier` fields are the values a launcher
-passes. The tier in parentheses is what Copilot CLI's `--context` flag and a
-subagent's `context_tier` take: `long_context` when the header's window is
-larger than the model's default window, otherwise `default`.
+It prints one JSON object. Its `runtime` field is the route's **resolved
+runtime**, which the recommendation's `Runtime` line carries, and its `model`,
+`effort` and `tier` fields are the values a launcher passes. The tier in
+parentheses is what Copilot CLI's `--context` flag and a subagent's
+`context_tier` take: `long_context` when the header's window is larger than the
+model's default window, otherwise `default`.
 
 A route with no header, such as a built-in like `/compact` or a skill from
 another catalog, reads `current session`: it runs on whatever this session
-already uses. Exit status 1 means the header itself is broken; name its `error`
-and use `current session`.
+already uses. So does a broken header, which exits 1; name its `error`.
 
-If a human explicitly asks for a named model, select it from Copilot CLI's
-`/model` list and use that exact identifier in place of the header's model.
-That is the only change the printed runtime takes, and the result is the
-route's **resolved runtime**.
+A human who wants another model picks it in `/model` when running the prompt.
+Keep the resolved runtime as printed, because a launcher passes its model,
+effort and tier as one set, and a tier that belongs to one model can be missing
+from another.
 
 Mark the action `AFK-safe` only when its target is fully specified and requires
 no new human judgment; otherwise mark it `HITL`. Either mark leaves the runtime
