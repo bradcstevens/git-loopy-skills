@@ -12,9 +12,9 @@ This skill is the model-invoked router for the skills and engineering flow. Insp
 current state and return one recommendation. Leave source files and the issue
 tracker unchanged. A chain spawn may write its ledger and create its reserved
 branch and worktree; the spawned subagent owns work inside that worktree. Every
-run also appends its session scan to the session log (step 1). `chain.sh` and
-`sessions.py` live in this skill's `scripts/`; the routing references live in
-its `references/`.
+run also appends its session scan to the session log (step 1). `chain.sh`,
+`sessions.py` and `runtime.py` live in this skill's `scripts/`; the routing
+references live in its `references/`.
 
 The merge gate's `review-clean` evidence uses the canonical producer/matcher in
 [`scripts/review-clean-record.py`](../../scripts/review-clean-record.py). Do not
@@ -160,55 +160,40 @@ This step is complete when the ordering follows all four rules, every blocked
 action carries a checkable readiness condition, and any file the chosen action
 shares with work in flight is named.
 
-## 4. Size the runtime
+## 4. Read the runtime
 
-Every recommendation names the **runtime** that carries it — an entitlement-aware
-model selector, an auto-routing tier, and a context tier.
-
-Name the **task type** of the chosen route from git-loopy's closed taxonomy:
-`planning`, `review`, `implementation`, `test`, `docs`, `chore`, `bugfix`.
-
-Read the quality target from the project's own calibration rather than
-hard-coding a model name:
+Every recommendation names the **runtime** that carries it: the model, reasoning
+effort and context window that the routed skill's own `SKILL.md` header sets.
+These are the settings to choose in `/model` before running the prompt. The
+headers are generated from the models this account offers, so read them rather
+than sizing your own:
 
 ```bash
-git-loopy config list
+python3 <this skill>/scripts/runtime.py /<route>
 ```
 
-If git-loopy is unavailable, name that limitation and use the task-type defaults
-below. Otherwise use the `task-type:<key>` line matching the route's task type to choose the
-Auto tier. Ignore its exact model and reasoning-effort values when constructing
-a Copilot CLI command: organization policy and subscription availability can
-change independently of the repository calibration.
+It prints one JSON object. Its `runtime` field is the route's **resolved
+runtime**, which the recommendation's `Runtime` line carries, and its `model`,
+`effort` and `tier` fields are the values a launcher passes. The tier in
+parentheses is what Copilot CLI's `--context` flag and a subagent's
+`context_tier` take: `long_context` when the header's window is larger than the
+model's default window, otherwise `default`.
 
-Use `--model auto` for every recommendation. Copilot CLI's Auto model selection
-chooses only models available to the user's plan and administrator policy, so
-the recommendation remains valid when the organization's model catalog changes.
-Set `--auto-tier intelligence` for `planning` and `review`, `balance` for
-`implementation`, `bugfix`, and `test`, and `efficiency` for `docs` and
-`chore`. The tier is a preference, not a promise of a particular model.
-Do not combine `--model auto` with `--reasoning-effort`; Auto routing owns that
-choice.
+A route with no header, such as a built-in like `/compact` or a skill from
+another catalog, reads `current session`: it runs on whatever this session
+already uses. So does a broken header, which exits 1; name its `error`.
 
-If a human explicitly asks for a named model, select it from Copilot CLI's
-`/model` list first and use that exact identifier; never infer entitlement from
-the repository's calibration or from a model name in this skill.
+A human who wants another model picks it in `/model` when running the prompt.
+Keep the resolved runtime as printed, because a launcher passes its model,
+effort and tier as one set, and a tier that belongs to one model can be missing
+from another.
 
 Mark the action `AFK-safe` only when its target is fully specified and requires
-no new human judgment; otherwise mark it `HITL`. Use the `intelligence` Auto
-tier for AFK-safe work whose quality target is not already `intelligence`;
-otherwise preserve the calibrated tier.
+no new human judgment; otherwise mark it `HITL`. Either mark leaves the runtime
+as the header sets it.
 
-Set `--context long_context` when the run must hold more at once than one
-default window holds — a repo-wide survey, a review over a large diff, a map or
-spec spanning many files. git-loopy configures no context tier, so this
-judgment stays the skill's own; it bills at a higher tier, so `default` carries
-every other run.
-
-This step is complete when the action is marked `HITL` or `AFK-safe` and the
-task type, `auto` model selector, auto tier, and context tier are each named,
-with the tier traced either to a `task-type:` line in the routing map or to the
-task-type defaults above.
+This step is complete when the action is marked `HITL` or `AFK-safe` and its
+resolved runtime is named.
 
 ## 5. Apply the phase-boundary procedure and chain gate
 
@@ -223,10 +208,11 @@ spawn gate. Only when it is the first yes does the procedure select `Subagent`. 
 action reaches the checkpoint boundary instead; it does not become safe because the chain can run it.
 
 Only for that `Subagent` outcome, consult `chain.sh plan` with the route, target, `--safety
-AFK-safe`, custom agent, runtime, and proposed worktree. Treat its returned JSON decision as
-authoritative. A `decline` means do not spawn; report its reason and leave the action at the
-checkpoint boundary. A `spawn` proceeds to step 7. The script owns the ledger, collision, and
-concurrency decisions; do not reimplement them in this skill.
+AFK-safe`, custom agent, runtime, and proposed worktree. The resolved runtime's `model`, `effort`
+and `tier` fill `--model`, `--effort` and `--context-tier`, each `inherit` when it is the current
+session. Treat its returned JSON decision as authoritative. A `decline` means do not spawn; report
+its reason and leave the action at the checkpoint boundary. A `spawn` proceeds to step 7. The
+script owns the ledger, collision, and concurrency decisions; do not reimplement them in this skill.
 
 The chain fills capacity one recommendation at a time. After each successful spawn, return to step 1
 and ask for one more recommendation. `chain.sh plan` takes a single candidate and rejects a repeated
@@ -271,29 +257,22 @@ Use this shape:
 Target: <linked issue, PR, map, spec, branch, document, or current conversation>
 State: <Ready | Blocked by ...>
 Context: <Continue here | Fresh session | Fresh session in a new worktree | Subagent>
-Runtime: `--model auto --auto-tier <efficiency | balance | intelligence> --context <default | long_context>`
+Runtime: model <model>, effort <effort>, context <window> (<default | long_context>)
 Why now: <one sentence grounded in live state>
 
 Prompt:
 ```text
 /<route> <concise imperative naming the target and desired outcome>
 ```
-
-Command:
-```bash
-PROMPT=$(cat <<'PROMPT_EOF'
-/<route> <concise imperative naming the target and desired outcome>
-PROMPT_EOF
-)
-copilot -n "<descriptive name>" --model auto --auto-tier "<tier>" --context "<default | long_context>" -p "$PROMPT"
-```
 ````
+
+Write the route's resolved runtime from step 4 as `Runtime`.
 
 Write the prompt **paste-safe**: one physical line of plain ASCII that opens with
 the exact skill invocation and names its target in bare words, so the shell
-receives a single argument on every path it travels — the heredoc below, a
-hand-typed `-p "..."`, or a background launcher that re-quotes the whole command
-in single quotes. That last path makes paste-safe also mean apostrophe-free:
+receives a single argument on every path it travels — a hand-typed `-p "..."`,
+or a background launcher that re-quotes the whole command in single quotes.
+That last path makes paste-safe also mean apostrophe-free:
 write *the meaning of every ticket* rather than *every ticket's meaning*, and
 spell contractions out. An apostrophe closes the launcher's own quoting and the
 session dies before it starts, leaving no log and no process to explain why.
@@ -321,28 +300,16 @@ from the target's own record: the worktree to work in, the files it shares with
 work in flight, and what to do about each. The target's record travels with the
 target; what this session learned travels only in the prompt.
 
-The `Command` block is the whole recommendation as one selection the user can
-copy and run. Repeat the prompt inside it byte for byte between the quoted
-heredoc markers, which carry its `#` and spacing through to `-p "$PROMPT"` as
-one argument, and splice the same runtime flags in verbatim. Name the
-session with `-n` in a few words drawn from the action, because a launched
-session has no terminal to identify it and that name is how the user returns to
-it with `copilot --yolo --resume="<descriptive name>"`. The command
-runs the session in the user's own terminal; `/handoff` launches the same pair
-in the background instead.
-
-Emit the `Command` block only when `Context` names a fresh session the user
-launches — a `Continue here` recommendation is a prompt for this conversation and
-has no session to launch, and a `Subagent` recommendation is launched by the
-chain gate in step 7, so a second copyable launcher would put two agents on one
-worktree. When the context is `Fresh session in a new worktree`, the
-command still runs from the current directory, because the prompt it carries
-opens with the `chain.sh claim` that makes the worktree and moves the agent
-before it writes.
+The recommendation carries no launch command. The user copies the prompt into the
+session `Context` names, after choosing the `Runtime` in `/model`, or runs
+`/handoff` to launch the prompt in the background on that runtime. A `Subagent`
+recommendation is launched by the chain gate in step 7. When the context is
+`Fresh session in a new worktree`, that session still starts in the current
+directory, because the prompt opens with the `chain.sh claim` that makes the
+worktree and moves the agent before it writes.
 
 For `/handoff`, use `Continue here` and say that its output opens the fresh
-session. Give `Runtime` as the runtime flags verbatim, so a launcher such as
-`/handoff` splices them straight into its background agent.
+session.
 
 For a terminal workstream, return:
 
@@ -350,9 +317,8 @@ For a terminal workstream, return:
 **Complete:** <why no further workflow skill is needed>.
 ```
 
-This step is complete when the recommendation names its live target, state, context, runtime, and
-paste-safe prompt, and includes a `Command` block exactly when its context requires a
-user-launched fresh session.
+This step is complete when the recommendation names its live target, state, context, resolved
+runtime, and a paste-safe prompt, and carries no launch command.
 
 ## 7. Spawn a chain-approved route
 
@@ -370,9 +336,11 @@ command: pass `--parent-pid "$PPID"` from that shell, whose own parent is the se
 reclaims an unbound orphan when that parent is gone, with the configured timeout as a backstop. It
 reclaims a bound abandoned run only when that parent is proven gone. `plan` runs that recovery before
 it evaluates concurrency, so an orphan cannot make a later candidate appear to be at the ceiling.
-Bind the run immediately after launch, then carry the recommendation's paste-safe prompt and
-runtime into the agent. Do not launch a declined action, an action that reaches the checkpoint
-boundary, or an action whose phase-boundary choice is anything other than `Subagent`.
+Launch the agent on the recommendation's paste-safe prompt and resolved runtime: its `model`,
+`effort` and `tier` become the `task` invocation's `model`, `reasoning_effort` and `context_tier`,
+and a current-session runtime sets none of them. Bind the run immediately after launch. Do not
+launch a declined action, an action that reaches the checkpoint boundary, or an action whose
+phase-boundary choice is anything other than `Subagent`.
 
 Three of the four `bind` arguments decide whether the row ever closes, and only one of them comes
 back from the `task` invocation. `--agent-id` takes the agent id it returned and `--agent-type` the
@@ -398,6 +366,5 @@ Every other route ends at step 6 and leaves a user-launched fresh session, conti
 
 Routing is complete when every active candidate has been classified and every
 recommendation names a live target, an exact invocation, a paste-safe prompt in
-its own code fence, a copyable `copilot` command whenever the user launches the
-fresh session, the correct context, a sized runtime, and any blocker — and every
-`Subagent` recommendation has a live, bound in-session agent.
+its own code fence, the correct context, its resolved runtime, and any
+blocker — and every `Subagent` recommendation has a live, bound in-session agent.
