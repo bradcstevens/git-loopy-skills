@@ -12,9 +12,9 @@ npx skills update handoff
 
 ## What it does
 
-`handoff` takes the recommendation [next](./next.md) just made — its prompt and its sized runtime — and **launches a fresh GitHub Copilot CLI session in the background** to carry it out. The work starts immediately, in the same working directory, while you keep your own session. If `/next` hasn't just run, `handoff` runs it first, because its output is the seed.
+`handoff` takes the recommendation [next](./next.md) just made — its prompt and the runtime its routed skill names — and **launches a fresh GitHub Copilot CLI session in the background** to carry it out. The work starts immediately, in the same working directory, while you keep your own session. If `/next` hasn't just run, `handoff` runs it first, because its output is the seed.
 
-The session is launched by [`handoff.sh`](https://github.com/bradcstevens/git-loopy-skills/blob/main/skills/handoff/handoff.sh), which takes the runtime `next` sized and the path to a file holding the prompt:
+The session is launched by [`handoff.sh`](https://github.com/bradcstevens/git-loopy-skills/blob/main/skills/handoff/handoff.sh), which takes the model, effort, and context tier from the recommendation's `Runtime` line and the path to a file holding the prompt:
 
 ```bash
 handoff.sh --name "<descriptive name>" \
@@ -35,7 +35,7 @@ spawns an in-session, ledger-backed subagent only for an AFK-safe allowlisted ro
 launches a detached session that survives its caller, is followed through its log, and is resumed by
 its session name.
 
-Reach for it when the next stretch of work doesn't need you in the loop: a long refactor, a test suite to get green, a chore you'd rather not watch. When you'd rather run the step yourself, [next](./next.md) already hands you the same launch as one copyable `Command` block for your own terminal.
+Reach for it when the next stretch of work doesn't need you in the loop: a long refactor, a test suite to get green, a chore you'd rather not watch. When you'd rather run the step yourself, pick the recommendation's runtime in `/model` and paste its prompt into a session of your own.
 
 ## What the prompt carries
 
@@ -50,4 +50,4 @@ Three flags carry the weight, and the launcher fixes two of them for you. `--yol
 
 ## Where it fits
 
-`handoff` sits at the seam between two sessions, and what crosses it is a running agent rather than a document. It is the detached background half of [next](./next.md)'s recommendation: same prompt, same sized runtime, launched for you instead of handed to you. Unlike the chain, it is the right transition when the work must survive this session. It pairs with the artifact-producing skills those recommendations point at, most obviously [to-spec](./to-spec.md) and [to-tickets](./to-tickets.md), since a background agent with a spec to work from needs very little else.
+`handoff` sits at the seam between two sessions, and what crosses it is a running agent rather than a document. It is the detached background half of [next](./next.md)'s recommendation: same prompt, same runtime, launched for you instead of handed to you. Unlike the chain, it is the right transition when the work must survive this session. It pairs with the artifact-producing skills those recommendations point at, most obviously [to-spec](./to-spec.md) and [to-tickets](./to-tickets.md), since a background agent with a spec to work from needs very little else.
