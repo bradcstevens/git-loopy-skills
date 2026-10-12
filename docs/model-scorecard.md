@@ -17,7 +17,9 @@ npx skills add bradcstevens/git-loopy-skills --skill=model-scorecard
 Artificial Analysis leaderboard, authenticated Copilot model listings, and local
 run logs. It recommends a selectable model ID, reasoning effort, context size,
 and 1-100 role-fit score for each of seven Copilot built-in subagents and seven
-git-loopy task types. Common SDLC tasks map onto those roles.
+git-loopy task types. Common SDLC tasks and every skill in this repository map
+onto those roles, so each skill also gets a header pick: its role's model and
+effort, with the context fitted to the skill's own runs.
 
 It **reports recommendations**, not configuration changes. The output includes
 ranked alternatives, current settings, per-role evidence, and coverage gaps so
@@ -48,15 +50,20 @@ The [build script](../skills/model-scorecard/scripts/build.sh) runs four stages
 fail-fast. Jev opens the live leaderboard and verifies its embedded dataset
 against visible rows. The SDK lists the models available through the installed
 Copilot CLI for subagents and git-loopy's pinned CLI for task types. Local
-Copilot sessions and git-loopy Runs supply each role's p95 working set. Finally,
-the scorer ranks selectable model-and-effort combinations and rewrites the
-scorecard. `--no-headless` lets the user watch Jev.
+Copilot sessions and git-loopy Runs supply each role's p95 working set, and the
+sessions a user started with `/<skill>` supply each skill's. Finally, the scorer
+ranks selectable model-and-effort combinations, gives each skill its role's pick
+with the context fitted to that skill's runs (its role's, below five runs), and
+rewrites the scorecard and
+[`skill-headers.json`](../skills/model-scorecard/references/skill-headers.json).
+`--no-headless` lets the user watch Jev.
 
 The [profiles](../skills/model-scorecard/profiles.json) are the tuning surface:
 they define Intelligence Index bands, relevant benchmarks, working-set
-estimates, role constraints, and the ranked fields that determine score weights.
-The scorecard is generated output; retune the profiles and rebuild instead of
-editing its recommendations by hand.
+estimates, role constraints, the ranked fields that determine score weights, and
+the `skills` map that assigns each skill the role whose work it is. The scorecard
+and `skill-headers.json` are generated output; retune the profiles and rebuild
+instead of editing their recommendations by hand.
 
 ## Common questions
 
@@ -79,15 +86,17 @@ and `jev_status` equal to `done`.
 
 **Does it commit the result or enforce the picks?** No. It reads and diffs the
 regenerated scorecard, reports the changes, and leaves the user to commit it or
-apply settings with [set-task-models](./set-task-models.md). That skill refreshes
+apply settings, including each skill's `model`, `effort` and `context` header,
+with [set-task-models](./set-task-models.md). That skill refreshes
 evidence and checks runtime contracts; it is not a blind copy of this table.
 
 ## It's working if
 
 - The build exits successfully with the required Jev verification.
-- Every role has a model, effort, context, and score in the regenerated reference.
-- The report shows the subagent and git-loopy tables and changes from the prior
-  scorecard.
+- Every role has a model, effort, context, and score in the regenerated reference,
+  and every skill has a header pick.
+- The report shows the subagent, git-loopy and skill tables and changes from the
+  prior scorecard, and names each skill whose header differs from its pick.
 - `outside band`, `II estimated`, coverage gaps, and estimated working sets are
   explicitly reported rather than hidden.
 

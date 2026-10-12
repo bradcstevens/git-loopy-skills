@@ -25,8 +25,10 @@ Repository-specific documentation checks still apply to documentation-only work.
 
 ## When to reach for it
 
-Type `/push` when the current work is ready to publish. The skill is explicitly
-user-invoked; it does not publish just because an agent notices a dirty worktree.
+Type `/push` when the current work is ready to publish. The skill is also
+model-invocable, so a workflow can reach it without you: `/code-review` ends by
+running it on a clean head. Either way, invocation is the approval to publish the
+work in scope from the current conversation, never unrelated worktree changes.
 Include any preferred commit message, remote, base branch, or PR instructions in
 the request.
 

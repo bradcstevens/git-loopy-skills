@@ -21,8 +21,11 @@ To calibrate without changing configuration:
 `set-task-models` inventories the signed-in account's actual Copilot capabilities,
 refreshes model evidence, and creates one shared decision map for Copilot built-in
 subagents and git-loopy task types. An ordinary invocation authorizes applying
-that map to user settings, global routing, and actual git-loopy source defaults.
-`research-only` saves and reports the decisions without touching those targets.
+that map to user settings, global routing, actual git-loopy source defaults, and
+the `model`, `effort` and `context` header of every skill in git-loopy-skills.
+A skill takes the profile of the role that model-scorecard's `profiles.json`
+`skills` map assigns it. `research-only` saves and reports the decisions without
+touching those targets.
 
 It sets `modelPolicy: "required"` for every discovered Copilot built-in, so a
 subagent cannot substitute another model. It leaves custom agents, unrelated
@@ -37,8 +40,10 @@ model, effort, and context choices across both systems. Reach for
 report, or [sync-model-roster](./sync-model-roster.md) for scoped roster repair.
 
 The default targets are `~/.copilot/settings.json`, respecting `COPILOT_HOME`;
-`~/.config/git-loopy/config.toml`, respecting the configured config home; and the
-git-loopy source checkout at `~/code/github/bradcstevens/git-loopy`. The skill
+`~/.config/git-loopy/config.toml`, respecting the configured config home; the
+git-loopy source checkout at `~/code/github/bradcstevens/git-loopy`; and every
+`skills/**/SKILL.md` header in the git-loopy-skills clone at
+`~/code/github/bradcstevens/git-loopy-skills`. The skill
 resolves real schemas, effective configuration, instructions, and existing edits
 before ranking. A missing checkout or unverified account entitlement requires
 input, not a guessed replacement.
@@ -100,8 +105,10 @@ installing it needs explicit authorization.
   guard passes; equivalent roles share the same profile.
 - Proposed changes, citations, confidence, and limitations are reported.
 - In apply mode, all authorized targets read back through their real readers and
-  runtime paths as intended, with required model enforcement on built-ins.
-- Relevant checks pass and a second projection comparison is a no-op.
+  runtime paths as intended, with required model enforcement on built-ins, and
+  every skill header matches its role's profile.
+- Relevant checks pass and a second projection comparison, including
+  `sync_skill_headers.py --check`, is a no-op.
 - In research-only mode, no target changes; any blocked or partially applied
   state is reported plainly rather than called complete.
 
