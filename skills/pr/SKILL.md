@@ -1,6 +1,9 @@
 ---
 name: pr
 description: "Use when writing a PR body."
+model: claude-sonnet-5.5
+effort: medium
+context: 200K
 metadata:
   credits:
     skill: show-me

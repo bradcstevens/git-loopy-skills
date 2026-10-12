@@ -1,6 +1,9 @@
 ---
 name: retro
 description: "Conduct a retrospective on a coding session."
+model: claude-opus-5.5
+effort: medium
+context: 1M
 disable-model-invocation: true
 ---
 

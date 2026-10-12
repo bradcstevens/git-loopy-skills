@@ -7,9 +7,9 @@ context: 1M
 disable-model-invocation: false
 ---
 
-This skill takes the current conversation context and codebase understanding and produces a spec. Do NOT interview the user — just synthesize what you already know.
+This skill takes the current conversation context and codebase understanding and produces a spec. Do NOT interview the user; just synthesize what you already know.
 
-The issue tracker and triage label vocabulary should have been provided to you — run `/setup-git-loopy-skills` if not.
+The issue tracker and triage label vocabulary should have been provided to you. If not, tell the user to run `/setup-git-loopy-skills`.
 
 ## Process
 
@@ -19,7 +19,7 @@ The issue tracker and triage label vocabulary should have been provided to you �
 
 Check with the user that these seams match their expectations.
 
-3. Write the spec using the template below, then publish it to the project issue tracker. A spec is a **planning document**, not work: apply the planning-document triage role, `ready-for-human`. Never apply `ready-for-agent` — an AFK runner refuses a planning document at pickup, so the label would only mint a candidate it re-excludes every iteration and a human has to strip by hand. The tickets sliced out of the spec are what carry `ready-for-agent`, and `/to-tickets` applies it to each of them.
+3. Write the spec using the template below, then publish it to the project issue tracker. Apply the `ready-for-agent` triage label - no need for additional triage.
 
 <spec-template>
 
@@ -57,7 +57,7 @@ A list of implementation decisions that were made. This can include:
 
 Do NOT include specific file paths or code snippets. They may end up being outdated very quickly.
 
-Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it within the relevant decision and note briefly that it came from a prototype. Trim to the decision-rich parts — not a working demo, just the important bits.
+Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it within the relevant decision and note briefly that it came from a prototype. Trim to the decision-rich parts, not a working demo, just the important bits.
 
 ## Testing Decisions
 
@@ -76,23 +76,5 @@ A description of the things that are out of scope for this spec.
 Any further notes about the feature.
 
 </spec-template>
-
-4. Publish the spec issue, then record it (see below).
-
-## Record the specification
-
-Publishing a spec is a durable workflow transition, and this skill owns it. Record it so the
-next session — human or agent — reads the same answer you did.
-
-**Only record after the spec is durably published.** In order:
-
-1. Create the spec issue on the tracker (step 3 above). Everything below references it.
-2. Post one short evidence comment on that issue — what this transition changed and what it
-   came from (`gh issue comment <spec-issue> --body "..."`).
-
-A published spec is a **specification artifact**, not an executable ticket — so it ends this
-session labelled as the planning document it is (`ready-for-human`, step 3). The next step is
-**decomposition** rather than implementation, and the way to take that step is to run
-`/to-tickets`, not to leave behind a label no runner will act on.
 
 At the conclusion of a `/to-spec` session, run `/to-tickets` on the spec issue to decompose it.
