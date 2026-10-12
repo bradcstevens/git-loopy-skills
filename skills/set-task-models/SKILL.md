@@ -1,13 +1,13 @@
 ---
-name: model-fit
-description: Research licensed Copilot models and synchronize model, effort, context, and enforcement across Copilot built-ins, git-loopy task routing, and every skill's header.
+name: set-task-models
+description: Set the model, effort, and context of every Copilot built-in subagent and git-loopy task type from fresh model research, and enforce them.
 model: gpt-6.1-sol
 effort: medium
 context: 922K
 disable-model-invocation: true
 ---
 
-# Model fit
+# Set task models
 
 Calibrate from evidence, then apply one shared decision map. Run this skill only
 when the user invokes it. An ordinary invocation authorizes the configuration
@@ -52,7 +52,7 @@ every candidate's selectable status and runtime capabilities are recorded.
 ## 2. Collect the evidence
 
 Read [EVIDENCE.md](EVIDENCE.md). Create a private, dated run directory under
-`~/.config/git-loopy/model-fit/` or the configured equivalent, with directory mode
+`~/.config/git-loopy/set-task-models/` or the configured equivalent, with directory mode
 `0700`. Keep inventory, evidence, decisions, and before/after records there,
 outside the source tree.
 

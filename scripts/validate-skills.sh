@@ -53,7 +53,7 @@ while IFS= read -r skill_md; do
   fi
 
   # Every skill names the GitHub Copilot model, reasoning effort and context size
-  # to run it with. /model-fit writes them from /model-scorecard's picks.
+  # to run it with. /set-task-models writes them from /model-scorecard's picks.
   model="$(printf '%s\n' "$frontmatter" | sed -n 's/^model:[[:space:]]*//p' | head -1)"
   effort="$(printf '%s\n' "$frontmatter" | sed -n 's/^effort:[[:space:]]*//p' | head -1)"
   context="$(printf '%s\n' "$frontmatter" | sed -n 's/^context:[[:space:]]*//p' | head -1)"
@@ -90,11 +90,13 @@ if [ "$fail" -eq 0 ]; then
 fi
 
 scripts/test-chain.sh || fail=1
+bash scripts/test-link-skills.sh || fail=1
 bash scripts/test-chain-hook.sh || fail=1
 bash scripts/test-hook-log.sh || fail=1
 bash scripts/test-review-clean-record.sh || fail=1
 bash scripts/test-handoff.sh || fail=1
-python3 scripts/test-model-fit.py || fail=1
+python3 scripts/test-set-task-models.py || fail=1
 python3 scripts/test-model-scorecard.py || fail=1
 python3 scripts/test-next-sessions.py || fail=1
+python3 scripts/test-upstream-sync.py || fail=1
 exit "$fail"

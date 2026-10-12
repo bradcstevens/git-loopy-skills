@@ -27,8 +27,8 @@ context: 1M
 
 These values are generated, so do not hand-tune them. `skills/model-scorecard/profiles.json`
 maps each skill to the role whose work it is, `/model-scorecard` scores that role and fits
-the context to the skill's measured runs (`references/skill-headers.json`), and `/model-fit`
-writes the headers with `skills/model-fit/sync_skill_headers.py`. A new skill needs a
+the context to the skill's measured runs (`references/skill-headers.json`), and `/set-task-models`
+writes the headers with `skills/set-task-models/sync_skill_headers.py`. A new skill needs a
 `skills` entry in `profiles.json` and a header; `scripts/validate-skills.sh` enforces both.
 
 ## Agent skills

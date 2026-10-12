@@ -9,7 +9,7 @@ disable-model-invocation: true
 
 # Model scorecard
 
-Rebuild [`references/scorecard.md`](references/scorecard.md), the **scorecard**: one Copilot model id, reasoning effort and context size (`###K`) per role, scored 1–100 for fit. Roles are the seven Copilot built-in subagents and the seven git-loopy task types; the common SDLC tasks and every skill in this repository map onto them. The scorecard reports; `/model-fit` applies settings, including each skill's `model`, `effort` and `context` header.
+Rebuild [`references/scorecard.md`](references/scorecard.md), the **scorecard**: one Copilot model id, reasoning effort and context size (`###K`) per role, scored 1–100 for fit. Roles are the seven Copilot built-in subagents and the seven git-loopy task types; the common SDLC tasks and every skill in this repository map onto them. The scorecard reports; `/set-task-models` applies settings, including each skill's `model`, `effort` and `context` header.
 
 [`profiles.json`](profiles.json) holds each role's Intelligence Index band, benchmarks, working-set estimate and constraints, the ranked fields whose order sets the score weights, and the `skills` map that assigns each skill the role whose work it is. Retune there; the scorecard and [`references/skill-headers.json`](references/skill-headers.json) are regenerated output.
 
@@ -38,4 +38,4 @@ Read the regenerated scorecard and `git diff` it against the previous one. Repor
 - each pick flagged `outside band` or `II estimated`, and every coverage gap;
 - each role whose working set came from a profile estimate rather than local runs.
 
-**Done:** every role's and skill's recommendation and change is reported, and the scorecard waits for the user to commit it or apply it with `/model-fit`.
+**Done:** every role's and skill's recommendation and change is reported, and the scorecard waits for the user to commit it or apply it with `/set-task-models`.

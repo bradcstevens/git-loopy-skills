@@ -1,0 +1,5 @@
+interface:
+  display_name: "Set Task Models"
+  short_description: "Set models for Copilot subagents and git-loopy task types"
+policy:
+  allow_implicit_invocation: false

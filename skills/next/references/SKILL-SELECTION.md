@@ -33,7 +33,7 @@ the remaining smart zone. At a phase boundary where it no longer fits, apply
 | Learn a concept across sessions | `/teach` | Use the current directory as the learning workspace. |
 | Write or revise a skill, `AGENTS.md`, or a pointed-at agent document | `/writing-for-agents` | Apply the agent-writing reference; disclose skill mechanics only when writing a skill. |
 | Reconcile git-loopy's pinned SDK model roster and one configuration scope | `/sync-model-roster` | Repair the roster first, then align model, effort, context, and task-route capabilities. |
-| Research licensed Copilot models and align their routing and enforcement | `/model-fit` | Synchronize Copilot built-ins and git-loopy; `research-only` leaves configuration unchanged. |
+| Set the model, effort, and context of Copilot subagents and git-loopy task types | `/set-task-models` | Research licensed models first and enforce the result; `research-only` leaves configuration unchanged. |
 
 Research, prototypes, questionnaires, vocabulary work, and conflict resolution
 also have standalone entry points in the route table. Select them for the

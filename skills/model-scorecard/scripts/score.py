@@ -5,7 +5,7 @@ Reads a run directory holding ``leaderboard.json`` (capture_leaderboard.py),
 ``models-copilot.json`` and ``models-git-loopy.json`` (list_models.py) and
 ``working-sets.json`` (measure_context.py), plus the skill's ``profiles.json``.
 Beside the scorecard it writes ``skill-headers.json``: each skill's role pick and
-fitted context, which `/model-fit` projects into that skill's SKILL.md header.
+fitted context, which `/set-task-models` projects into that skill's SKILL.md header.
 """
 
 from __future__ import annotations
@@ -329,7 +329,7 @@ def current_headers(root: Path) -> dict[str, str]:
 
 
 def headers_document(skills: dict, listing: dict, meta: dict) -> dict:
-    """The machine-readable skill headers `/model-fit` projects into each SKILL.md."""
+    """The machine-readable skill headers `/set-task-models` projects into each SKILL.md."""
     return {
         "schema_version": 1,
         "generated": meta["generated"],
@@ -510,7 +510,7 @@ def render(profiles: dict, picks: dict, meta: dict, now: dict, skills: dict | No
         "## Skills",
         "",
         "Each git-loopy-skills skill inherits its role's pick and names it in its `SKILL.md` header as `model`, "
-        "`effort` and `context`, the settings to choose in `/model` before running it; `/model-fit` writes the "
+        "`effort` and `context`, the settings to choose in `/model` before running it; `/set-task-models` writes the "
         f"headers. Context fits the skill's own p95 main-session working set once it has {MIN_SAMPLES} local "
         f"runs, else its role's. **Now** reads each header under `{meta.get('skills_root', 'nothing')}`.",
         "",

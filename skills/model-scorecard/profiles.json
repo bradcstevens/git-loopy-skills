@@ -176,7 +176,7 @@
     "microsoft-code-reference": "copilot:research",
     "microsoft-docs": "copilot:research",
     "microsoft-foundry": "copilot:general-purpose",
-    "model-fit": "copilot:research",
+    "set-task-models": "copilot:research",
     "model-scorecard": "copilot:task",
     "narrow-react-prop-types": "git-loopy:implementation",
     "next": "copilot:explore",

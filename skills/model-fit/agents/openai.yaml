@@ -1,5 +1,0 @@
-interface:
-  display_name: "Model Fit"
-  short_description: "Calibrate licensed models for Copilot and git-loopy"
-policy:
-  allow_implicit_invocation: false

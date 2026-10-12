@@ -468,7 +468,7 @@
       "need": 210058,
       "need_source": "copilot:general-purpose p95 of 12 runs"
     },
-    "model-fit": {
+    "set-task-models": {
       "role": "copilot:research",
       "model": "gpt-6.1-sol",
       "effort": "medium",

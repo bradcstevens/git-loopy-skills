@@ -62,7 +62,7 @@ Each common software-lifecycle task maps to the role whose work it is; its row r
 
 ## Skills
 
-Each git-loopy-skills skill inherits its role's pick and names it in its `SKILL.md` header as `model`, `effort` and `context`, the settings to choose in `/model` before running it; `/model-fit` writes the headers. Context fits the skill's own p95 main-session working set once it has 5 local runs, else its role's. **Now** reads each header under `~/code/github/bradcstevens/git-loopy-skills/skills`.
+Each git-loopy-skills skill inherits its role's pick and names it in its `SKILL.md` header as `model`, `effort` and `context`, the settings to choose in `/model` before running it; `/set-task-models` writes the headers. Context fits the skill's own p95 main-session working set once it has 5 local runs, else its role's. **Now** reads each header under `~/code/github/bradcstevens/git-loopy-skills/skills`.
 
 | Skill | Role | Model | Effort | Context | Score | Working set | Now |
 |---|---|---|---|---|---|---|---|
@@ -89,7 +89,7 @@ Each git-loopy-skills skill inherits its role's pick and names it in its `SKILL.
 | microsoft-code-reference | copilot:research | `gpt-6.1-sol` | medium | 922K long_context | 76 | 238K (copilot:research p95 of 18 runs) | gpt-6.1-sol medium 922K |
 | microsoft-docs | copilot:research | `gpt-6.1-sol` | medium | 922K long_context | 76 | 238K (copilot:research p95 of 18 runs) | gpt-6.1-sol medium 922K |
 | microsoft-foundry | copilot:general-purpose | `gpt-6.1-sol` | medium | 272K default | 73 | 210K (copilot:general-purpose p95 of 12 runs) | gpt-6.1-sol medium 272K |
-| model-fit | copilot:research | `gpt-6.1-sol` | medium | 922K long_context | 76 | 238K (copilot:research p95 of 18 runs) | gpt-6.1-sol medium 922K |
+| set-task-models | copilot:research | `gpt-6.1-sol` | medium | 922K long_context | 76 | 238K (copilot:research p95 of 18 runs) | gpt-6.1-sol medium 922K |
 | model-scorecard | copilot:task | `claude-sonnet-5.5` | low | 200K default | 78 | 70K (copilot:task profile estimate) | claude-sonnet-5.5 low 200K |
 | narrow-react-prop-types | git-loopy:implementation | `gpt-6.1-sol` | medium | 272K default | 73 | 214K (git-loopy:implementation p95 of 293 runs) | gpt-6.1-sol medium 272K |
 | next | copilot:explore | `claude-sonnet-5.5` | low | 936K long_context | 86 | 510K (p95 of 19 /next runs) | claude-sonnet-5.5 low 936K |

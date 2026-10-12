@@ -518,7 +518,7 @@ Skills here that no current upstream skill maps to:
 - **From HumanLayer**, imported into this repo alongside `show-me` (`83c1c4f`, 2026-09-14):
   `design-control-loop`, `narrow-react-prop-types`. A third import,
   `build-iterated-agentic-loop`, was folded into `design-control-loop` and removed.
-- **Everything else:** `push`, `release`, `model-fit`, `sync-model-roster`, `codebase-audit`,
+- **Everything else:** `push`, `release`, `set-task-models`, `sync-model-roster`, `codebase-audit`,
   `create-readme`, `mermaid-diagrams`, `playwright-cli`, `jev-ultrafast`,
   `microsoft-code-reference`, `microsoft-docs`, `microsoft-foundry`.
 

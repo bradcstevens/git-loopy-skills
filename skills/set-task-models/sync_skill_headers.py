@@ -2,7 +2,7 @@
 """Project each skill's model, effort and context into its SKILL.md header.
 
 The picks come from ``skill-headers.json``, which /model-scorecard writes beside its
-scorecard. With ``--decision``, each skill instead takes the profile model-fit
+scorecard. With ``--decision``, each skill instead takes the profile set-task-models
 decided for its role, and its context is re-fitted to that model by the scorecard's
 rule. Dry-run by default; ``--write`` edits the headers that differ, and ``--check``
 exits 1 while any header differs. Exit 2 means the inputs cannot produce a header
@@ -184,7 +184,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--skills-repo", type=Path, default=DEFAULT_REPO, help="git-loopy-skills clone to edit")
     parser.add_argument("--headers", type=Path, help=f"skill picks; defaults to <skills-repo>/{HEADERS}")
-    parser.add_argument("--decision", type=Path, help="model-fit decision.json whose role profiles replace the picks")
+    parser.add_argument("--decision", type=Path, help="set-task-models decision.json whose role profiles replace the picks")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--write", action="store_true", help="edit every header that differs")
     mode.add_argument("--check", action="store_true", help="exit 1 while any header differs")

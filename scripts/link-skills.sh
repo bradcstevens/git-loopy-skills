@@ -10,9 +10,10 @@ set -euo pipefail
 #   - ~/.copilot/skills            — GitHub Copilot Agent Skills-compatible harnesses
 #   - ~/.config/git-loopy/skills   — git-loopy's own skill directory
 # Each entry is a symlink into this repo, so a `git pull` is all that's needed
-# to keep installed skills up to date.
+# to keep installed skills up to date. Custom agent profiles are also linked
+# from .github/agents into ~/.copilot/agents.
 
-REPO="$(cd "$(dirname "$0")/.." && pwd)"
+REPO="$(cd "$(dirname "$0")/.." && pwd -P)"
 SKILLS_ROOT="$REPO/skills"
 DESTS=("$HOME/.copilot/skills" "$HOME/.config/git-loopy/skills")
 
@@ -76,6 +77,10 @@ for DEST in "${DESTS[@]}"; do
     src="${srcs[$i]}"
     target="$DEST/$name"
 
+    if [ -L "$target" ] && [ "$(readlink "$target")" = "$src" ]; then
+      continue
+    fi
+
     if [ -e "$target" ] && [ ! -L "$target" ]; then
       rm -rf "$target"
     fi
@@ -83,4 +88,52 @@ for DEST in "${DESTS[@]}"; do
     ln -sfn "$src" "$target"
     echo "linked $name -> $src ($DEST)"
   done
+done
+
+AGENTS_ROOT="$REPO/.github/agents"
+AGENTS_DEST="$HOME/.copilot/agents"
+if [ -L "$AGENTS_DEST" ]; then
+  resolved="$(readlink -f "$AGENTS_DEST")"
+  case "$resolved" in
+    "$REPO"|"$REPO"/*)
+      echo "error: $AGENTS_DEST is a symlink into this repo ($resolved)." >&2
+      echo "Remove it (rm \"$AGENTS_DEST\") and re-run; the script will recreate it as a real dir." >&2
+      exit 1
+      ;;
+  esac
+fi
+mkdir -p "$AGENTS_DEST"
+
+for target in "$AGENTS_DEST/"*.agent.md; do
+  [ -L "$target" ] || continue
+  src="$(readlink "$target")"
+  case "$src" in
+    /*) ;;
+    *) src="$AGENTS_DEST/$src" ;;
+  esac
+  parent="$(dirname "$src")"
+  if [ -d "$parent" ]; then
+    src="$(cd "$parent" && pwd -P)/$(basename "$src")"
+  fi
+  case "$src" in
+    "$AGENTS_ROOT/"*.agent.md)
+      if [ ! -f "$src" ]; then
+        rm "$target"
+        echo "removed retired agent link $target -> $src"
+      fi
+      ;;
+  esac
+done
+
+for src in "$AGENTS_ROOT/"*.agent.md; do
+  [ -f "$src" ] || continue
+  target="$AGENTS_DEST/$(basename "$src")"
+  # Existing links may belong to another checkout or installer.
+  [ ! -L "$target" ] || continue
+  if [ -d "$target" ]; then
+    echo "error: $target is a directory, not an agent profile." >&2
+    exit 1
+  fi
+  ln -sfn "$src" "$target"
+  echo "linked $(basename "$src") -> $src ($AGENTS_DEST)"
 done
