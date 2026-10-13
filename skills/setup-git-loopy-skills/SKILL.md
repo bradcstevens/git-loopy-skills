@@ -26,9 +26,8 @@ This is a prompt-driven skill, not a deterministic script. Explore, present what
 Look at the current repo to understand its starting state. Read whatever exists; don't assume:
 
 - `git remote -v` and `.git/config`: is this a GitHub repo? Which one?
-- `AGENTS.md` and `.github/copilot-instructions.md`: does either exist? Is there already an `## Agent skills` section in either?
+- `AGENTS.md` at the repo root: does it exist? Is there already an `## Agent skills` section in either?
 - `GLOSSARY.md` and `GLOSSARY-MAP.md` at the repo root
-- Legacy `CONTEXT.md` and `CONTEXT-MAP.md`, including per-context files referenced by either map: do these need a history-preserving migration?
 - `docs/adr/` and any `src/*/docs/adr/` directories
 - `docs/agents/`: does this skill's prior output already exist?
 - `.scratch/`: a sign that a local-markdown issue tracker convention is already in use
@@ -107,7 +106,7 @@ List the exact source and destination paths, including per-context files referen
 
 Show the user a draft of:
 
-- The `## Agent skills` block to add to whichever of `.github/copilot-instructions.md` / `AGENTS.md` is being edited (see step 4 for selection rules)
+- The `## Agent skills` block to add to `AGENTS.md` is being edited (see step 4 for selection rules)
 - The contents of `docs/agents/issue-tracker.md`, `docs/agents/domain.md`, and `docs/agents/triage-labels.md` (the last only when `triage` is installed)
 - `.github/hooks/git-loopy-chain.json`, with `complete` for `subagentStop` and `reenter` for
   `agentStop`
@@ -117,14 +116,9 @@ Let them edit before writing.
 
 ### 4. Write
 
-**Pick the file to edit:**
-
-- If `.github/copilot-instructions.md` exists, edit it.
-- Else if `AGENTS.md` exists, edit it.
-- If neither exists, ask the user which one to create; don't pick for them.
-
-Never create `AGENTS.md` when `.github/copilot-instructions.md` already exists (or vice versa); always edit the one that's already there.
-
+**Write to the file to edit:**
+- If `AGENTS.md` exists, edit it.
+- If it doesn't exist, create it.
 If an `## Agent skills` block already exists in the chosen file, update its contents in-place rather than appending a duplicate. Don't overwrite user edits to the surrounding sections.
 
 The block:

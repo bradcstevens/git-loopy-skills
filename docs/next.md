@@ -90,7 +90,7 @@ failure was transient or permanent. A transient rate limit, server error, networ
 30-second tracker timeout, or malformed tracker response leaves the target retryable. Only a tracker
 error saying the target is missing or invalid is permanent: it halts the target instead of being
 mistaken for `no-evidence`. Completion and recovery remove a clean worktree and report any other as
-a retained worktree (`CONTEXT.md`).
+a retained worktree (`GLOSSARY.md`).
 `agentStop` re-enters `/next` in the launching session for its batch of completed, unrouted runs,
 allowing one fill to replace every slot that batch freed. Other sessions' stops, subagents' included,
 stand aside (ADR-0009).

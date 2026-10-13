@@ -7,7 +7,7 @@ same runtime, context, and output steps.
 ## Interview wrappers
 
 Choose `/grill-with-docs` in a working directory: its interview retains domain
-language in `CONTEXT.md` and decisions in ADRs. Choose `/grill-me` without a
+language in `GLOSSARY.md` and decisions in ADRs. Choose `/grill-me` without a
 repository: the interview is stateless. Both run `/grilling`; recommend that
 primitive directly only when the user wants the interview without either wrapper.
 
