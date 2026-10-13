@@ -106,11 +106,11 @@ It is this skill. Upstream's v1.1 renamed it to `wayfinder`; this repo has only 
 - A session resolves one ticket, posts the answer as a resolution comment, closes it, and adds one line to the map's *Decisions so far*. Then it posts its progress comment on the map and ends by calling `next`, unless it has just handed a finished map to `to-spec`.
 - **Not yet specified** shrinks over time. When fog graduates into a ticket, it leaves that section and does not appear in both places.
 - When the opening breadth-first grill finds no fog at all, the skill stops and tells you the effort is small enough to skip the map.
-- The session that finishes the map closes it, and points you toward a spec whenever something is left to specify or build, never toward a pull request.
+- The session that finishes the map closes it and never opens a pull request. When something is left to specify or build, it normally points you toward a spec.
 
 ## Where it fits
 
-`wayfinder` is a **situational on-ramp**, not the default starting point. Most work still starts on the grill-led idea → ship chain. You use wayfinder when the idea is too big to hold in one session. It rejoins that chain at [to-spec](./to-spec.md) whenever something is left to build, because a cleared map hands off and does not build.
+`wayfinder` is a **situational on-ramp**, not the default starting point. Most work still starts on the grill-led idea → ship chain. You use wayfinder when the idea is too big to hold in one session. It normally rejoins that chain at [to-spec](./to-spec.md) whenever something is left to build, because a cleared map hands off and does not build.
 
 Most of the work happens in other skills that wayfinder schedules. [grilling](./grilling.md) and [domain-modeling](./domain-modeling.md) resolve the default ticket type, [prototype](./prototype.md) resolves the tickets that talk cannot settle, and [research](./research.md) runs as a subagent so its reading stays out of your session. This repo's [handoff](./handoff.md) is a background launcher for `/next` recommendations, not upstream's document-writing handoff, so it does not bridge work into or out of a map. For anything else, [next](./next.md) routes over the whole set.
 
