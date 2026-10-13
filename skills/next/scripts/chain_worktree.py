@@ -20,26 +20,26 @@ def remove_worktree(worktree: str, force: bool = False) -> bool:
     if os.path.isfile(marker):
         with open(marker, "rb") as stream:
             backup = stream.read()
+    removed = False
+    marker_removed = False
     try:
-        os.unlink(marker)
-    except FileNotFoundError:
-        pass
-    try:
-        os.rmdir(os.path.dirname(marker))
-    except OSError as error:
-        if error.errno not in (errno.ENOENT, errno.ENOTEMPTY, errno.EEXIST):
-            raise
-    try:
+        try:
+            os.unlink(marker)
+            marker_removed = True
+        except FileNotFoundError:
+            pass
+        try:
+            os.rmdir(os.path.dirname(marker))
+        except OSError as error:
+            if error.errno not in (errno.ENOENT, errno.ENOTEMPTY, errno.EEXIST):
+                raise
         command = ["git", "-C", root, "worktree", "remove"]
         if force:
             command.append("--force")
         removed = subprocess.run([*command, worktree]).returncode == 0
-    except OSError:
-        if backup is not None and os.path.isdir(worktree):
+    finally:
+        if not removed and marker_removed and backup is not None and os.path.isdir(worktree):
             restore_marker(marker, backup)
-        raise
-    if not removed and backup is not None and os.path.isdir(worktree):
-        restore_marker(marker, backup)
     return removed
 
 
@@ -50,21 +50,26 @@ def restore_marker(marker: str, contents: bytes) -> None:
 
 
 def remove_clean_worktree(worktree: str) -> bool:
-    if os.path.exists(worktree):
-        status = subprocess.run(
-            ["git", "-C", worktree, "status", "--porcelain=v1", "--untracked-files=all",
-             "--", ".", ":(exclude).git-loopy/worktree-owner"],
-            stdout=subprocess.PIPE, text=True,
-        )
-        if status.returncode:
-            print(f"error: could not inspect worktree; retaining it: {worktree}", file=sys.stderr)
-            return False
-        if status.stdout.strip():
-            print(f"warning: worktree has uncommitted changes and was retained: {worktree}",
+    try:
+        if os.path.exists(worktree):
+            status = subprocess.run(
+                ["git", "-C", worktree, "status", "--porcelain=v1", "--untracked-files=all",
+                 "--", ".", ":(exclude).git-loopy/worktree-owner"],
+                stdout=subprocess.PIPE, text=True,
+            )
+            if status.returncode:
+                print(f"error: could not inspect worktree; retaining it: {worktree}", file=sys.stderr)
+                return False
+            if status.stdout.strip():
+                print(f"warning: worktree has uncommitted changes and was retained: {worktree}",
+                      file=sys.stderr)
+                return False
+        if not remove_worktree(worktree):
+            print(f"warning: could not remove clean worktree; retaining it: {worktree}",
                   file=sys.stderr)
             return False
-    if not remove_worktree(worktree):
-        print(f"warning: could not remove clean worktree; retaining it: {worktree}", file=sys.stderr)
+    except (OSError, subprocess.CalledProcessError, ValueError) as error:
+        print(f"error: could not clean worktree; retaining it: {worktree}: {error}", file=sys.stderr)
         return False
     return True
 

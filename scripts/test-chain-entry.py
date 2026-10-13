@@ -422,6 +422,84 @@ class ChainEntryTests(unittest.TestCase):
         self.assert_both_writes_survived()
         self.assertEqual(self.rows()[1]["agent_id"], "next-child")
 
+    def linked_completion_fixture(self):
+        payload = self.completion_fixture()
+        subprocess.run(
+            ["git", "-C", str(self.root), "-c", "user.name=test", "-c",
+             "user.email=test@example.com", "commit", "--quiet", "--allow-empty", "-m", "initial"],
+            check=True,
+        )
+        worktree = self.root / "linked"
+        subprocess.run(
+            ["git", "-C", str(self.root), "worktree", "add", "--quiet", "-b", "linked", str(worktree)],
+            check=True,
+        )
+        marker = worktree / ".git-loopy/worktree-owner"
+        marker.parent.mkdir()
+        marker.write_bytes(b"123\toriginal owner\n")
+        row = self.rows()[0]
+        row.update(worktree=str(worktree), in_place=False)
+        self.write_rows([row])
+        return payload, worktree, marker
+
+    @unittest.skipIf(os.geteuid() == 0, "root bypasses filesystem permission checks")
+    def test_completion_retains_unreadable_marker_but_releases_the_slot(self):
+        payload, worktree, marker = self.linked_completion_fixture()
+        marker.chmod(0)
+        self.addCleanup(lambda: marker.chmod(0o644) if marker.exists() else None)
+        result = self.chain("complete", payload=payload)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {
+            "continue": True, "outcome": "published", "target": "issue-completing",
+            "retained_worktree": str(worktree),
+        })
+        self.assertIn("retaining it", result.stderr)
+        self.assertEqual(self.rows()[0]["finish_time"], "2026-10-12T00:01:00Z")
+        self.assertFalse(Path(str(self.ledger) + ".lock").exists())
+        marker.chmod(0o644)
+        self.assertEqual(marker.read_bytes(), b"123\toriginal owner\n")
+
+    @unittest.skipIf(os.geteuid() == 0, "root bypasses filesystem permission checks")
+    def test_recovery_restores_marker_after_directory_cleanup_fails(self):
+        _, worktree, marker = self.linked_completion_fixture()
+        row = self.rows()[0]
+        row["agent_id"] = ""
+        self.write_rows([row])
+        worktree.chmod(0o555)
+        self.addCleanup(lambda: worktree.chmod(0o755) if worktree.exists() else None)
+        result = self.chain(
+            "recover", "--stale-after-seconds", "300", "--now", "2026-10-12T00:05:00Z",
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout), {
+            "recovered": 1, "targets": ["issue-completing"],
+            "retained_worktrees": [str(worktree)],
+        })
+        self.assertIn("retaining it", result.stderr)
+        self.assertEqual(self.rows()[0]["outcome"], "reclaimed")
+        self.assertEqual(self.rows()[0]["finish_time"], "2026-10-12T00:05:00Z")
+        self.assertEqual(marker.read_bytes(), b"123\toriginal owner\n")
+        self.assertFalse(Path(str(self.ledger) + ".lock").exists())
+
+    def test_interrupted_owner_record_does_not_leave_an_ownerless_ledger_lock(self):
+        payload = self.completion_fixture()
+        before = self.ledger.read_bytes()
+        bin_dir = self.root / "bin"
+        bin_dir.mkdir()
+        ps = bin_dir / "ps"
+        ps.write_text(
+            '#!/bin/sh\nkill -TERM "$4"\nexec "$REAL_PS" "$@"\n', encoding="utf-8",
+        )
+        ps.chmod(0o755)
+        result = self.chain(
+            "complete", payload=payload,
+            PATH=str(bin_dir) + os.pathsep + self.env["PATH"], REAL_PS=shutil.which("ps"),
+        )
+        self.assertEqual(result.returncode, 130, result.stderr)
+        self.assertEqual(self.ledger.read_bytes(), before)
+        self.assertFalse(Path(str(self.ledger) + ".lock").exists())
+        self.assertEqual(self.chain("complete", payload=payload).returncode, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

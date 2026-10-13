@@ -173,7 +173,7 @@ def acquire_lock(lock_dir: str, timeout: Optional[float] = 1) -> bool:
             else:
                 try:
                     write_owner(lock_dir)
-                except (OSError, subprocess.CalledProcessError):
+                except (OSError, subprocess.CalledProcessError, SystemExit, KeyboardInterrupt):
                     release_lock(lock_dir)
                     raise
                 return True
