@@ -27,7 +27,7 @@ It is the heaviest flow in the set, so the trigger is narrow. The effort must be
 | A well-scoped feature you can settle in one sitting | `/grill-me`, or [grill-with-docs](./grill-with-docs.md) when there is a codebase |
 | A greenfield project, or a build spanning many sessions, with the route still unclear | `/wayfinder` |
 | A thread where the deciding is already done | [to-spec](./to-spec.md): skip straight past the map |
-| A cleared wayfinder map | [to-spec](./to-spec.md), then [to-tickets](./to-tickets.md) and [implement](./implement.md) |
+| A cleared wayfinder map with something left to build | [to-spec](./to-spec.md), then [to-tickets](./to-tickets.md) and [implement](./implement.md) |
 | An existing session that has already grown too big | run `/wayfinder` in that session: the map it charts lives on the tracker, so later sessions pick up from the map instead of the conversation |
 
 Greenfield is not a requirement. People use wayfinder routinely on legacy and half-built codebases, and it can be more useful there, because much of the fog is "what is already true here" rather than "what should we do".
@@ -110,8 +110,8 @@ It is this skill. Upstream's v1.1 renamed it to `wayfinder`; this repo has only 
 
 ## Where it fits
 
-`wayfinder` is a **situational on-ramp**, not the default starting point. Most work still starts on the grill-led idea → ship chain. You use wayfinder when the idea is too big to hold in one session. It rejoins that chain at [to-spec](./to-spec.md), because a cleared map hands off and does not build.
+`wayfinder` is a **situational on-ramp**, not the default starting point. Most work still starts on the grill-led idea → ship chain. You use wayfinder when the idea is too big to hold in one session. It rejoins that chain at [to-spec](./to-spec.md) whenever something is left to build, because a cleared map hands off and does not build.
 
 Most of the work happens in other skills that wayfinder schedules. [grilling](./grilling.md) and [domain-modeling](./domain-modeling.md) resolve the default ticket type, [prototype](./prototype.md) resolves the tickets that talk cannot settle, and [research](./research.md) runs as a subagent so its reading stays out of your session. This repo's [handoff](./handoff.md) is a background launcher for `/next` recommendations, not upstream's document-writing handoff, so it does not bridge work into or out of a map. For anything else, [next](./next.md) routes over the whole set.
 
-Here, wayfinder adds two steps to upstream's skill. After charting the map or resolving a ticket, once the change exists on the tracker, it posts one short comment on the map saying what the session changed and what the map still needs (*Record progress on the map*). And it decides when the map is done (*Reaching the destination*). Until no decision ticket is open and no fog remains, each session keeps working the frontier and ends by calling [next](./next.md). After that, a spec destination goes to [to-spec](./to-spec.md), whose spec satisfies it. Any other destination has already arrived, so the map closes with a summary comment and the session ends with `next`.
+Here, wayfinder adds two steps to upstream's skill. After charting the map or resolving a ticket, once the change exists on the tracker, it posts one short comment on the map saying what the session changed and what the map still needs (*Record progress on the map*). And it decides when the map is done (*Reaching the destination*). Until no decision ticket is open and no fog remains, each session keeps working the frontier and ends by calling [next](./next.md). Then the session closes the map with a summary comment. A spec destination goes to [to-spec](./to-spec.md), and a decision destination has already arrived. An in-place change or a proof of concept still has to be built, so the session ends with `next`, which routes the build.
