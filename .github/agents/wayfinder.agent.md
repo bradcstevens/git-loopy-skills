@@ -52,5 +52,6 @@ since they run as parallel subagents.
 Leave the tracker state durable before you stop, as the skill's *Record progress on the
 map* asks: the map issue updated, any ticket you resolved closed with its resolution
 comment, and one short comment on the map saying what this session changed and what the
-map still needs. When nothing is left to decide, close the map with its summary comment
-instead, and hand off as *Reaching the destination* says for the map's destination.
+map still needs. If nothing is left to decide, also close the map with its summary comment
+and hand off as *Reaching the destination* says for the map's destination. Otherwise, end
+by calling the Skill tool with "next".
