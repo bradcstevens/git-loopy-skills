@@ -24,17 +24,17 @@ It is the heaviest flow in the set, so the trigger is narrow. The effort must be
 
 | What you have in front of you | What to run |
 | --- | --- |
-| A well-scoped feature you can settle in one sitting | [grill-me](https://github.com/bradcstevens/git-loopy-skills/tree/main/skills/grill-me), or [grill-with-docs](./grill-with-docs.md) when there is a codebase |
+| A well-scoped feature you can settle in one sitting | `/grill-me`, or [grill-with-docs](./grill-with-docs.md) when there is a codebase |
 | A greenfield project, or a build spanning many sessions, with the route still unclear | `/wayfinder` |
 | A thread where the deciding is already done | [to-spec](./to-spec.md): skip straight past the map |
 | A cleared wayfinder map | [to-spec](./to-spec.md), then [to-tickets](./to-tickets.md) and [implement](./implement.md) |
-| An existing session that has already grown too big | say "hand off to `/wayfinder`" ([handoff](./handoff.md) bridges into a map as well as out of one) |
+| An existing session that has already grown too big | run `/wayfinder` in that session: the map it charts lives on the tracker, so later sessions pick up from the map instead of the conversation |
 
 Greenfield is not a requirement. People use wayfinder routinely on legacy and half-built codebases, and it can be more useful there, because much of the fog is "what is already true here" rather than "what should we do".
 
 ## Prerequisites
 
-The map and its tickets live on the repo's issue tracker, so wayfinder needs the tracker setup from [setup-git-loopy-skills](./setup-git-loopy-skills.md). That step writes a "Wayfinding operations" section. The section describes how to express the map, its child tickets, blocking edges, and frontier queries on GitHub, GitLab, or local markdown. Wayfinder finds that doc through the pointer in your `CLAUDE.md` / `AGENTS.md`, not at a fixed path. With no tracker configured, it falls back to local markdown files.
+The map and its tickets live on the repo's issue tracker, so wayfinder needs the tracker setup from [setup-git-loopy-skills](./setup-git-loopy-skills.md). That step writes a "Wayfinding operations" section. The section describes how to express the map, its child tickets, blocking edges, and frontier queries on GitHub, GitLab, or local markdown. Wayfinder finds that doc through the pointer in your `AGENTS.md` or `.github/copilot-instructions.md`, not at a fixed path. With no tracker configured, it falls back to local markdown files.
 
 The tracker does real work. Its native blocking links show the frontier in the tracker's own UI. On a tracker without native dependency links (a self-hosted Gitea, say), wayfinder infers blockers from the map text. That works, but you must supervise it more closely.
 
@@ -90,13 +90,13 @@ The frontier shows you which tickets you can take, and blocking edges make paral
 No. Any issue tracker works. GitHub has the best support, because its native sub-issues and blocking relationships make the frontier visible without opening the map. People also use GitLab, Linear, Jira and local markdown. There are two caveats. On a tracker with no native blocking, wayfinder infers the dependency graph from text, and you must correct it by hand. Local markdown puts the artifacts in your repo, which is not recommended, because material stored in the repo tends to persist by accident. Open-source maintainers hit the opposite problem (public trackers fill up with agent-generated planning tickets) and often choose local markdown anyway.
 
 **The grilling is exhausting. Every question is three paragraphs long.**
-This is the sharpest open complaint about wayfinder, and nobody has fixed it yet. One user broke it down this way: the verbosity itself causes decision exhaustion, and the length hides *why* the agent asks a question, so you lose the chain from decision to decision as the map grows. The verbosity looks like a property of the current set of [models](https://www.aihero.dev/ai-coding-dictionary/model) rather than of the skill. Users try two mitigations: a lower [reasoning effort](https://www.aihero.dev/ai-coding-dictionary/effort), and a plain-language instruction in your global `CLAUDE.md`. Expect to think hard here anyway. Wayfinder demands a lot of thinking from you, and that is most of its purpose, not a defect.
+This is the sharpest open complaint about wayfinder, and nobody has fixed it yet. One user broke it down this way: the verbosity itself causes decision exhaustion, and the length hides *why* the agent asks a question, so you lose the chain from decision to decision as the map grows. The verbosity looks like a property of the current set of [models](https://www.aihero.dev/ai-coding-dictionary/model) rather than of the skill. Users try two mitigations: a lower [reasoning effort](https://www.aihero.dev/ai-coding-dictionary/effort), and a plain-language instruction in your global `~/.copilot/copilot-instructions.md`. Expect to think hard here anyway. Wayfinder demands a lot of thinking from you, and that is most of its purpose, not a defect.
 
 **A decision I already closed turned out to be wrong. Do I edit the old ticket or make a new one?**
 There is no official guidance, and the agent's default is unhelpful. It tends to design around the bad decision instead of challenging it, so you must steer it yourself. What works is to tell wayfinder plainly what changed. It then updates the map, revises the affected tickets, and comments on the closed ones. You can recover from scope changes mid-map. But if you *designed* a map to change, that is a sign the scope is wrong.
 
 **Where did `decision-mapping` go?**
-It is this skill. v1.1 renamed it to `wayfinder`, and you invoke it as `/wayfinder`. "Decision map" was jargon, and it was also inaccurate, because only one of the four ticket types is a decision by itself. The new name gave the skill one consistent vocabulary (destination, fog of war, frontier, the map) instead of an invented term on top. The unit kept the word "decision": a wayfinder ticket is a **decision ticket**, so that people do not read it as an implementation ticket.
+It is this skill. Upstream's v1.1 renamed it to `wayfinder`; this repo has only ever shipped it as `wayfinder`, and you invoke it as `/wayfinder`. "Decision map" was jargon, and it was also inaccurate, because only one of the four ticket types is a decision by itself. The new name gave the skill one consistent vocabulary (destination, fog of war, frontier, the map) instead of an invented term on top. The unit kept the word "decision": a wayfinder ticket is a **decision ticket**, so that people do not read it as an implementation ticket.
 
 ## It's working if
 
@@ -112,4 +112,6 @@ It is this skill. v1.1 renamed it to `wayfinder`, and you invoke it as `/wayfind
 
 `wayfinder` is a **situational on-ramp**, not the default starting point. Most work still starts on the grill-led idea → ship chain. You use wayfinder when the idea is too big to hold in one session. It rejoins that chain at [to-spec](./to-spec.md), because a cleared map hands off and does not build.
 
-Most of the work happens in other skills that wayfinder schedules. [grilling](./grilling.md) and [domain-modeling](./domain-modeling.md) resolve the default ticket type, [prototype](./prototype.md) resolves the tickets that talk cannot settle, and [research](./research.md) runs as a subagent so its reading stays out of your session. [handoff](./handoff.md) moves work in and out: into a map from a conversation that grew too big, and out of a map when a side quest appears mid-session. For anything else, [next](./next.md) routes over the whole set.
+Most of the work happens in other skills that wayfinder schedules. [grilling](./grilling.md) and [domain-modeling](./domain-modeling.md) resolve the default ticket type, [prototype](./prototype.md) resolves the tickets that talk cannot settle, and [research](./research.md) runs as a subagent so its reading stays out of your session. This repo's [handoff](./handoff.md) is a background launcher for `/next` recommendations, not upstream's document-writing handoff, so it does not bridge work into or out of a map. For anything else, [next](./next.md) routes over the whole set.
+
+Here, wayfinder adds two steps to upstream's skill. After charting the map or resolving a ticket, once the change exists on the tracker, it posts one short comment on the map saying what the session changed and what the map still needs (*Record progress on the map*). And it decides when the map is done (*Reaching the destination*): only when the destination is durably satisfied, no decision ticket is open and no fog remains. A spec destination then goes to [to-spec](./to-spec.md). Any other destination closes the map with a summary comment, and the session ends with [next](./next.md).

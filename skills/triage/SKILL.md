@@ -53,7 +53,7 @@ An issue whose title begins `PRD:` or `Spec:` (case-insensitive) is a **planning
 
 - **Refuse the label.** Do not apply `ready-for-agent` to such a title, including when the maintainer asks for it directly, and including the quick state override below. Say why, and offer `ready-for-human` instead, the role a planning document belongs in.
 - **Remove it when found.** If the label is already there, take it off (`--remove-label`). Do **not** close the document, and do **not** touch its other labels: it stays open and otherwise exactly as it was.
-- **Route the work instead.** A planning document is triaged by decomposing it: run `/to-tickets` on it, which publishes one issue per ticket and links each to the document as a native sub-issue.
+- **Route the work instead.** A planning document is triaged by decomposing it: call the Skill tool with "to-tickets", which publishes one issue per ticket and links each to the document as a native sub-issue.
 
 `ready-for-agent` belongs on a **standalone issue** (one that specifies its own work end to end) or on a **child of a planning document**, which is what `/to-tickets` produces. Never on the planning document itself.
 
@@ -155,4 +155,4 @@ Capture everything resolved during grilling under "established so far" so the wo
 
 If prior triage notes exist on the issue or PR, read them, check whether the reporter has answered any outstanding questions, and present an updated picture before continuing. Don't re-ask resolved questions.
 
-At the conclusion of a `/triage` session, run `/next`.
+At the conclusion of a `/triage` session, call the Skill tool with "next".
