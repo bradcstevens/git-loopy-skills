@@ -48,7 +48,7 @@ Every triaged item ends with exactly one category role and one state role. There
 | `ready-for-human` | The same brief, plus why an agent can't do it: judgment, external access, manual testing. |
 | `wontfix` | Closed, with the reason recorded. |
 
-That is the whole vocabulary. The rule of exactly one state role per item keeps the queries simple. The states are also the most-requested area of the [skill](https://www.aihero.dev/ai-coding-dictionary/skill). Users have asked for a state for work that is specified but blocked on another issue, a `deferred` state for work that waits on a future trigger, and a terminal `implemented` state. None of those has shipped. See the questions below.
+That is the whole vocabulary. The rule of exactly one state role per item keeps the queries simple. Upstream, the states are also the most-requested area of the [skill](https://www.aihero.dev/ai-coding-dictionary/skill). Users there have asked for a state for work that is specified but blocked on another issue, a `deferred` state for work that waits on a future trigger, and a terminal `implemented` state. None of those has shipped, there or here. See the questions below.
 
 `wontfix` has three cases. The difference matters because only one of them writes to the knowledge base:
 
@@ -87,16 +87,16 @@ No. They are already agent-ready. `to-tickets` applies the `ready-for-agent` lab
 Only if you have inbound work. `triage` is older than that flow and does a different job: it handles reports other people filed. If everything in your tracker came from your own planning, you will rarely use it. If you maintain anything public, or your team files bugs to you, it is where that work starts. The main use is open-source repos that take issues from external contributors.
 
 **The agent tried to apply `ready-for-agent` and `gh` said the label doesn't exist.**
-Upstream reports this as an open bug ([#616](https://github.com/mattpocock/skills/issues/616)): its setup skill writes the label vocabulary into `docs/agents/triage-labels.md` but does not create the labels in your tracker. Here, [setup-git-loopy-skills](./setup-git-loopy-skills.md) creates them: on GitHub or GitLab it adds every configured triage label the tracker lacks, the five state labels and two category labels included. If the error appears anyway, re-run setup, or create the missing labels yourself, once, with `gh label create` or the tracker's UI.
+Upstream reports this as an open bug ([#616](https://github.com/mattpocock/skills/issues/616)): its setup skill writes the label vocabulary into `docs/agents/triage-labels.md` but does not create the labels in your tracker. Here, [setup-git-loopy-skills](./setup-git-loopy-skills.md) creates the state labels: on GitHub or GitLab it adds every configured label the tracker lacks, which is the five state labels, the three fixed assertions (`parallel-safe`, `priority`, `idea`) and the seven `task-type:` labels. It does not create the two category labels, `bug` and `enhancement`. If the error names a state label, re-run setup. If it names a category label, create that label yourself, once, with `gh label create` or the tracker's UI.
 
 **Five states aren't enough. What about blocked, or deferred, or implemented?**
-This is the most-filed gap on the skill. It comes in three forms:
+Upstream, this is the most-filed gap on the skill. It comes in three forms:
 
 - An issue that is fully specified but waits on another issue to close ([#139](https://github.com/mattpocock/skills/issues/139)). The reporter said `ready-for-agent` is "technically true" there but misleading, so an agent picks it up and gets stuck.
 - Future work that is intended but waits on a trigger, so it is not actionable yet ([#297](https://github.com/mattpocock/skills/issues/297)).
 - A terminal state for "implemented, awaiting verification". Without it, an AFK runner can queue finished tickets again.
 
-The blocked case is accepted as real, but the name is undecided (`blocked` versus `paused`). None of it has shipped. As a workaround, people add a repo-local extra label next to the category. The state slot then holds an accurate value, but the skill does not know about the extra label. One community fork goes further and adds `needs-slicing`, `tracking` and effort labels. That works, but it belongs to that fork, not to the skill.
+Upstream accepts the blocked case as real, but the name is undecided (`blocked` versus `paused`). None of it has shipped, there or here. As a workaround, people add a repo-local extra label next to the category. The state slot then holds an accurate value, but the skill does not know about the extra label. One community fork goes further and adds `needs-slicing`, `tracking` and effort labels. That works, but it belongs to that fork, not to the skill.
 
 **How is this different from `/diagnosing-bugs`?**
 The verification step here is shallow on purpose. It answers "is this real, and roughly where does it live", and does not look for a root cause. If a bug does not reproduce from the reporter's steps in a few minutes, use `needs-info`, or use [diagnosing-bugs](./diagnosing-bugs.md) if you want to investigate it now. Neither skill's text mentions the other yet. A user reported that gap upstream, and it is still open there.
@@ -105,7 +105,7 @@ The verification step here is shallow on purpose. It answers "is this real, and 
 You can ask, but watch what it reads. The "show what needs attention" pass is a cheap listing for *selection*. You pick one issue, and then `triage` gathers full [context](https://www.aihero.dev/ai-coding-dictionary/context) on that issue. If you run it across twenty issues at once, the agent can use that cheap listing as its only evidence without telling you. The listing returns issue bodies but not comments. One user hit exactly this. Three issues already had a comment that said "already fixed, recommend closing", and all three got new agent briefs instead. For a bulk pass, say explicitly that it must read the comments on each issue.
 
 **Does it work with Linear, or anything other than GitHub Issues?**
-Yes. The tracker is config, not a hard-coded assumption. People run it against Linear (through the `linear` CLI), GitLab, and plain markdown files under `.scratch/`. A common split is Linear for issues and planning, and GitHub for code and PRs. Skills that say "issue tracker" then map to Linear, and skills that say "PR" map to GitHub. The local-markdown tracker has an open template bug: the generated file can contain the acceptance criteria twice, once at the top level and once inside the agent brief ([#200](https://github.com/mattpocock/skills/issues/200)).
+Yes. The tracker is config, not a hard-coded assumption. People run it against Linear (through the `linear` CLI), GitLab, and plain markdown files under `.scratch/`. A common split is Linear for issues and planning, and GitHub for code and PRs. Skills that say "issue tracker" then map to Linear, and skills that say "PR" map to GitHub. Upstream reports an open template bug in the local-markdown tracker: the generated file can contain the acceptance criteria twice, once at the top level and once inside the agent brief ([#200](https://github.com/mattpocock/skills/issues/200)).
 
 ## It's working if
 
