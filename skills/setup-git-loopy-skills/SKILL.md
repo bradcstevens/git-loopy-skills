@@ -166,8 +166,8 @@ For "other" issue trackers, write `docs/agents/issue-tracker.md` from scratch us
 Create `.github/hooks/git-loopy-chain.json` from the approved draft. It must be valid JSON
 with version `1` and two command hooks: `subagentStop` invokes
 `.github/hooks/git-loopy-chain.sh complete` to close the finished run, while `agentStop`
-invokes `.github/hooks/git-loopy-chain.sh reenter` to re-enter `/next` when a completed run
-is unrouted. Both hooks receive their event payload on standard input, so do not add a
+invokes `.github/hooks/git-loopy-chain.sh reenter` to re-enter `/next` in the session that
+launched a completed, unrouted run. Both hooks receive their event payload on standard input, so do not add a
 redirection or a wrapper that changes it.
 
 **Do not write an absolute path into the hook.** The hook file is committed, and the chain
