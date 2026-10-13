@@ -95,6 +95,7 @@ bash scripts/test-chain-hook.sh || fail=1
 bash scripts/test-hook-log.sh || fail=1
 bash scripts/test-review-clean-record.sh || fail=1
 bash scripts/test-handoff.sh || fail=1
+python3 scripts/test-next-runtime.py || fail=1
 python3 scripts/test-set-task-models.py || fail=1
 python3 scripts/test-model-scorecard.py || fail=1
 python3 scripts/test-next-sessions.py || fail=1

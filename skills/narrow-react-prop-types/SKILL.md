@@ -1,7 +1,7 @@
 ---
 name: narrow-react-prop-types
 description: narrow React component prop types to match live code paths
-model: gpt-6.1-sol
+model: gpt-6-astra
 effort: medium
 context: 272K
 ---

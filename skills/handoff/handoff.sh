@@ -10,8 +10,8 @@ usage:
 Launches a detached GitHub Copilot CLI session on the prompt in --prompt-file and
 returns once its log has proven or disproven the launch.
 
---name, --model, exactly one of --auto-tier or --effort, and --context are the
-runtime /next sized. They reach the session as -n, --model, --auto-tier (or
+--name, --model, exactly one of --auto-tier or --effort, and --context carry the
+runtime /next names. They reach the session as -n, --model, --auto-tier (or
 --reasoning-effort) and --context. The prompt travels as a file that no shell
 re-quotes, so an apostrophe in it is safe. --log defaults to a timestamped path
 under TMPDIR, outside every worktree.
