@@ -20,3 +20,21 @@ jobs:
 
       - name: Check README skill index is up to date
         run: node scripts/build-readme.mjs --check
+
+  chain-python39:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        id: python
+        with:
+          python-version: '3.9'
+
+      - name: Validate the frozen chain CLI on Python 3.9
+        env:
+          CHAIN_PYTHON: ${{ steps.python.outputs.python-path }}
+        run: |
+          scripts/test-chain.sh
+          python3 scripts/test-chain-entry.py
+          bash scripts/test-chain-hook.sh
