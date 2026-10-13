@@ -90,6 +90,7 @@ if [ "$fail" -eq 0 ]; then
 fi
 
 scripts/test-chain.sh || fail=1
+bash scripts/test-sweep.sh || fail=1
 bash scripts/test-link-skills.sh || fail=1
 bash scripts/test-chain-hook.sh || fail=1
 bash scripts/test-hook-log.sh || fail=1
