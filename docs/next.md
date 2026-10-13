@@ -112,6 +112,14 @@ There is no command to run. Pick the runtime in `/model` and paste the prompt in
 
 ## The chain it can spawn
 
+The chain CLI requires Python 3.9 or newer, with no third-party Python dependencies.
+`CHAIN_PYTHON` selects its interpreter (default: `python3`) for both the new Python entry and the
+remaining bash-implemented commands. An older interpreter fails before changing chain state.
+`chain.sh reenter` reads the `agentStop` payload on standard input: it requests a route, confirms it
+only on a following `stop_hook_active` turn, and abandons an unconfirmed request after three attempts.
+Its ledger lock uses the same UTC owner record and recovery guard as the other subcommands; after
+about one second waiting for a live holder it returns `ledger-busy` without writing.
+
 For an **AFK-safe** action, `next` may spawn exactly four routes. An ordinary `/next` invocation still returns exactly one recommendation. The chain is the separate
 AFK-safe path: after the phase-boundary procedure selects a subagent, the spawn gate requires both an
 AFK-safe target and one of its four allowlisted routes — `/implement`, `/code-review`, `/research`,
