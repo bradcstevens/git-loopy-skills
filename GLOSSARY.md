@@ -25,8 +25,8 @@ A mark on a route that still needs a human decision. The opposite of AFK-safe.
 _Avoid_: Manual, interactive
 
 **Allowlisted route**:
-One of the five routes the chain is permitted to spawn without asking: `/implement`,
-`/code-review`, `/research`, `/push`, `/resolving-merge-conflicts`, with `/merge` joining them when
+One of the four routes the chain is permitted to spawn without asking: `/implement`,
+`/code-review`, `/research`, `/push`, with `/merge` joining them when
 #58 lands. Being allowlisted is necessary but not sufficient — the route must also be AFK-safe.
 
 ### The chain

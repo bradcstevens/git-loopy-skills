@@ -56,10 +56,11 @@ There is no command to run. Pick the runtime in `/model` and paste the prompt in
 
 ## The chain it can spawn
 
-For an **AFK-safe** action, `next` may spawn exactly five routes. An ordinary `/next` invocation still returns exactly one recommendation. The chain is the separate
+For an **AFK-safe** action, `next` may spawn exactly four routes. An ordinary `/next` invocation still returns exactly one recommendation. The chain is the separate
 AFK-safe path: after the phase-boundary procedure selects a subagent, the spawn gate requires both an
-AFK-safe target and one of its five allowlisted routes — `/implement`, `/code-review`, `/research`,
-`/push`, or `/resolving-merge-conflicts`. Planning declines a target the tracker confirms is
+AFK-safe target and one of its four allowlisted routes — `/implement`, `/code-review`, `/research`,
+or `/push`. An in-progress merge, rebase, or cherry-pick conflict routes to `/implement`,
+which resolves it and closes with `/code-review` on the new head. Planning declines a target the tracker confirms is
 unresolvable, and reservation checks it again before writing the ledger row or creating the
 worktree. A transient tracker failure is reported as tracker unavailability rather than as a
 missing target. A bare number is first resolved to its canonical issue, a lookup bounded at 10
@@ -108,7 +109,7 @@ subagent.
 - Fan-out never turns that into a menu either: the chain reaches its ten concurrent worktrees by asking for one recommendation at a time, and names which of the three limits stopped it — the ceiling of ten, no ready action left, or every remaining candidate waiting on a worktree another agent holds.
 - Once the ten are running, the chain keeps itself full: each finished run frees its slot, and the batch of runs that finished since the last turn comes back as one re-entry that refills every one of them while ready work remains.
 - A recommendation names the model, effort, and context window its routed skill's header sets, and carries no command to run.
-- An AFK-safe recommendation for one of the five allowlisted routes arrives with its in-session
+- An AFK-safe recommendation for one of the four allowlisted routes arrives with its in-session
   subagent already running only when `chain.sh plan` returns `spawn`; on `decline`, it remains at
   the checkpoint boundary as a prompt.
 - The recommendation names whether to continue in this context, start a fresh session, or run as a

@@ -74,7 +74,7 @@ situation matches. The rest you invoke by name.
 | [grill-with-docs](docs/grill-with-docs.md) | `/grill-with-docs` | A relentless interview to sharpen a plan or design, which also creates docs (ADR's and glossary) as we go. |
 | [grilling](docs/grilling.md) | automatic | Grill the user relentlessly about a plan, decision, or idea. |
 | [handoff](docs/handoff.md) | automatic | Launch a `/next` recommendation — its prompt and the runtime its routed skill names — as a background agent, then watch it to its exit and route on. |
-| [implement](docs/implement.md) | automatic | Implement a piece of work based on a spec or set of tickets. |
+| [implement](docs/implement.md) | automatic | Implement a spec or tickets, or reconcile a branch with a moved remote head and resolve merge, rebase, or cherry-pick conflicts. |
 | implement-spec | `/implement-spec` | Implement the result of /to-spec and /to-tickets in code. |
 | [improve-codebase-architecture](docs/improve-codebase-architecture.md) | `/improve-codebase-architecture` | Scan a codebase for deepening opportunities, present them as a visual HTML report, then grill through whichever one you pick. |
 | jev-ultrafast | automatic | Run fast goal-driven browser automation with Jev Ultrafast for navigating, searching, and interacting with visible web pages. |
@@ -92,7 +92,6 @@ situation matches. The rest you invoke by name.
 | [push](docs/push.md) | automatic | Publish current work by staging intended changes, committing, pushing, and opening a pull request when needed. |
 | [release](docs/release.md) | `/release` | Release completed work at the next patch version, or the version you specify. |
 | [research](docs/research.md) | automatic | Investigate a question against high-trust primary sources and capture the findings as a Markdown file in the repo. |
-| [resolving-merge-conflicts](docs/resolving-merge-conflicts.md) | automatic | Use when you need to resolve an in-progress git merge/rebase conflict. |
 | retro | `/retro` | Conduct a retrospective on a coding session. |
 | [set-task-models](docs/set-task-models.md) | `/set-task-models` | Set the model, effort, and context of every Copilot built-in subagent and git-loopy task type from fresh model research, and enforce them. |
 | [setup-git-loopy-skills](docs/setup-git-loopy-skills.md) | `/setup-git-loopy-skills` | Configure this repo for the engineering skills: set up its issue tracker, triage label vocabulary, and domain doc layout. |

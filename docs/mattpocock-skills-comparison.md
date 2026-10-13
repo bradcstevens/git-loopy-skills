@@ -492,9 +492,6 @@ What each one does is in [Missing here](#missing-here).
 Upstream's `deprecated/` folder is empty: *"a retired skill is deleted, and the changeset that
 removes it names whatever replaced it."* The retirements that matter here:
 
-- **`resolving-merge-conflicts`** was deleted upstream in 1.3.0 (mattpocock/skills#1120: *"It's no
-  longer needed, and nothing replaces it"*). This repo still ships it, extended with the chain
-  overlay (about 61% similar to upstream's last version), and `/next` routes merge conflicts to it.
 - Earlier upstream renames are already followed here: `to-prd` → `to-spec`, `to-issues` and
   `to-plan` → `to-tickets`, `decision-mapping` → `wayfinder`, `review` → `code-review`, `diagnose` →
   `diagnosing-bugs`, `writing-great-skills` → `writing-for-agents`. None of the skills upstream
@@ -522,8 +519,6 @@ Upstream skills with no counterpart here, or only a partial one — candidates t
 
 Skills here that no current upstream skill maps to:
 
-- **`resolving-merge-conflicts`** — an upstream skill, since deleted upstream (see
-  [Deprecated](#deprecated)).
 - **From HumanLayer**, imported into this repo alongside `show-me` (`83c1c4f`, 2026-09-14):
   `design-control-loop`, `narrow-react-prop-types`. A third import,
   `build-iterated-agentic-loop`, was folded into `design-control-loop` and removed.

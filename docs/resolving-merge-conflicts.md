@@ -1,3 +1,6 @@
+> **Archived.** `/resolving-merge-conflicts` has been removed. Use
+> [`/implement`](./implement.md) to resolve conflicts and review the resolved head.
+
 Quickstart:
 
 ```bash
