@@ -32,8 +32,9 @@ This is the failure this configuration is most prone to: the model is pinned to 
 reasoning effort, which makes filling in the human's answers feel productive. It is
 not: it is the one way to make the whole session worthless.
 
-Only `research` tickets are AFK, and they are resolved by subagents that call the
-Skill tool with "research", not by you.
+`research` tickets are always AFK, and they are resolved by subagents that call the
+Skill tool with "research", not by you. A `task` ticket is AFK when you can drive the
+work alone; otherwise hand the human a precise checklist and wait.
 
 ## Refer to everything by name
 

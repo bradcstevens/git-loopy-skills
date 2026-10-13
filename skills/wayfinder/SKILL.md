@@ -147,18 +147,20 @@ what the map still needs.
 
 A map is **not** finished because its ticket list came out empty. It is finished when its
 **Destination** is durably satisfied *and* nothing is left to decide: no open decision ticket
-and no fog in **Not yet specified**. Until all three hold, keep working the frontier: an open
-ticket or remaining fog is the map saying, truthfully, that the way is not clear yet.
+and no fog in **Not yet specified**. Until nothing is left to decide, keep working the
+frontier: an open ticket or remaining fog is the map saying, truthfully, that the way is not
+clear yet.
 
-When all three do hold, what happens next depends on the destination this map named.
+Once nothing is left to decide, what happens next depends on the destination this map named.
 
 **A specification destination** (the map was finding its way to a spec) is not reached until
 the spec exists. Call the Skill tool with "to-spec" to hand it the map; it synthesises the spec
-from the decisions recorded on it. A decision destination or an in-place change has already
-arrived by the time the way is clear, so there is no further hand-off step for those.
+from the decisions recorded on it, and that spec satisfies the destination. A decision
+destination or an in-place change has already arrived by the time the way is clear, so there
+is no further hand-off step for those.
 
 **Any other destination**, durably satisfied, is terminal: close the map, and post a closing
 comment summarizing that every decision ticket is closed and no fog remains.
 
-At the conclusion of a `/wayfinder` session, call the Skill tool with "to-spec" if the map's
-destination was a specification, or with "next" otherwise.
+At the conclusion of a `/wayfinder` session that did not hand the map to "to-spec", call the
+Skill tool with "next".
