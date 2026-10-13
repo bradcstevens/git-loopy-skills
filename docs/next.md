@@ -63,6 +63,10 @@ remaining bash-implemented commands. An older interpreter fails before changing 
 only on a following `stop_hook_active` turn, and abandons an unconfirmed request after three attempts.
 Its ledger lock uses the same UTC owner record and recovery guard as the other subcommands; after
 about one second waiting for a live holder it returns `ledger-busy` without writing.
+`complete` and `recover` also run in Python on the shared ledger module, waiting for the lock
+until it is available. The remaining bash commands delegate pending-worktree rollback to the same
+cleanup module; only a proven-owned unfinished transaction permits forced rollback. Completion
+and recovery of ledger rows still remove only clean worktrees and retain everything else.
 
 For an **AFK-safe** action, `next` may spawn exactly four routes. An ordinary `/next` invocation still returns exactly one recommendation. The chain is the separate
 AFK-safe path: after the phase-boundary procedure selects a subagent, the spawn gate requires both an
