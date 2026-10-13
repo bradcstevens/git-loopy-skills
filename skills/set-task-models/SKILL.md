@@ -31,15 +31,15 @@ working-tree changes. Default targets:
 | Copilot user settings | `~/.copilot/settings.json`, respecting `COPILOT_HOME` |
 | git-loopy global routing | `~/.config/git-loopy/config.toml`, respecting its configured config home |
 | git-loopy source defaults | `~/code/github/bradcstevens/git-loopy` |
-| Skill headers | `~/code/github/bradcstevens/git-loopy-skills`, every `skills/**/SKILL.md` |
+| Skill headers and agents | `~/code/github/bradcstevens/git-loopy-skills`, every `skills/**/SKILL.md` and matching `.github/agents/<skill>.agent.md` |
 
 Scope is every discovered Copilot **built-in**, including `explore`, `task`,
 `general-purpose`, `rubber-duck`, `code-review`, `research`, and `security-review`,
 plus git-loopy's `planning`, `review`, `implementation`, `test`, `docs`, `chore`,
 and `bugfix`, plus the `model`, `effort` and `context` header of every skill in
-git-loopy-skills. A skill takes the profile of the role that model-scorecard's
-`profiles.json` `skills` map assigns it. Leave custom agents and unrelated
-settings alone.
+git-loopy-skills and its same-named agent's sizing. A skill takes the profile of
+the role that model-scorecard's `profiles.json` `skills` map assigns it. Leave
+other custom agents (including `*-agent` chain carriers) and unrelated settings alone.
 
 Use exact selectable IDs as the candidate allowlist. Exclude unavailable entries
 and unverified aliases. `auto` is a router, not a fixed-model recommendation.
@@ -120,6 +120,7 @@ architectural conflict or adding unsupported runtime configuration features.
 
 **Done:** all authorized targets read back as the intended effective values,
 equivalent roles still agree, every skill header matches its role's profile,
+each matching agent carries the same sizing and an explicit-context launch command,
 relevant existing checks pass, and an idempotent second comparison, including
 `sync_skill_headers.py --check`, produces no change. Report the applied table,
 the skill headers that changed, and the evidence location, or name every

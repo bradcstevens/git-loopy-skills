@@ -312,6 +312,29 @@ class SkillHeaderTests(unittest.TestCase):
             self.assertEqual(self.read(relative), text)
         self.assertEqual(self.run_sync("--check")[0], 1)
 
+    def test_write_creates_same_named_agents_with_sized_launch_commands(self):
+        result = subprocess.run(
+            [sys.executable, str(SYNC_SCRIPT), "--skills-repo", str(self.repo),
+             "--headers", str(self.picks), "--write"],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        agents = self.repo / ".github/agents"
+        self.assertEqual(sorted(p.name for p in agents.glob("*.agent.md")),
+                         ["build.agent.md", "nested.agent.md", "plan.agent.md"])
+        plan = (agents / "plan.agent.md").read_text()
+        self.assertIn("name: plan\n", plan)
+        self.assertIn("model: big-model\nreasoning-effort: medium\n", plan)
+        self.assertIn('  scorecard-context: "1M"\n', plan)
+        self.assertIn('  scorecard-context-tier: "long_context"\n', plan)
+        self.assertIn("copilot --agent plan --model big-model --reasoning-effort medium "
+                      "--context long_context -i 'Invoke the /plan skill.'", plan)
+        self.assertIn('Call the Skill tool with "plan"', plan)
+        self.assertIn("disable-model-invocation: true\n", plan)
+        self.assertNotIn("disable-model-invocation: true\n", (agents / "build.agent.md").read_text())
+        self.assertIn("../../skills/vendor/nested/SKILL.md", (agents / "nested.agent.md").read_text())
+        self.assertEqual(self.run_sync("--check")[0], 0)
+
     def test_write_sets_only_the_three_keys_and_is_idempotent(self):
         mode = 0o640
         (self.repo / "skills/build/SKILL.md").chmod(mode)
@@ -326,7 +349,47 @@ class SkillHeaderTests(unittest.TestCase):
         self.assertEqual(self.read("local"), SKILL_FILES["local"])
         self.assertEqual((self.repo / "skills/build/SKILL.md").stat().st_mode & 0o777, mode)
         self.assertEqual(sorted(p.name for p in (self.repo / "skills/build").iterdir()), ["SKILL.md"])
-        self.assertEqual(self.run_sync("--check"), (0, "0 of 3 skill headers differ\n"))
+        self.assertEqual(self.run_sync("--check"), (0, "0 of 3 skill headers differ\n0 of 3 skill agents differ\n"))
+
+    def test_existing_agent_preserves_instructions_metadata_mode_and_crlf(self):
+        agents = self.repo / ".github/agents"
+        agents.mkdir(parents=True)
+        path = agents / "plan.agent.md"
+        original = ('---\r\nname: plan\r\ndescription: Plan carefully.\r\nmodel: stale\r\n'
+                    'reasoning-effort: high\r\ntools: ["read"]\r\nmetadata:\r\n'
+                    '  owner: team\r\nuser-invocable: false\r\n---\r\n\r\nDo not publish.\r\n')
+        path.write_bytes(original.encode())
+        path.chmod(0o640)
+        wrapper = agents / "plan-agent.agent.md"
+        wrapper.write_text("Unrelated chain carrier.\n")
+        self.assertEqual(self.run_sync("--write")[0], 0)
+        updated = path.read_bytes().decode()
+        self.assertIn('tools: ["read"]\r\nmetadata:\r\n  owner: team\r\n', updated)
+        self.assertIn("user-invocable: false\r\n", updated)
+        self.assertTrue(updated.endswith("\r\nDo not publish.\r\n"))
+        self.assertEqual(updated.count("metadata:"), 1)
+        self.assertEqual(updated.count("scorecard-context:"), 1)
+        self.assertEqual(path.stat().st_mode & 0o777, 0o640)
+        self.assertEqual(wrapper.read_text(), "Unrelated chain carrier.\n")
+        self.assertEqual(self.run_sync("--write")[0], 0)
+        self.assertEqual(path.read_bytes().decode(), updated)
+
+    def test_malformed_agent_stops_every_write_with_an_explicit_error(self):
+        agents = self.repo / ".github/agents"
+        agents.mkdir(parents=True)
+        path = agents / "plan.agent.md"
+        original = "---\nname: plan\ndescription: Plan.\n---\n<!-- model-scorecard: start -->\n"
+        path.write_text(original)
+        result = subprocess.run(
+            [sys.executable, str(SYNC_SCRIPT), "--skills-repo", str(self.repo),
+             "--headers", str(self.picks), "--write"], capture_output=True, text=True,
+        )
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertIn("error:", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertEqual(self.read("build"), SKILL_FILES["build"])
+        self.assertEqual(path.read_text(), original)
+        self.assertFalse((agents / "build.agent.md").exists())
 
     def test_an_unmapped_skill_stops_every_write(self):
         extra = self.repo / "skills/extra/SKILL.md"
@@ -336,6 +399,27 @@ class SkillHeaderTests(unittest.TestCase):
         self.assertEqual(code, 2)
         self.assertIn("no role is mapped for extra", output)
         self.assertEqual(self.read("plan"), SKILL_FILES["plan"])
+
+    def test_agent_check_detects_drift_without_rewriting_and_write_repairs_it(self):
+        self.assertEqual(self.run_sync("--write")[0], 0)
+        path = self.repo / ".github/agents/plan.agent.md"
+        expected = path.read_text()
+        path.write_text(expected.replace('scorecard-context: "1M"', 'scorecard-context: "200K"'))
+        before = path.read_text()
+        self.assertEqual(self.run_sync("--check")[0], 1)
+        self.assertEqual(path.read_text(), before)
+        self.assertEqual(self.run_sync("--write")[0], 0)
+        self.assertEqual(path.read_text(), expected)
+
+    def test_unsupported_agent_effort_stops_every_write(self):
+        picks = json.loads(self.picks.read_text())
+        picks["skills"]["plan"]["effort"] = "max"
+        self.picks.write_text(json.dumps(picks))
+        code, output = self.run_sync("--write")
+        self.assertEqual(code, 2)
+        self.assertIn("big-model does not support effort max", output)
+        self.assertEqual(self.read("build"), SKILL_FILES["build"])
+        self.assertFalse((self.repo / ".github/agents").exists())
 
     def test_decision_profiles_replace_picks_and_refit_context(self):
         decision = {

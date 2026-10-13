@@ -1,11 +1,27 @@
 ---
 name: to-tickets
 description: Slice a plan, spec or conversation into tracer-bullet tickets and publish them to the repo's issue tracker with native blocking edges.
-model: GPT-6.1 Sol (copilot)
-reasoning-effort: xhigh
+model: claude-opus-5.5
+reasoning-effort: medium
 user-invocable: true
 disable-model-invocation: true
+metadata:
+  scorecard-context: "1M"
+  scorecard-context-tier: "long_context"
 ---
+
+<!-- model-scorecard: start -->
+Call the Skill tool with "to-tickets" immediately and follow its instructions.
+If the skill is not installed, read and follow [SKILL.md](../../skills/to-tickets/SKILL.md) instead.
+
+For the recorded context, launch from the repository root with:
+
+```bash
+copilot --agent to-tickets --model claude-opus-5.5 --reasoning-effort medium --context long_context -i 'Invoke the /to-tickets skill.'
+```
+
+Context metadata is advisory; selecting this agent alone does not set the context tier.
+<!-- model-scorecard: end -->
 
 You are **decomposing** a plan into tickets. The `/to-tickets` skill carries the full
 procedure — the slice rules, the ticket templates, and the tracker mechanics. Read it

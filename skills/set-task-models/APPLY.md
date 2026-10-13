@@ -110,7 +110,7 @@ If the installed git-loopy resolves to a different checkout or built artifact,
 report that distinction. Update/install it only with explicit authorization; a
 source edit alone does not prove that the installed binary uses the new defaults.
 
-### Skill headers
+### Skill headers and matching agents
 
 Every skill in the git-loopy-skills clone names the settings to run it with in
 its `SKILL.md` header: `model` (a Copilot model ID), `effort`, and `context` (the
@@ -129,10 +129,21 @@ python3 <skill-dir>/sync_skill_headers.py --skills-repo <clone> --decision <run-
 python3 <skill-dir>/sync_skill_headers.py --skills-repo <clone> --decision <run-dir>/decision.json --write
 ```
 
-Only those three keys change; every other header line and the body stay
-byte-for-byte, and a git-ignored local skill is left alone. The projection writes
+Only those three skill keys change; every other skill header line and the body stay
+byte-for-byte, and a git-ignored local skill is left alone. The same projection
+creates or updates `.github/agents/<skill>.agent.md`, using `model` and
+`reasoning-effort` frontmatter. It records the context cap/tier in metadata and
+includes an explicit CLI launch command applying all three settings. Agent
+selection alone cannot enforce context; use the generated command from the
+repository root. Preserve existing agent instructions, tools, invocation flags
+and unrelated metadata outside the marked generated block; new agents inherit
+the skill's invocation flags. Do not modify the `*-agent` chain carriers.
+
+`/model-scorecard` automatically runs this same projection with its fresh picks
+at the end of a successful build; this skill instead projects its decision map.
+The projection writes
 nothing when a skill has no role in `profiles.json`, or a decided model is
-missing from `skill-headers.json`. Map the skill or rebuild the scorecard, never
+missing from `skill-headers.json`, or an agent cannot be safely updated. Map the skill or rebuild the scorecard, never
 hand-edit a header. The clone's `scripts/validate-skills.sh` requires every
 header.
 
