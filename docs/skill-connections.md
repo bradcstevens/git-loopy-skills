@@ -599,7 +599,7 @@ These have no workflow edges. Reach for them directly; they neither route onward
 | Event | Configured command | Effect |
 | --- | --- | --- |
 | `subagentStop` | `.github/hooks/git-loopy-chain.sh complete` | Closes the bound run's spawn ledger row |
-| `agentStop` | `.github/hooks/git-loopy-chain.sh reenter` | Re-enters `/next` once for every completed, unrouted batch |
+| `agentStop` | `.github/hooks/git-loopy-chain.sh reenter` | Re-enters `/next` in the launching session once for each of its completed, unrouted batches |
 
 ## Rules that govern the edges
 

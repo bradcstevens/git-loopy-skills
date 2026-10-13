@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Implement the route-request contract described by ADR-0008."""
+"""Implement the route-request contract described by ADR-0008 and ADR-0009."""
 from __future__ import annotations
 
 import atexit
@@ -198,6 +198,26 @@ def requested_by(row: dict) -> list:
     return [session for session in sessions if isinstance(session, str) and session]
 
 
+def owns_route(row: dict, session: object) -> bool:
+    """Whether the stopping session is the one this completion's route is owed to.
+
+    A row's `session_id` is the routing session that reserved and bound the
+    run, the same session `subagentStop` reports it under, so only that
+    session's `agentStop` can take the `/next` turn the freed slot needs. Any
+    other stop — a parallel routing session, or a subagent, whose own
+    `agentStop` names its own id — has no fill to run. A row recorded without an
+    owner, or a payload naming no session (ADR-0005 keeps `sessionId`
+    optional), cannot be told apart, so either stays routable by any session
+    rather than stranding a landed run. See ADR-0009.
+    """
+    owner = row.get("session_id")
+    if not isinstance(owner, str) or not owner:
+        return True
+    if not isinstance(session, str) or not session:
+        return True
+    return owner == session
+
+
 def confirm_route_request(payload: dict, ledger_path: str | None) -> None:
     """Promote a pending route request to a routed fact, then stand aside.
 
@@ -228,6 +248,7 @@ def confirm_route_request(payload: dict, ledger_path: str | None) -> None:
         if awaiting_confirmation(row)
         and isinstance(row.get("target"), str)
         and row["target"]
+        and owns_route(row, session)
         and (
             not isinstance(session, str)
             or not session
@@ -303,6 +324,14 @@ if not unrouted:
     decision("no-unrouted-completion")
     raise SystemExit(0)
 
+# Another session's completions are its own to route. Leaving their rows
+# untouched also keeps this stop from spending their route attempts.
+session = payload.get("sessionId")
+unrouted = [row for row in unrouted if owns_route(row, session)]
+if not unrouted:
+    decision("owed-to-another-session")
+    raise SystemExit(0)
+
 targets = [
     row["target"]
     for row in unrouted
@@ -347,7 +376,6 @@ for row in pending:
     requested_at = payload.get("timestamp")
     if requested_at and not row.get("route_requested_at"):
         row["route_requested_at"] = requested_at
-    session = payload.get("sessionId")
     if isinstance(session, str) and session and session not in requested_by(row):
         row["route_requested_by"] = requested_by(row) + [session]
 if not write_ledger(ledger_path, rows):

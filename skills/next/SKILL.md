@@ -359,9 +359,12 @@ hop from another, and nothing matches on it. Do not treat a descriptive name as 
 `subagentStop` payload carries no field holding it, so a name is never what a completion finds its
 row by.
 
-When a run completes, `subagentStop` frees its reservation and `agentStop` requests `/next` again.
-Each completion frees one slot, and a re-entry may carry several completed runs at once: fan-out
-finishes in batches, so one block requests the whole batch and names every freed target. The
+When a run completes, `subagentStop` frees its reservation and the launching session's `agentStop`
+requests `/next` again. Every other session's stop, the subagent's own included, stands aside
+([ADR-0009](../../docs/adr/0009-a-route-is-owed-to-the-session-that-launched-the-run.md)), so
+bind with this session's id or no session is woken. Each completion frees one slot, and a re-entry
+may carry several completed runs at once: fan-out finishes in batches, so one block requests the
+whole batch and names every freed target. The
 following `stop_hook_active` turn confirms that request before the helper records the rows as
 routed. Begin the same one-recommendation fill again and refill every freed slot while ready work
 remains, rather than waiting for the other in-flight runs to finish.
