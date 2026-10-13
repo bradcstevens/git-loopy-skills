@@ -1,6 +1,6 @@
 ---
 name: wayfinder
-description: Plan a huge chunk of work — more than one agent session can hold — as a shared map of decision tickets on your issue tracker, and resolve them one at a time until the way to the destination is clear.
+description: Plan a huge chunk of work (more than one agent session can hold) as a shared map of decision tickets on your issue tracker, and resolve them one at a time until the way to the destination is clear.
 model: claude-opus-5.5
 effort: medium
 context: 1M
@@ -25,7 +25,7 @@ The map is a single issue on this repo's issue tracker, labelled `wayfinder:map`
 
 The map is an **index**, not a store. It lists the decisions made and points at the tickets that hold their detail; a decision lives in exactly one place, its ticket, so the map never restates it, only gists it and links.
 
-**Where the map, its child tickets, blocking, and frontier queries physically live is tracker-specific.** The issue tracker should have been provided to you — run `/setup-git-loopy-skills` if not. Consult the tracker doc's "Wayfinding operations" section for how _this_ repo expresses them. If no tracker has been provided, default to the local-markdown tracker.
+**Where the map, its child tickets, blocking, and frontier queries physically live is tracker-specific.** The issue tracker should have been provided to you. If not, tell the user to run `/setup-git-loopy-skills`. Consult the tracker doc's "Wayfinding operations" section for how _this_ repo expresses them. If no tracker has been provided, default to the local-markdown tracker.
 
 ### The map body
 
@@ -116,7 +116,8 @@ User invokes with a loose idea.
 3. **Create the map** (label `wayfinder:map`): Destination and Notes filled in, Decisions-so-far empty, the fog sketched into **Not yet specified**.
 4. **Create the tickets you can specify now** as child issues of the map, then wire blocking edges in a **second pass** (issues need ids before they can reference each other). Write cross-references in that pass too, with real ids: a placeholder `#<n>` auto-links to an unrelated issue. Wiring sorts them into the frontier and the blocked; everything you can't yet specify stays in the fog: the **Not yet specified** section.
 5. **Fire the research subagents.** For each `research` ticket you just created, spin up a subagent that calls the Skill tool with "research" to resolve it in parallel, capturing its findings on a throwaway `research/<name>` branch with a context pointer from the ticket. Push the branch but open no PR: it is never merged.
-6. Stop: charting is one session's work; it hand-resolves nothing.
+6. **Publish the charting transition**: see [Record progress on the map](#record-progress-on-the-map).
+7. Stop: charting is one session's work; it hand-resolves nothing.
 
 ### Work through the map
 
@@ -130,5 +131,36 @@ User invokes with a map (URL or number). A ticket is **optional**: without one, 
 
 The user may run unblocked tickets in parallel, so expect other sessions to be editing the tracker concurrently.
 
-At the conclusion of a `/wayfinder` session, run `/to-spec` if the map's destination was a
-specification, or `/next` otherwise.
+## Record progress on the map
+
+Charting a map and resolving a ticket are both durable workflow transitions. Record each one
+so the next session (human or agent) reads the same answer you did instead of
+reconstructing it from labels, blocking edges and comments.
+
+**Only record once the transition is durable.** For charting that means the map issue, every
+ticket you specified, and every blocking edge already exist on the tracker; for a resolution
+it means the resolution comment is posted and the ticket is closed. Then post one short
+comment on the map saying what this session changed: the tickets created or resolved, and
+what the map still needs.
+
+## Reaching the destination
+
+A map is **not** finished because its ticket list came out empty. It is finished when nothing
+is left to decide: no open decision ticket and no fog in **Not yet specified**. Until then,
+keep working the frontier: an open ticket or remaining fog is the map saying, truthfully, that
+the way is not clear yet.
+
+When the map is finished, close it, and post a closing comment summarizing that every decision
+ticket is closed and no fog remains. What happens next depends on the destination this map
+named:
+
+- **A specification destination** (the map was finding its way to a spec) is reached once the
+  spec exists. Call the Skill tool with "to-spec" to hand it the map; it synthesises the spec
+  from the decisions recorded on it.
+- **A decision destination** has arrived: the decisions recorded on the map are the
+  destination.
+- **Any other destination** (an in-place change, a proof of concept) still has to be built, and
+  wayfinder plans rather than builds. The closing hand-off to "next" routes the build.
+
+At the conclusion of a `/wayfinder` session that did not hand the map to "to-spec", call the
+Skill tool with "next".
