@@ -100,8 +100,9 @@ failure was transient or permanent. A transient rate limit, server error, networ
 error saying the target is missing or invalid is permanent: it halts the target instead of being
 mistaken for `no-evidence`. Completion and recovery remove a clean worktree and report any other as
 a retained worktree (`GLOSSARY.md`).
-`agentStop` re-enters `/next` for the batch of completed, unrouted runs, allowing one fill to replace
-every slot that batch freed.
+`agentStop` re-enters `/next` in the launching session for its batch of completed, unrouted runs,
+allowing one fill to replace every slot that batch freed. Other sessions' stops, subagents' included,
+stand aside (ADR-0009).
 AFK-safe and allowlisted are the two eligibility conditions for consulting `chain.sh plan`, not a
 guarantee of a spawn. The planner is authoritative and may decline an otherwise eligible action when
 its target or worktree is already in flight, the target is halted or failed, or the concurrency limit

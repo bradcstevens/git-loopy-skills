@@ -172,8 +172,10 @@ _Avoid_: Approval, sign-off (an approval is one possible input, not the whole se
 An `agentStop` block asking the parent to run `/next` for finished runs. It is a request and not a
 route, because the block reaches the parent as a dismissible prompt: it becomes a route only once a
 following `stop_hook_active` turn shows the parent took the turn the block forced. One request covers
-the complete routable batch. `sessionId` is optional: when present it correlates confirmation to
-the requesting session, while an anonymous request remains confirmable by any forced turn.
+the complete routable batch. A request is owed only to the session that launched the run, the row's
+`session_id`: no other session, subagent included, is blocked for it or confirms it (ADR-0009).
+`sessionId` is optional: an anonymous stop, or a row with no owner, remains routable and
+confirmable by any session.
 _Avoid_: Re-entry (the mechanism), routed (the confirmed fact)
 
 ### Connection kinds

@@ -498,4 +498,80 @@ then
   err "agentStop started a route while stop_hook_active was true"
 fi
 
+# ADR-0009: a completed run's route is owed to the session that launched it.
+# A subagent's own agentStop names the subagent, and a parallel routing session
+# shares the ledger; neither has a fill to run, so neither may be blocked for
+# the run, spend its route attempts, or confirm its request.
+python3 - "$fixture_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "w", encoding="utf-8") as ledger:
+    for target, owner in (("issue-mine", "session-parent"), ("issue-theirs", "session-other")):
+        ledger.write(json.dumps({
+            "target": target,
+            "session_id": owner,
+            "finish_time": "2026-08-22T02:00:00Z",
+            "outcome": "published",
+        }) + "\n")
+PY
+cp "$fixture_ledger" "$fixture_ledger.before-subagent"
+assert_decision "a subagent stop" "$(reenter false 2026-08-22T02:01:00Z agent-child)" \
+  '{"decision":"allow","reason":"owed-to-another-session"}'
+if ! cmp -s "$fixture_ledger.before-subagent" "$fixture_ledger"; then
+  err "a stop owning no completion wrote to the ledger"
+fi
+assert_decision "the owning session" "$(reenter false 2026-08-22T02:02:00Z session-parent)" \
+  "$(block_decision_for issue-mine)"
+assert_decision "another session's row left unrequested" \
+  "$(ledger_field issue-theirs route_attempts)" "null"
+assert_decision "the other session's own stop" \
+  "$(reenter false 2026-08-22T02:03:00Z session-other)" "$(block_decision_for issue-theirs)"
+assert_decision "the owning session's forced turn" \
+  "$(reenter true 2026-08-22T02:04:00Z session-parent)" "$(confirmed_decision_for issue-mine)"
+assert_decision "a row the owner's turn did not confirm" "$(ledger_field issue-theirs routed)" "null"
+assert_ledger_intact "the session-scoped route"
+
+# A request recorded before ownership scoping may name another session. That
+# session's forced turn must not mark the owner's hop routed, or the owner is
+# never woken for it.
+python3 - "$fixture_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "w", encoding="utf-8") as ledger:
+    ledger.write(json.dumps({
+        "target": "issue-mine",
+        "session_id": "session-parent",
+        "finish_time": "2026-08-22T03:00:00Z",
+        "outcome": "published",
+        "route_attempts": 1,
+        "route_requested_by": ["session-other"],
+    }) + "\n")
+PY
+assert_decision "a foreign forced turn" "$(reenter true 2026-08-22T03:01:00Z session-other)" \
+  '{"decision":"allow","reason":"stop-hook-active"}'
+assert_decision "a row a foreign turn did not confirm" "$(ledger_field issue-mine routed)" "null"
+assert_decision "the owner's stop after a foreign request" \
+  "$(reenter false 2026-08-22T03:02:00Z session-parent)" "$(block_decision_for issue-mine)"
+assert_decision "the owner's forced turn after a foreign request" \
+  "$(reenter true 2026-08-22T03:03:00Z session-parent)" "$(confirmed_decision_for issue-mine)"
+
+# ADR-0005 keeps sessionId optional. A stop naming no session cannot be told
+# apart from the owner, so it is still asked rather than stranding the hop.
+python3 - "$fixture_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], "w", encoding="utf-8") as ledger:
+    ledger.write(json.dumps({
+        "target": "issue-mine",
+        "session_id": "session-parent",
+        "finish_time": "2026-08-22T04:00:00Z",
+        "outcome": "published",
+    }) + "\n")
+PY
+assert_decision "an anonymous stop with an owned row" \
+  "$(reenter false 2026-08-22T04:01:00Z "")" "$(block_decision_for issue-mine)"
+
 exit "$fail"
