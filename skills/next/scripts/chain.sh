@@ -1,6 +1,22 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+chain_python="$(command -v "${CHAIN_PYTHON:-python3}")" || {
+  echo "error: chain.sh requires Python 3.9 or newer: ${CHAIN_PYTHON:-python3} not found" >&2
+  exit 2
+}
+chain_python="$(cd "$(dirname "$chain_python")" && pwd)/$(basename "$chain_python")"
+if [ "${1:-}" = "reenter" ]; then
+  exec "$chain_python" "$script_dir/chain_entry.py" "$@"
+fi
+"$chain_python" "$script_dir/chain_entry.py" --check-python
+
+# The remaining bash bodies use the same selected interpreter until ported.
+python3() {
+  "$chain_python" "$@"
+}
+
 usage() {
   cat >&2 <<'EOF'
 usage:
@@ -16,6 +32,7 @@ usage:
   chain.sh bind --worktree PATH --session-id ID --agent-id ID \
     --agent-type TYPE --agent-name NAME [--ledger PATH]
   chain.sh complete [--ledger PATH] < subagent-stop-payload.json
+  chain.sh reenter < agent-stop-payload.json
   chain.sh recover --stale-after-seconds N [--now TIMESTAMP] [--ledger PATH]
   chain.sh owner --worktree PATH
   chain.sh claim --worktree PATH --owner-pid PID [--create-branch BRANCH] [--ledger PATH]
@@ -49,7 +66,6 @@ EOF
 }
 
 ledger="${CHAIN_LEDGER:-}"
-script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 claim_recovery="$script_dir/claim-recovery.py"
 target_identity="$script_dir/target-identity.py"
 review_clean_record="$script_dir/../../../scripts/review-clean-record.py"
