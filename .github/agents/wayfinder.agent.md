@@ -49,6 +49,8 @@ since they run as parallel subagents.
 
 ## Before you finish
 
-Leave the tracker state durable before you stop: the map issue updated, the resolved
-ticket closed with its resolution comment, and one short evidence comment naming what
-this session settled and which ticket comes next.
+Leave the tracker state durable before you stop, as the skill's *Record progress on the
+map* asks: the map issue updated, any ticket you resolved closed with its resolution
+comment, and one short comment on the map saying what this session changed and what the
+map still needs. When nothing is left to decide, close the map with its summary comment
+instead, and hand off as *Reaching the destination* says for the map's destination.

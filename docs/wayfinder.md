@@ -106,7 +106,7 @@ It is this skill. Upstream's v1.1 renamed it to `wayfinder`; this repo has only 
 - A session resolves one ticket, posts the answer as a resolution comment, closes it, and adds one line to the map's *Decisions so far*. Then it stops.
 - **Not yet specified** shrinks over time. When fog graduates into a ticket, it leaves that section and does not appear in both places.
 - When the opening breadth-first grill finds no fog at all, the skill stops and tells you the effort is small enough to skip the map.
-- The session that finishes the map points you toward a spec, not a pull request.
+- The session that finishes the map closes it, and points you toward a spec whenever something is left to specify or build, never toward a pull request.
 
 ## Where it fits
 
