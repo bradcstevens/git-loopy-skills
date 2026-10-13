@@ -99,7 +99,6 @@ Each git-loopy-skills skill inherits its role's pick and names it in its `SKILL.
 | push | git-loopy:chore | `claude-sonnet-5.5` | low | 200K default | 79 | 78K (git-loopy:chore p95 of 14 runs) | claude-sonnet-5.5 low 200K |
 | release | git-loopy:chore | `claude-sonnet-5.5` | low | 200K default | 79 | 78K (git-loopy:chore p95 of 14 runs) | claude-sonnet-5.5 low 200K |
 | research | copilot:research | `gpt-6-astra` | medium | 1050K long_context | 76 | 233K (copilot:research profile estimate) | gpt-6.1-sol medium 922K |
-| resolving-merge-conflicts | git-loopy:implementation | `gpt-6-astra` | medium | 1050K long_context | 73 | 601K (p95 of 6 /resolving-merge-conflicts runs) | gpt-6.1-sol medium 922K |
 | retro | git-loopy:planning | `claude-opus-5.5` | medium | 1M long_context | 69 | 171K (git-loopy:planning p95 of 5 runs) | claude-opus-5.5 medium 1M |
 | set-task-models | copilot:research | `gpt-6-astra` | medium | 1050K long_context | 76 | 233K (copilot:research profile estimate) | gpt-6.1-sol medium 922K |
 | setup-git-loopy-skills | git-loopy:chore | `claude-sonnet-5.5` | low | 200K default | 79 | 78K (git-loopy:chore p95 of 14 runs) | claude-sonnet-5.5 low 200K |

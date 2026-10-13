@@ -32,7 +32,7 @@ work in scope from the current conversation, never unrelated worktree changes.
 Include any preferred commit message, remote, base branch, or PR instructions in
 the request.
 
-Use [resolving-merge-conflicts](./resolving-merge-conflicts.md) first for an active
+Use [implement](./implement.md) first for an active
 merge, rebase, or cherry-pick conflict. A detached HEAD needs a user-selected
 branch before publication.
 
@@ -61,7 +61,8 @@ unrelated changes remain untouched and are identified in the final report.
 
 **What if the push is rejected?** The skill fetches and reports divergence while
 preserving history, then routes reconciliation to
-[resolving-merge-conflicts](./resolving-merge-conflicts.md). It does not force-push
+[implement](./implement.md), naming the branch and both heads. The resolved head
+gets a fresh code review before returning to publication. It does not force-push
 without separate, explicit approval.
 
 **What if it needs a login or permission?** A protected branch, missing scope,

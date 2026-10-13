@@ -24,8 +24,8 @@ Inspect:
 - commits ahead of the upstream
 
 A detached `HEAD` needs a user-selected branch before publication. For an active
-merge, rebase, or cherry-pick conflict, stop and recommend
-`/resolving-merge-conflicts`.
+merge, rebase, or cherry-pick conflict, hand off to `/implement`, naming the
+branch and the conflicted operation.
 
 This step is complete when the intended paths, branch, remote, upstream state,
 and existing local commits are known.
@@ -126,8 +126,9 @@ leave a fresh comment rather than relying on the old one.
 ### The remote rejected the publication
 
 A divergence is durable git evidence, and it names its own resolver: run
-`/resolving-merge-conflicts` to reconcile `<branch-name>` with the remote head, never
-force-push around it. Once resolved, push again and continue from step 5.
+`/implement`, naming the divergence and both heads, to reconcile `<branch-name>`
+with the remote head. Never force-push around it. The resolved head goes through
+`/code-review` before returning here for publication.
 
 ### The publication needs authority you do not have
 

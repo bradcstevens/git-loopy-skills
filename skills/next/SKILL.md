@@ -97,7 +97,7 @@ does not make an explicit standalone request complete.
 | The destination is agreed but no durable spec exists | `/to-spec` |
 | A spec exists but executable tracer-bullet tickets do not | `/to-tickets` |
 | A raw incoming issue or external PR needs readiness work | `/triage` |
-| An in-progress merge, rebase, or cherry-pick has conflicts | `/resolving-merge-conflicts` |
+| An in-progress merge, rebase, or cherry-pick has conflicts | `/implement` |
 | A concrete behavior should be built test-first without the broader ticket flow | `/tdd` |
 | An unblocked `ready-for-agent` ticket or small agreed change is available | `/implement` |
 | Implemented work or review fixes still need a fixed-point review | `/code-review` |
@@ -209,7 +209,7 @@ co-installed with `/next`, so a standalone installation carries the full referen
 The procedure's fourth question, “Can the task be done AFK?”, is the reasoning behind the chain's
 spawn gate. Only when it is the first yes does the procedure select `Subagent`. That action is
 `AFK-safe`, but the chain may spawn it only when it is also allowlisted: `/implement`,
-`/code-review`, `/research`, `/push`, or `/resolving-merge-conflicts`. A `HITL` or non-allowlisted
+`/code-review`, `/research`, or `/push`. A `HITL` or non-allowlisted
 action reaches the checkpoint boundary instead; it does not become safe because the chain can run it.
 
 Only for that `Subagent` outcome, consult `chain.sh plan` with the route, target, `--safety

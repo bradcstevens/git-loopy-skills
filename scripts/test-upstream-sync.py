@@ -203,12 +203,12 @@ class TrustTests(unittest.TestCase):
 
 class ScopeTests(unittest.TestCase):
     def setUp(self):
-        self.local = ["implement", "next", "loop-me", "handoff", "resolving-merge-conflicts", "tdd"]
+        self.local = ["implement", "next", "loop-me", "handoff", "retired-skill", "tdd"]
         self.base = {
             "implement": {"bucket": "engineering", "tree": "t1"},
             "tdd": {"bucket": "engineering", "tree": "t2"},
             "ask-matt": {"bucket": "engineering", "tree": "t3"},
-            "resolving-merge-conflicts": {"bucket": "engineering", "tree": "t4"},
+            "retired-skill": {"bucket": "engineering", "tree": "t4"},
             "implement-spec": {"bucket": "in-progress", "tree": "t5"},
             "scaffold-exercises": {"bucket": "misc", "tree": "t6"},
             "loop-me": {"bucket": "in-progress", "tree": "t7"},
@@ -222,7 +222,7 @@ class ScopeTests(unittest.TestCase):
         head = copy.deepcopy(self.base)
         head["tdd"]["tree"] = "t2b"
         head["ask-matt"]["tree"] = "t3b"
-        del head["resolving-merge-conflicts"]
+        del head["retired-skill"]
         head["implement-spec"]["bucket"] = "engineering"
         head["retro"] = {"bucket": "engineering", "tree": "t9"}
         head["scaffold-exercises"]["tree"] = "t6b"
@@ -232,8 +232,8 @@ class ScopeTests(unittest.TestCase):
         self.assertNotIn("implement", rows)
         self.assertEqual(rows["tdd"]["change"], "modified")
         self.assertEqual(rows["ask-matt"]["local"], "next")
-        self.assertEqual(rows["resolving-merge-conflicts"]["change"], "removed")
-        self.assertTrue(rows["resolving-merge-conflicts"]["in_scope"])
+        self.assertEqual(rows["retired-skill"]["change"], "removed")
+        self.assertTrue(rows["retired-skill"]["in_scope"])
         self.assertEqual((rows["implement-spec"]["change"], rows["implement-spec"]["from_bucket"]), ("moved", "in-progress"))
         self.assertTrue(rows["implement-spec"]["in_scope"])
         self.assertEqual(rows["retro"]["change"], "added")

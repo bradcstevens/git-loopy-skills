@@ -187,7 +187,6 @@
     "push": "git-loopy:chore",
     "release": "git-loopy:chore",
     "research": "copilot:research",
-    "resolving-merge-conflicts": "git-loopy:implementation",
     "retro": "git-loopy:planning",
     "setup-git-loopy-skills": "git-loopy:chore",
     "show-me": "git-loopy:docs",

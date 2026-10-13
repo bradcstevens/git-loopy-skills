@@ -558,15 +558,6 @@
       "need": 233000,
       "need_source": "copilot:research profile estimate"
     },
-    "resolving-merge-conflicts": {
-      "role": "git-loopy:implementation",
-      "model": "gpt-6-astra",
-      "effort": "medium",
-      "context": "1050K",
-      "tier": "long_context",
-      "need": 601065,
-      "need_source": "p95 of 6 /resolving-merge-conflicts runs"
-    },
     "retro": {
       "role": "git-loopy:planning",
       "model": "claude-opus-5.5",

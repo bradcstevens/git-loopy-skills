@@ -1430,6 +1430,37 @@ outside_route="$(plan /triage issue-6 AFK-safe triage-agent gpt-5.6-terra high d
 assert_plan "outside route" "$outside_route" \
   '{"decision":"decline","reason":"route-not-allowlisted","route":"/triage","target":"issue-6"}'
 
+retired_route="$(plan /resolving-merge-conflicts issue-6 AFK-safe implement-agent gpt-5.6-terra high default "$tmp_dir/plan-retired")"
+assert_plan "retired conflict route" "$retired_route" \
+  '{"decision":"decline","reason":"route-not-allowlisted","route":"/resolving-merge-conflicts","target":"issue-6"}'
+
+conflicted_worktree="$tmp_dir/plan-conflicted"
+git init --quiet "$conflicted_worktree"
+git -C "$conflicted_worktree" config user.name test
+git -C "$conflicted_worktree" config user.email test@example.com
+printf 'base\n' > "$conflicted_worktree/conflict.txt"
+git -C "$conflicted_worktree" add conflict.txt
+git -C "$conflicted_worktree" commit --quiet -m base
+git -C "$conflicted_worktree" checkout --quiet -b side
+printf 'side\n' > "$conflicted_worktree/conflict.txt"
+git -C "$conflicted_worktree" commit --quiet -am side
+git -C "$conflicted_worktree" checkout --quiet -b target HEAD~1
+printf 'target\n' > "$conflicted_worktree/conflict.txt"
+git -C "$conflicted_worktree" commit --quiet -am target
+if git -C "$conflicted_worktree" merge side > /dev/null 2>&1; then
+  err "conflicted target fixture merged without a conflict"
+fi
+conflicted_before="$(git -C "$conflicted_worktree" ls-files --unmerged)"
+if [ -z "$conflicted_before" ]; then
+  err "conflicted target fixture has no unmerged entries"
+fi
+conflicted_route="$(plan /implement issue-6 AFK-safe implement-agent gpt-5.6-terra high default "$conflicted_worktree")"
+assert_plan "implement can spawn against a conflicted target" "$conflicted_route" \
+  '{"decision":"spawn","route":"/implement","target":"issue-6","agent":"implement-agent","model":"gpt-5.6-terra","effort":"high","context_tier":"default","worktree":"'"$conflicted_worktree"'"}'
+if [ "$(git -C "$conflicted_worktree" ls-files --unmerged)" != "$conflicted_before" ]; then
+  err "planning changed the conflicted target"
+fi
+
 hitl_route="$(plan /implement issue-6 HITL implement-agent gpt-5.6-terra high default "$tmp_dir/plan-hitl")"
 assert_plan "HITL route" "$hitl_route" \
   '{"decision":"decline","reason":"action-not-afk-safe","route":"/implement","target":"issue-6"}'
@@ -1698,12 +1729,12 @@ import sys
 ledger_path = sys.argv[1]
 os.makedirs(os.path.dirname(ledger_path), exist_ok=True)
 row = {
-    "route": "resolving-merge-conflicts",
+    "route": "implement",
     "target": "60",
     "session_id": "session-canonical-open",
     "agent_id": "agent-canonical-open",
-    "agent_type": "resolving-merge-conflicts-agent",
-    "agent_name": "resolving-merge-conflicts-agent",
+    "agent_type": "implement-agent",
+    "agent_name": "implement-agent",
     "spawn_time": "2026-08-22T00:00:00Z",
     "worktree": "/tmp/canonical-open",
     "chain_depth": 1,
@@ -1908,8 +1939,7 @@ for depth in range(1, 9):
         "code-review",
         "research",
         "push",
-        "resolving-merge-conflicts",
-    )[(depth - 1) % 5]
+    )[(depth - 1) % 4]
     rows.append({
         "route": route,
         "target": ("60", "15", "issue-15")[(depth - 1) % 3],
@@ -3074,16 +3104,16 @@ rows = [
       for depth in range(1, 4)),
     *(bound(
         "issue-depth-below",
-        ("implement", "code-review", "research", "push", "resolving-merge-conflicts")[
-            (depth - 1) % 5
+        ("implement", "code-review", "research", "push")[
+            (depth - 1) % 4
         ],
         depth,
         f"depth-below-{depth}",
     ) for depth in range(1, 8)),
     *(bound(
         "issue-depth-limit",
-        ("implement", "code-review", "research", "push", "resolving-merge-conflicts")[
-            (depth - 1) % 5
+        ("implement", "code-review", "research", "push")[
+            (depth - 1) % 4
         ],
         depth,
         f"depth-limit-{depth}",

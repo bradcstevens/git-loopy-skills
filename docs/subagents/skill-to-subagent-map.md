@@ -95,7 +95,7 @@ after one hop. The chain instead uses one of the custom agents below, which emit
 
 ## Custom chain agents
 
-These are the in-session carriers for the five allowlisted routes. Each invokes the named skill,
+These are the in-session carriers for the four allowlisted routes. Each invokes the named skill,
 emits `subagentStop`, and deliberately leaves model, reasoning effort, and context tier to `/next`
 at spawn time.
 
@@ -105,7 +105,6 @@ at spawn time.
 | `/code-review` | `code-review-agent` | `/code-review` |
 | `/research` | `research-agent` | `/research` |
 | `/push` | `push-agent` | `/push` |
-| `/resolving-merge-conflicts` | `resolving-merge-conflicts-agent` | `/resolving-merge-conflicts` |
 
 ## Rubber duck — `/codebase-design`
 
@@ -174,9 +173,8 @@ its answer in front of you.
 
 **Side-effecting or state-bound.** `/setup-git-loopy-skills` configures the repo once.
 
-`/push` and `/resolving-merge-conflicts` were listed here too, on the grounds that they act on the
-working tree and want a human on the approval. That ban is **lifted** for the `/next` chain, which
-may spawn both — see [ADR-0001](../adr/0001-in-session-subagents-for-the-next-loop.md). The chain
+Publication and conflict resolution may run through the `/next` chain as `/push`
+and `/implement` — see [ADR-0001](../adr/0001-in-session-subagents-for-the-next-loop.md). The chain
 spawns a route only when it is marked **AFK-safe**, meaning the target is fully specified and needs
 no further judgment, which is a narrower guarantee than refusing every publication outright.
 Delegating either one *outside* that gate is still wrong.
@@ -212,7 +210,6 @@ are read into whatever session needs them rather than dispatched anywhere.
 | `/prototype` | `general-purpose` | Background |
 | `/push` | `push-agent`, via the `/next` chain only | Background when AFK-safe, else main session |
 | `/research` | `research`; `research-agent` when chain-spawned | Background |
-| `/resolving-merge-conflicts` | `resolving-merge-conflicts-agent`, via the `/next` chain only | Background when AFK-safe, else main session |
 | `/retro` | — (`explore` to read session logs) | Main session |
 | `/setup-git-loopy-skills` | — | Main session |
 | `/tdd` | `task` | Sync, per red/green step |
