@@ -12,7 +12,7 @@ npx skills update wait-what
 
 ## What it does
 
-`wait-what` is the emergency brake for a message that didn't land. It stops the agent and makes it **re-pitch** what it just said: a little context first, in [ASD-STE100 Simplified Technical English](https://www.asd-ste100.org/), using the ubiquitous language from `CONTEXT.md`.
+`wait-what` is the emergency brake for a message that didn't land. It stops the agent and makes it **re-pitch** what it just said: a little context first, in [ASD-STE100 Simplified Technical English](https://www.asd-ste100.org/), using the ubiquitous language from `GLOSSARY.md`.
 
 It's one line of a skill, and that's the point — the cost of asking is low enough that you use it the moment you feel yourself nodding along.
 
@@ -26,9 +26,9 @@ Reach for it the instant an explanation goes over your head, leans on a term you
 
 - **Context first** — a re-pitch that restarts from the same midpoint fails the same way. It has to back up.
 - **Simplified Technical English** — a controlled language built for one meaning per word and short, direct sentences. It strips the register that makes an explanation sound complete without being understood.
-- **The ubiquitous language from `CONTEXT.md`** — the project's own glossary, so the re-pitch reaches for terms you've already agreed on rather than inventing fresh ones.
+- **The ubiquitous language from `GLOSSARY.md`** — the project's own glossary, so the re-pitch reaches for terms you've already agreed on rather than inventing fresh ones.
 
-If `CONTEXT.md` doesn't exist yet, that absence is itself the finding: [domain-modeling](./domain-modeling.md) is the skill that writes one.
+If `GLOSSARY.md` doesn't exist yet, that absence is itself the finding: [domain-modeling](./domain-modeling.md) is the skill that writes one.
 
 ## Where it fits
 

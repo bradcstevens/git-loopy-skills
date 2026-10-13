@@ -14,7 +14,7 @@ npx skills update grill-with-docs
 
 `grill-with-docs` interviews you relentlessly about a plan or design, a round of questions at a time, until you and the agent reach a shared understanding — and it writes the vocabulary and decisions down as you go.
 
-The grilling **leaves a paper trail**. A plain interview sharpens your thinking and then evaporates when the session ends; this one captures each term the moment it's resolved into a `CONTEXT.md` glossary, and records the hard, one-way decisions as ADRs. The alignment survives the conversation instead of living only in your head.
+The grilling **leaves a paper trail**. A plain interview sharpens your thinking and then evaporates when the session ends; this one captures each term the moment it's resolved into a `GLOSSARY.md` glossary, and records the hard, one-way decisions as ADRs. The alignment survives the conversation instead of living only in your head.
 
 ## When to reach for it
 
@@ -24,7 +24,7 @@ Reach for it at the very start of a change, when the plan is still fuzzy and the
 
 ## Prerequisites
 
-This skill is stateful — it writes into your repo as it grills. Resolved terms land in a `CONTEXT.md` glossary at the root (or the relevant context's `CONTEXT.md` if a `CONTEXT-MAP.md` marks a multi-context repo), and genuinely hard-to-reverse decisions land as ADRs under `docs/adr/`. Both are created lazily — nothing exists until the first term or decision crystallises — so you don't need to scaffold anything up front, but you do need to be somewhere it's safe to write these files.
+This skill is stateful — it writes into your repo as it grills. Resolved terms land in a `GLOSSARY.md` glossary at the root (or the relevant context's `GLOSSARY.md` if a `CONTEXT-MAP.md` marks a multi-context repo), and genuinely hard-to-reverse decisions land as ADRs under `docs/adr/`. Both are created lazily — nothing exists until the first term or decision crystallises — so you don't need to scaffold anything up front, but you do need to be somewhere it's safe to write these files.
 
 ## The grill
 
@@ -35,7 +35,7 @@ What makes this variant its own skill is where the answers go. As the grill runs
 ## It's working if
 
 - It asks a round of independent questions and waits, rather than dumping the whole questionnaire at you.
-- Terms get written to `CONTEXT.md` the moment they resolve, in your project's own words.
+- Terms get written to `GLOSSARY.md` the moment they resolve, in your project's own words.
 - It reaches into the codebase to answer its own questions where it can.
 - ADRs stay rare — you're not asked to rubber-stamp reversible choices.
 

@@ -332,7 +332,7 @@ sequenceDiagram
     TR->>TR: categorise, label, verify the reproduction
     opt the request needs fleshing out
         TR->>GR: grill it into shape, a round at a time
-        TR->>DM: sharpen domain terms, update CONTEXT.md
+        TR->>DM: sharpen domain terms, update GLOSSARY.md
     end
 
     alt agent-ready
