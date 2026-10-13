@@ -39,7 +39,7 @@ usage:
 
 A PID-less ledger lock is recoverable after CHAIN_LOCK_STALE_SECONDS (default: 300).
 ROUTE is a slash-command name and carries its leading slash. The allowlist is
-/implement, /code-review, /research, /push, and /resolving-merge-conflicts; a bare
+/implement, /code-review, /research, and /push; a bare
 name such as "implement" is not a route and plan declines it as
 route-not-allowlisted.
 --parent-pid names the running process whose death orphans the reservation, which
@@ -623,7 +623,7 @@ concurrency_limit() {
 
 allowlisted_route() {
   case "$1" in
-    /implement|/code-review|/research|/push|/resolving-merge-conflicts) return 0 ;;
+    /implement|/code-review|/research|/push) return 0 ;;
     *) return 1 ;;
   esac
 }

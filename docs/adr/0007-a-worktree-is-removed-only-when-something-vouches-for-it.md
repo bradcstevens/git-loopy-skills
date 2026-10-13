@@ -77,7 +77,7 @@ A **completed chain reservation** releases its slot inside `chain.sh complete`'s
 That cannot move. Deferring slot release to a skill run would leave slots held between the run
 finishing and the next sweep, starving the chain — a regression wearing the clothes of a decoupling.
 
-An **orphaned reservation** is a ledger row, and `CONTEXT.md` names it. `chain.sh recover` reuses the
+An **orphaned reservation** is a ledger row, and `GLOSSARY.md` names it. `chain.sh recover` reuses the
 existing stale-lock recovery machinery to verify the reserving parent's process identity. It
 reclaims an unbound reservation when its parent is gone, with age as a backstop, and reclaims a
 bound **abandoned run** only when its parent is proven gone. The sweeper calls `recover`; it does not
@@ -161,7 +161,7 @@ was originally stated, so they are listed here rather than left to be found by d
   above shows is indistinguishable from an abandoned one; that residual risk is the existing
   backstop's (#28), and this amendment does not claim to close it.
 - **A population exists that the taxonomy does not name: the retained worktree.** When `complete` or
-  `recover` leaves a **retained worktree** (`CONTEXT.md`), the row still closes and the slot is
+  `recover` leaves a **retained worktree** (`GLOSSARY.md`), the row still closes and the slot is
   released, so it is no longer a reservation. It holds no open row. A retained worktree that
   `chain.sh reserve` made keeps the marker `reserve` wrote (#51), so the sweeper may remove it once
   its owner is gone and it is clean; one made without a marker is unmarked: reported, never removed

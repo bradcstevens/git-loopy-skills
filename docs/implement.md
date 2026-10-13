@@ -14,11 +14,19 @@ npx skills update implement
 
 `implement` builds the work described in a spec or a set of tickets — driving it through test-driven development, typechecking, and the full test suite, then handing off to review and committing to the current branch.
 
+It also reconciles a branch with a moved remote head and resolves in-progress
+merge, rebase, or cherry-pick conflicts. It reads both sides' primary sources,
+preserves their intent, finishes the operation, and records the checked,
+committed, pushed resolution on the ticket. The resolved head is a new candidate
+and gets its own code review; a force push or missing authority stops for a human.
+
 It does **not** decide what to build. The spec is already settled and the seams are already agreed; `implement` executes that plan rather than reopening it. It is the hands, not the head — the thinking happened upstream.
 
 ## When to reach for it
 
-You invoke this by typing `/implement` — the agent won't reach for it on its own.
+Type `/implement`, or let the agent reach it when a spec is ready or a branch
+needs reconciliation. `/next` routes active conflicts here; `/push` hands off
+when the remote head has moved, naming the divergence.
 
 Reach for it once the work is written down as a spec or split into tickets and you're ready to turn that into code. If the spec doesn't exist yet, write it first — for that, use [to-spec](./to-spec.md), or [to-tickets](./to-tickets.md) to break a spec into tickets. If you just want to build something test-first without a full spec, drop to [tdd](./tdd.md) directly.
 
@@ -36,4 +44,4 @@ Around that core it keeps the loop tight — typecheck often, run single test fi
 grill-with-docs → to-spec → to-tickets → implement → code-review
 ```
 
-Reach for it after the work has been specced and sequenced, not before. Its key neighbours are [to-tickets](./to-tickets.md), which produces the tickets — each declaring its blocking edges — that it works through, and [tdd](./tdd.md), which it drives internally to write the tests at each seam before running its own [code-review](./code-review.md) pass and committing. When you're unsure which skill or flow fits, [next](./next.md) routes you.
+Reach for it after the work has been specced and sequenced, or when that work needs conflict resolution. Its key neighbours are [to-tickets](./to-tickets.md), which produces the tickets — each declaring its blocking edges — that it works through, and [tdd](./tdd.md), which it drives internally to write the tests at each seam before running its own [code-review](./code-review.md) pass and committing. When you're unsure which skill or flow fits, [next](./next.md) routes you.

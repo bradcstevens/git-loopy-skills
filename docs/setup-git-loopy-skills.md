@@ -16,7 +16,7 @@ npx skills update setup-git-loopy-skills
 
 Those files are the only thing that varies between repos. The skills themselves are identical everywhere. They read `docs/agents/issue-tracker.md` at run time and do what it says. That is why the set is not tied to GitHub, and why you never edit a skill file to point it at another tracker. Invoking it with "link the skills to a custom issue tracker" works with anything you can connect to programmatically, with no changes to the skills.
 
-It is a prompt-driven skill, not a deterministic script. It reads your `git remote`, `AGENTS.md` or `.github/copilot-instructions.md`, and `GLOSSARY.md`, proposes what it found, and waits for you to confirm before it writes anything. It also checks for legacy `CONTEXT.md` and `CONTEXT-MAP.md` files and offers a history-preserving migration.
+It is a prompt-driven skill, not a deterministic script. It reads your `git remote`, `AGENTS.md` or `.github/copilot-instructions.md`, and `GLOSSARY.md`, proposes what it found, and waits for you to confirm before it writes anything. It also checks for legacy `GLOSSARY.md` and `GLOSSARY-MAP.md` files and offers a history-preserving migration.
 
 ## When to reach for it
 
@@ -101,7 +101,7 @@ This skill does not create [wayfinder](./wayfinder.md)'s `wayfinder:map` and `wa
 
 **What happens to my old `CONTEXT.md`?**
 
-Setup offers to move it to `GLOSSARY.md` with `git mv` only when the destination is absent, so Git can follow its history. The same applies to `CONTEXT-MAP.md` and per-context files referenced by a map. It previews the exact moves and updates the map and relevant instruction/config references after you accept. It does not overwrite an existing glossary or copy and delete an untracked source. If you decline, it leaves the files alone and records the legacy paths in the domain configuration.
+Setup offers to move it to `GLOSSARY.md` with `git mv` only when the destination is absent, so Git can follow its history. The same applies to `CONTEXT-MAP.md` with `git mv` to `GLOSSARY-MAP.md` and per-context files referenced by a map. It previews the exact moves and updates the map and relevant instruction/config references after you accept. It does not overwrite an existing glossary or copy and delete an untracked source. If you decline, it leaves the files alone and records the legacy paths in the domain configuration.
 
 **Can I configure the other skills' behaviour here ([grilling](https://www.aihero.dev/ai-coding-dictionary/grilling) cadence, question format, tone)?**
 
