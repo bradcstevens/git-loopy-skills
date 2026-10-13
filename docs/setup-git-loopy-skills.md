@@ -45,7 +45,8 @@ Install `/next` alongside this skill before setup. Setup resolves its sibling `n
 The committed JSON names a repository-relative resolver, not a machine-specific absolute path. Setup previews that exact JSON for approval and rewrites the same files on re-runs rather than adding duplicates. The resolver finds the installed chain at run time. Each clone should run setup after installing the skills; repositories configured before `chain.sh` moved into `next/scripts/` need to re-run it.
 
 The bundled `agentStop` helper is a thin shim into `chain.sh reenter`. It finds `/next` first under
-`${COPILOT_HOME:-$HOME/.copilot}/skills/next`, then as a sibling skill. The chain requires Python 3.9
+`${COPILOT_HOME:-$HOME/.copilot}/skills/next`, then as a sibling skill, and finally under the
+repository's `skills/next` when the shim has been copied into `.github/hooks`. The chain requires Python 3.9
 or newer; `CHAIN_PYTHON` selects the interpreter, defaulting to `python3`. Its shared ledger module
 records lock owner start times in UTC, regardless of the machine's timezone. Re-run setup once
 after updating the skills to replace a consumer repo's frozen helper with this shim; subsequent

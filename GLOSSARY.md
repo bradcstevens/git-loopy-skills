@@ -52,7 +52,11 @@ which worktree, how it ended, and how deep its lineage runs. Holds what neither 
 nor the CLI's own session records capture.
 _Avoid_: Log, history
 
-**Ledger lock**: The directory beside the spawn ledger that serialises every read-modify-write of it. Its owner file names the holder's process and that process's start time in UTC, so every reader judges the holder alive or gone the same way. _Avoid_: mutex, file lock.
+**Ledger lock**:
+The directory beside the spawn ledger that serialises every read-modify-write of it. Its owner file
+names the holder's process and that process's start time in UTC, so every reader judges the holder
+alive or gone the same way.
+_Avoid_: mutex, file lock.
 
 **Reservation**:
 A ledger row written before its run exists, claiming a concurrency slot and a worktree. It carries

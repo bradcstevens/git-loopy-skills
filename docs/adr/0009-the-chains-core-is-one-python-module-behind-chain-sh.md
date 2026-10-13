@@ -42,7 +42,8 @@ drive the chain CLI, including lock interoperability under a non-UTC clock, rath
 internal module structure.
 
 The setup helper is at most ten lines, resolving `/next` in the Copilot home skill directory first
-and then as a sibling, and execing `chain.sh reenter`. Its three imported lock names remain aliases
+and then as a sibling (or in the repository's `skills/next` from a copied `.github/hooks` shim),
+and execing `chain.sh reenter`. Its three imported lock names remain aliases
 for the existing suite's pinned helper entry point, not a second implementation. This repository's
 committed hooks stay unchanged; consumer repositories re-run setup once to replace their frozen
 helper copy with the shim.

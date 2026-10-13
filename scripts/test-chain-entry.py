@@ -4,6 +4,7 @@
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -159,6 +160,26 @@ class ChainEntryTests(unittest.TestCase):
         self.assertTrue(self.rows()[0]["routed"])
         self.assertFalse((metadata / ".git-loopy").exists())
         self.assertFalse((linked / ".git-loopy").exists())
+
+    def test_installed_shim_finds_repository_local_next(self):
+        hooks = self.root / ".github/hooks"
+        hooks.mkdir(parents=True)
+        helper = hooks / "git-loopy-agent-stop.py"
+        shutil.copy2(REPO / "skills/setup-git-loopy-skills/git-loopy-agent-stop.py", helper)
+        skills = self.root / "skills"
+        skills.mkdir()
+        (skills / "next").symlink_to(REPO / "skills/next", target_is_directory=True)
+        self.write_rows([{"target": "issue-done", "finish_time": "2026-10-12T00:00:00Z"}])
+        result = subprocess.run(
+            [sys.executable, str(helper)],
+            cwd=self.root,
+            env={**self.env, "COPILOT_HOME": str(self.root / "missing-home")},
+            input=json.dumps({"cwd": str(self.root)}),
+            capture_output=True, text=True, timeout=15,
+        )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["targets"], ["issue-done"])
+        self.assertEqual(self.rows()[0]["route_attempts"], 1)
 
     def test_live_unknown_start_and_parsed_start_are_not_reclaimed(self):
         self.write_rows([{"target": "issue-done", "finish_time": "2026-10-12T00:00:00Z"}])

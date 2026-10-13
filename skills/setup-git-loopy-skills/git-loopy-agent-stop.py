@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 import os
 import sys
-scripts = os.path.join(os.environ.get("COPILOT_HOME") or os.path.expanduser("~/.copilot"), "skills", "next", "scripts")
-if not os.path.isfile(os.path.join(scripts, "chain.sh")):
-    scripts = os.path.join(os.path.dirname(__file__), "..", "next", "scripts")
+directory = os.path.dirname(__file__)
+roots = [os.path.join(os.environ.get("COPILOT_HOME") or os.path.expanduser("~/.copilot"), "skills"), os.path.join(directory, ".."), os.path.join(directory, "../..", "skills")]
+scripts = next((os.path.join(root, "next/scripts") for root in roots if os.access(os.path.join(root, "next/scripts/chain.sh"), os.X_OK)), os.path.join(roots[-1], "next/scripts"))
 if __name__ == "__main__":
     os.execv(os.path.join(scripts, "chain.sh"), ["chain.sh", "reenter"])
 sys.path.insert(0, scripts)
