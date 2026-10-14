@@ -19,6 +19,19 @@ If the code refers to any Microsoft technologies, run the `/microsoft-code-refer
 
 ## Process
 
+### Access boundary
+
+When the caller makes this review read-only, carry that boundary into both
+sub-agent briefs: inspect revisions with `git show` and `git diff`; never check
+out, switch, reset, edit files, move refs, push, or write to the tracker. Run
+feedback loops only within the caller's permitted access.
+
+If writing is unavailable, return the findings and evidence to the caller in
+the requested form instead of posting them. Include the exact reviewed head,
+fixed point, checks and their results, and separate Standards and Spec findings.
+The caller owns recording and publication. End with that answer: the recording
+and successor steps below apply only to a review with write authority.
+
 ### 1. Pin the fixed point
 
 Immediately after entering the review, capture the exact candidate being reviewed:
@@ -26,6 +39,9 @@ Immediately after entering the review, capture the exact candidate being reviewe
 ```bash
 reviewed_head="$(git rev-parse HEAD)"
 ```
+
+If the review request names a candidate head, resolve that revision instead of
+`HEAD`, without checking it out. That exact head is the review target.
 
 Keep this value unchanged for the whole review. Use it, rather than a later `HEAD`, for the
 diff (`git diff <fixed-point>..."$reviewed_head"`) and commit list
@@ -102,6 +118,9 @@ A change can pass one axis and fail the other:
 Reporting them separately stops one axis from masking the other.
 
 ## Record the review
+
+**Write-capable reviews only.** When writing is unavailable, return the evidence
+as described under **Access boundary** and stop without invoking a successor.
 
 A review of a durable head is a durable workflow transition, and this skill owns it. Record
 it so the next session — human or agent — reads the same answer you did.

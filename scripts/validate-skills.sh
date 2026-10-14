@@ -6,7 +6,7 @@ set -euo pipefail
 #   - has YAML frontmatter with a name and a description
 #   - has a frontmatter name matching its directory name
 #   - names its GitHub Copilot model, effort and context in that frontmatter
-# Also checks that relative links between docs/*.md resolve.
+# Also checks docs links and alignment of scorecard roles with profiles/.
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO"
@@ -99,6 +99,8 @@ bash scripts/test-handoff.sh || fail=1
 python3 scripts/test-next-runtime.py || fail=1
 python3 scripts/test-set-task-models.py || fail=1
 python3 scripts/test-model-scorecard.py || fail=1
+python3 scripts/validate-profile-roles.py || fail=1
+python3 scripts/test-profile-roles.py || fail=1
 python3 scripts/test-next-sessions.py || fail=1
 python3 scripts/test-upstream-sync.py || fail=1
 exit "$fail"

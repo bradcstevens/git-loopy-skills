@@ -76,10 +76,12 @@ ticket. Read the exact label strings from the configured repository's triage-lab
 documentation; do not invent label names or substitutes.
 
 1. Apply the configured AFK-ready triage label unless instructed otherwise.
-2. Apply exactly one `task-type:` label from the closed seven: `planning`, `review`,
-   `implementation`, `test`, `docs`, `chore`, or `bugfix`. Choose it by **dominant
-   risk**: the dimension whose failure is most expensive, not the one with the most
-   files.
+2. Apply exactly one `task-type:` label. For a ticket made `ready-for-agent`
+   (the configured AFK-ready role), propose only the five execution types:
+   `implementation`, `test`, `docs`, `chore`, or `bugfix`. A ticket handed to a
+   human may carry any of the closed seven, including `planning` or `review`;
+   keep those two off agent-ready tickets. Choose by **dominant risk**: the
+   dimension whose failure is most expensive, not the one with the most files.
 3. Decide independently whether to add the configured `parallel-safe` marker. It is
    additive, alongside the triage and task-type labels, and applies only when the
    ticket can land beside another ticket without colliding.

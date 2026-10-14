@@ -84,7 +84,7 @@
       "exclude_efforts": ["max"],
       "working_set_k": 188,
       "distinct_vendor_from": "git-loopy:implementation",
-      "why": "Judges whether work was built right with push authority; cross-vendor review holds by construction (ADR-0048)."
+      "why": "Judges whether work was built right, read-only: the Orchestrator alone publishes and closes (ADR-0072); cross-vendor review holds by construction (ADR-0048)."
     },
     "git-loopy:implementation": {
       "harness": "git-loopy",
