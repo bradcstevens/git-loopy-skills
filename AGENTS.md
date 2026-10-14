@@ -11,7 +11,7 @@ relative to the repository root and resolve their tools through `PATH`.
 
 | Loop | Command | When to run |
 | --- | --- | --- |
-| Skill validation and script suites | `scripts/validate-skills.sh` | Any change under `skills/`, `docs/`, `scripts/` or `.github/hooks/`, or edits `.gitignore` |
+| Skill validation and script suites | `scripts/validate-skills.sh` | Any change under `skills/`, `profiles/`, `docs/`, `scripts/` or `.github/hooks/`, or edits `.gitignore` |
 | README skill index | `node scripts/build-readme.mjs --check` | Any change that adds, removes, renames or re-describes a skill, changes its invocation mode, adds or removes `docs/<skill>.md`, or edits `scripts/build-readme.mjs`, `.gitignore` or `README.md` |
 
 ## Skill headers

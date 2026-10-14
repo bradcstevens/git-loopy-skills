@@ -38,6 +38,20 @@ To pull down later changes:
 npx skills update
 ```
 
+## Agent profiles
+
+[`profiles/`](profiles) carries git-loopy's seven Task-type profiles beside the
+Skills. They are role definitions, not Skills or interactive `.github/agents`
+personas: `npx skills add` installs Skills, not these profiles. Their frontmatter
+declares Required Skills, Permitted Skills and access; model selection stays with
+git-loopy's Routing.
+
+Profile changes follow the paired-change order: publish this repository's commit,
+prove its clean checkout with `python -m git_loopy.skill_candidate` from git-loopy,
+and only then advance the downstream pin in a separate change. Publishing profiles
+here does not activate them in a Run. See
+[PRD: Agent profiles](https://github.com/bradcstevens/git-loopy/issues/821).
+
 ## Start here
 
 Two skills are worth installing first:
