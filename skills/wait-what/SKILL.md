@@ -1,6 +1,6 @@
 ---
 name: wait-what
-description: Stop — that last message did not land, so re-pitch it.
+description: "Stop. That last message did not land: re-pitch it."
 model: claude-sonnet-5.5
 effort: medium
 context: 200K
