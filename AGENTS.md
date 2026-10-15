@@ -11,7 +11,7 @@ relative to the repository root and resolve their tools through `PATH`.
 
 | Loop | Command | When to run |
 | --- | --- | --- |
-| Skill validation and script suites | `scripts/validate-skills.sh` | Any change under `skills/`, `profiles/`, `docs/`, `scripts/` or `.github/hooks/`, or edits `.gitignore` |
+| Skill validation and script suites | `scripts/validate-skills.sh` | Any change under `skills/`, `profiles/`, `docs/`, `scripts/`, `.github/agents/` or `.github/hooks/`, or edits `.gitignore` |
 | README skill index | `node scripts/build-readme.mjs --check` | Any change that adds, removes, renames or re-describes a skill, changes its invocation mode, adds or removes `docs/<skill>.md`, or edits `scripts/build-readme.mjs`, `.gitignore` or `README.md` |
 
 ## Skill headers
@@ -27,9 +27,16 @@ context: 1M
 
 These values are generated, so do not hand-tune them. `skills/model-scorecard/profiles.json`
 maps each skill to the role whose work it is, `/model-scorecard` scores that role and fits
-the context to the skill's measured runs (`references/skill-headers.json`), and `/set-task-models`
-writes the headers with `skills/set-task-models/sync_skill_headers.py`. A new skill needs a
-`skills` entry in `profiles.json` and a header; `scripts/validate-skills.sh` enforces both.
+the context to the skill's measured runs (`references/skill-headers.json`), and its build
+automatically runs `skills/set-task-models/sync_skill_headers.py --write` to update the
+headers and `.github/agents/<skill>.agent.md`. `/set-task-models` uses that same projection
+with its decision map. A new skill needs a `skills` entry in `profiles.json`, a header and
+a generated same-named agent. Run the projection rather than hand-tuning them.
+
+Agent `model` and `reasoning-effort` are runtime fields. Context is advisory metadata,
+not an agent runtime setting: each agent includes an exact CLI launch command applying
+all three settings. Preserve hand-written agent instructions outside the generated
+`model-scorecard` block. The `*-agent` chain carriers remain independently managed.
 
 ## Agent skills
 

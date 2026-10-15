@@ -40,6 +40,18 @@ Break the work into **tracer bullet** tickets.
 
 Give each ticket its **blocking edges**: the other tickets that must complete before it can start. A ticket with no blockers can start immediately.
 
+### Bound deliberate host load
+
+Any acceptance criterion that demands **deliberate host load** (stress loops, CPU burners, or extra concurrent command copies) must state its bounds in the ticket itself, not only in its parent spec. "Oversubscribe the CPU about 2x" alone is insufficient. Require:
+
+- On macOS, `taskpolicy -c utility <command>` to protect the operator's foreground; `nice` is not a substitute. Do not run load if the clamp cannot be applied, and never raise inherited priority.
+- A total concurrency ceiling of at most about 2x the logical CPUs, counting child workers and extra command copies.
+- A wall-clock cap per invocation: an explicit issue-specific cap, otherwise 30 minutes. A cutoff before completion is **inconclusive**, never a pass; a completed invocation reports its actual result.
+- No escalation beyond those bounds to force a reproduction: record observations and stop.
+- Cleanup after completion, failure, or interruption: reap the processes started and their descendants, check survivors with `pgrep`, establish ownership before ending them by PID, and report cleanup or uncertain ownership.
+
+Ordinary feedback loops declared in `AGENTS.md`, including their built-in test workers, are not deliberate load. They inherit the Run's Host yield policy without an additional clamp or time cap and run to completion; process cleanup still applies. Reject or rewrite an unbounded load criterion before publishing, and preserve tighter bounds already agreed in the spec.
+
 **Wide refactors are the exception to vertical slicing.** A **wide refactor** is one mechanical change (rename a column, retype a shared symbol) whose **blast radius** fans across the whole codebase, so a single edit breaks thousands of call sites at once and no vertical slice can land green. Don't force it into a tracer bullet; sequence it as **expand–contract**. First expand: add the new form beside the old so nothing breaks. Then migrate the call sites over in batches sized by blast radius (per package, per directory), each batch its own ticket blocked by the expand, keeping CI green batch to batch because the old form still exists. Finally contract: delete the old form once no caller remains, in a ticket blocked by every migrate batch. When even the batches can't stay green alone, keep the sequence but let them share an integration branch that all block a final integrate-and-verify ticket; green is promised only there.
 
 ### 4. Quiz the user

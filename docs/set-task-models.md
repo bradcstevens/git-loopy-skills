@@ -22,13 +22,14 @@ To calibrate without changing configuration:
 refreshes model evidence, and creates one shared decision map for Copilot built-in
 subagents and git-loopy task types. An ordinary invocation authorizes applying
 that map to user settings, global routing, actual git-loopy source defaults, and
-the `model`, `effort` and `context` header of every skill in git-loopy-skills.
+the `model`, `effort` and `context` header of every skill in git-loopy-skills and
+the sizing of its same-named `.github/agents/<skill>.agent.md`.
 A skill takes the profile of the role that model-scorecard's `profiles.json`
 `skills` map assigns it. `research-only` saves and reports the decisions without
 touching those targets.
 
 It sets `modelPolicy: "required"` for every discovered Copilot built-in, so a
-subagent cannot substitute another model. It leaves custom agents, unrelated
+subagent cannot substitute another model. It leaves other custom agents, unrelated
 settings, the main Copilot model, running processes, commits, and publication
 alone. Installing the skill is not authorization to run it.
 
@@ -37,12 +38,13 @@ alone. Installing the skill is not authorization to run it.
 Invoke it explicitly when you want to recalibrate and enforce role-specific
 model, effort, and context choices across both systems. Reach for
 [model-scorecard](./model-scorecard.md) instead for a generated recommendation
-report, or [sync-model-roster](./sync-model-roster.md) for scoped roster repair.
+report with automatic skill/agent synchronization, or
+[sync-model-roster](./sync-model-roster.md) for scoped roster repair.
 
 The default targets are `~/.copilot/settings.json`, respecting `COPILOT_HOME`;
 `~/.config/git-loopy/config.toml`, respecting the configured config home; the
 git-loopy source checkout at `~/code/github/bradcstevens/git-loopy`; and every
-`skills/**/SKILL.md` header in the git-loopy-skills clone at
+`skills/**/SKILL.md` header and matching agent in the git-loopy-skills clone at
 `~/code/github/bradcstevens/git-loopy-skills`. The skill
 resolves real schemas, effective configuration, instructions, and existing edits
 before ranking. A missing checkout or unverified account entitlement requires
@@ -99,6 +101,13 @@ parent model changes; that trade-off is reported.
 The skill reports a different installed checkout or artifact; updating or
 installing it needs explicit authorization.
 
+**How is agent context applied?** Agents have runtime `model` and
+`reasoning-effort` fields, but no runtime context field. The shared projection
+records the context cap and tier in agent metadata and generates a CLI launch
+command with all three explicit options. Use that command from the repository
+root; selecting the agent alone does not guarantee context. Existing instructions
+and the `*-agent` chain carriers are preserved.
+
 ## It's working if
 
 - Every in-scope role resolves to a supported, evidenced profile and the manifest
@@ -106,7 +115,7 @@ installing it needs explicit authorization.
 - Proposed changes, citations, confidence, and limitations are reported.
 - In apply mode, all authorized targets read back through their real readers and
   runtime paths as intended, with required model enforcement on built-ins, and
-  every skill header matches its role's profile.
+  every skill header and matching agent's recorded sizing match its role's profile.
 - Relevant checks pass and a second projection comparison, including
   `sync_skill_headers.py --check`, is a no-op.
 - In research-only mode, no target changes; any blocked or partially applied

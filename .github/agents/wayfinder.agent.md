@@ -1,11 +1,27 @@
 ---
 name: wayfinder
 description: Chart and work a wayfinder map of decision tickets on the repo's issue tracker.
-model: GPT-6.1 Sol (copilot)
-reasoning-effort: xhigh
+model: claude-opus-5.5
+reasoning-effort: medium
 user-invocable: true
 disable-model-invocation: true
+metadata:
+  scorecard-context: "1M"
+  scorecard-context-tier: "long_context"
 ---
+
+<!-- model-scorecard: start -->
+Call the Skill tool with "wayfinder" immediately and follow its instructions.
+If the skill is not installed, read and follow [SKILL.md](../../skills/wayfinder/SKILL.md) instead.
+
+For the recorded context, launch from the repository root with:
+
+```bash
+copilot --agent wayfinder --model claude-opus-5.5 --reasoning-effort medium --context long_context -i 'Invoke the /wayfinder skill.'
+```
+
+Context metadata is advisory; selecting this agent alone does not set the context tier.
+<!-- model-scorecard: end -->
 
 You are driving a **wayfinding** session. The `/wayfinder` skill carries the full
 procedure: the map format, the ticket types, and the fog rules. Read it and follow

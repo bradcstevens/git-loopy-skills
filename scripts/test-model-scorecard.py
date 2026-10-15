@@ -3,6 +3,8 @@
 
 import importlib.util
 import json
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -64,6 +66,99 @@ def synthetic_picks():
                                    listing(("alpha-1", ["high"], "enabled"), ("beta-2", ["high"], "enabled"),
                                            ("gamma-3", ["low"], "enabled")))
     return scorer.recommend(PROFILES, {"copilot-cli": pool, "git-loopy": pool}, {"roles": {}}, "alpha-1")
+
+
+class BuildCommand(unittest.TestCase):
+    """Real scoring/projection with frozen fixtures at the live-data boundaries."""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.repo = Path(self.directory.name) / "skills repo"
+        self.skill = self.repo / "skills/model-scorecard"
+        scripts = self.skill / "scripts"
+        scripts.mkdir(parents=True)
+        (self.skill / "references").mkdir()
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+        for name in ("build.sh", "score.py"):
+            shutil.copy2(SKILL / "scripts" / name, scripts / name)
+        sync_dir = self.repo / "skills/set-task-models"
+        sync_dir.mkdir()
+        shutil.copy2(REPO / "skills/set-task-models/sync_skill_headers.py", sync_dir)
+        self.plan = self.repo / "skills/plan/SKILL.md"
+        self.plan.parent.mkdir()
+        self.plan.write_text("---\nname: plan\ndescription: Plan.\n---\n")
+        profiles = {**PROFILES, "skills": {"plan": "git-loopy:planning"}}
+        (self.skill / "profiles.json").write_text(json.dumps(profiles))
+        models = {**listing(("alpha-1", ["high"], "enabled"), ("beta-2", ["high"], "enabled"),
+                           ("gamma-3", ["low"], "enabled")), "cli_version": "fixture"}
+        leaderboard = {
+            "models": [row("Alpha 1 (high)", 53), row("Beta 2 (high)", 47, creator="Vendor B"),
+                       row("Gamma 3 (low)", 35, creator="Vendor C")],
+            "page": "https://example.test/leaderboard", "captured_at": "fixture",
+            "verification": {"current_models": 3, "rows_matched": 5},
+        }
+        for name, fixture in (("capture_leaderboard.py", leaderboard), ("list_models.py", models),
+                              ("measure_context.py", {"roles": {}})):
+            (scripts / name).write_text(
+                "import json, sys\nfrom pathlib import Path\n"
+                f"Path(sys.argv[sys.argv.index('--out') + 1]).write_text({json.dumps(json.dumps(fixture))})\n"
+            )
+        bin_dir = self.repo / "bin"
+        bin_dir.mkdir()
+        uv = bin_dir / "uv"
+        uv.write_text('#!/bin/sh\n[ "$1" = run ] && [ "$2" = --project ] && [ "$4" = --no-sync ] || exit 97\n'
+                      'shift 4\nexec "$@"\n')
+        uv.chmod(0o755)
+        (bin_dir / "python").symlink_to(sys.executable)
+        (bin_dir / "python3").symlink_to(sys.executable)
+        self.env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "TMPDIR": str(self.repo),
+                    "COPILOT_HOME": str(self.repo / ".copilot")}
+
+    def build(self):
+        return subprocess.run(
+            ["bash", str(self.skill / "scripts/build.sh"), "--jev-home", str(self.repo / "jev"),
+             "--git-loopy", str(self.repo / "loopy"), "--main-model", "alpha-1"],
+            capture_output=True, text=True, env=self.env,
+        )
+
+    def test_build_applies_fresh_picks_to_skills_and_agents(self):
+        result = self.build()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        agent = self.repo / ".github/agents/plan.agent.md"
+        self.assertTrue(agent.exists(), result.stdout)
+        self.assertIn("model: alpha-1\neffort: high\n", self.plan.read_text())
+        self.assertIn("model: alpha-1\nreasoning-effort: high\n", agent.read_text())
+        check = subprocess.run(
+            [sys.executable, str(self.repo / "skills/set-task-models/sync_skill_headers.py"),
+             "--skills-repo", str(self.repo), "--check"], capture_output=True, text=True,
+        )
+        self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+
+    def test_failed_capture_leaves_references_and_projections_untouched(self):
+        reference = self.skill / "references/scorecard.md"
+        reference.write_text("Previous scorecard.\n")
+        before = self.plan.read_text()
+        (self.skill / "scripts/capture_leaderboard.py").write_text(
+            "import sys\nsys.exit('fixture capture unavailable')\n"
+        )
+        result = self.build()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("fixture capture unavailable", result.stderr)
+        self.assertEqual(reference.read_text(), "Previous scorecard.\n")
+        self.assertEqual(self.plan.read_text(), before)
+        self.assertFalse((self.repo / ".github/agents").exists())
+
+    def test_projection_failure_is_a_failed_build_not_a_successful_report(self):
+        extra = self.repo / "skills/unmapped/SKILL.md"
+        extra.parent.mkdir()
+        extra.write_text("---\nname: unmapped\ndescription: Missing a role.\n---\n")
+        before = self.plan.read_text()
+        result = self.build()
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("no role is mapped for unmapped", result.stderr)
+        self.assertEqual(self.plan.read_text(), before)
+        self.assertFalse((self.repo / ".github/agents").exists())
 
 
 class WeightsAndNames(unittest.TestCase):

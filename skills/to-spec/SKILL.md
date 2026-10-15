@@ -21,6 +21,18 @@ Check with the user that these seams match their expectations.
 
 3. Write the spec using the template below, then publish it to the project issue tracker. Apply the `ready-for-agent` triage label - no need for additional triage.
 
+### Bound deliberate host load
+
+Any acceptance criterion or testing decision that demands **deliberate host load** (stress loops, CPU burners, or extra concurrent command copies) must state its bounds in the spec and require them to be carried into each resulting ticket. "Oversubscribe the CPU about 2x" alone is insufficient. Require:
+
+- On macOS, `taskpolicy -c utility <command>` to protect the operator's foreground; `nice` is not a substitute. Do not run load if the clamp cannot be applied, and never raise inherited priority.
+- A total concurrency ceiling of at most about 2x the logical CPUs, counting child workers and extra command copies.
+- A wall-clock cap per invocation: an explicit issue-specific cap, otherwise 30 minutes. A cutoff before completion is **inconclusive**, never a pass; a completed invocation reports its actual result.
+- No escalation beyond those bounds to force a reproduction: record observations and stop.
+- Cleanup after completion, failure, or interruption: reap the processes started and their descendants, check survivors with `pgrep`, establish ownership before ending them by PID, and report cleanup or uncertain ownership.
+
+Ordinary feedback loops declared in `AGENTS.md`, including their built-in test workers, are not deliberate load. They inherit the Run's Host yield policy without an additional clamp or time cap and run to completion; process cleanup still applies. Reject or rewrite an unbounded load criterion before publishing, and preserve tighter bounds already agreed in the conversation.
+
 <spec-template>
 
 ## Problem Statement

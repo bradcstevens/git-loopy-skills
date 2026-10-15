@@ -103,4 +103,5 @@ python3 scripts/validate-profile-roles.py || fail=1
 python3 scripts/test-profile-roles.py || fail=1
 python3 scripts/test-next-sessions.py || fail=1
 python3 scripts/test-upstream-sync.py || fail=1
+python3 scripts/test-load-guidance.py || fail=1
 exit "$fail"
