@@ -191,6 +191,7 @@
     "retro": "git-loopy:planning",
     "setup-git-loopy-skills": "git-loopy:chore",
     "show-me": "git-loopy:docs",
+    "sync-branch": "git-loopy:chore",
     "sync-model-roster": "git-loopy:chore",
     "tdd": "git-loopy:test",
     "teach": "git-loopy:docs",

@@ -79,4 +79,4 @@ End the turn once the watch is running. The runtime wakes this session when the 
 
 A wake means the session is over, not that it worked. Read the tail the watch printed, reaching into the log when the tail is thin, and say in a sentence how the run ended: the work finished, abandoned mid-flight, or the process killed.
 
-At the conclusion of a `/handoff` session, run `/next` on the state the exited session left, rather than the state it was launched to reach.
+At the conclusion of or while waiting for background agents to finish from a `/handoff` session, run `/next` once while background agents work and a second time at the conclusion of a `/handoff` session. Do this based on the state the exited session left, rather than the state it was launched to reach.

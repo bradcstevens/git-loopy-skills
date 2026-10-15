@@ -112,3 +112,5 @@ reason to silently switch to same-session decomposition.
 
 Otherwise, run `/to-tickets` on the spec issue in this conversation, preserving
 the non-git-loopy flow.
+
+At the conclusion of a `/to-spec` session, run `/next`.
