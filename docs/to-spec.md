@@ -36,6 +36,8 @@ Reach for it once a change has been talked through and the domain language is se
 - **Out-of-scope items** — what this change deliberately does *not* cover, to keep the ticket bounded.
 - **Further notes** — anything else worth carrying forward that doesn't fit the sections above.
 
+Acceptance criteria and testing decisions that demand deliberate host load must carry explicit bounds into every resulting ticket: the macOS `utility` clamp (not `nice`), at most about 2x the logical CPUs including child workers, a per-invocation wall-clock cap (30 minutes unless the issue specifies one), inconclusive rather than pass on cutoff, no escalation or raised inherited priority, and owned-process cleanup after completion, failure, or interruption. Ordinary `AGENTS.md` feedback loops are exempt from those additional load limits, not from cleanup.
+
 ## Deep modules
 
 Before writing the spec, `to-spec` sketches the **seams** at which the feature will be tested and looks for **deep module** opportunities — a lot of functionality hidden behind a small, stable interface. It prefers existing seams to new ones and the highest seam possible, ideally just one across the whole change.

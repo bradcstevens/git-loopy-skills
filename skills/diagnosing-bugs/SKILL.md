@@ -51,7 +51,18 @@ A 30-second flaky loop is barely better than no loop; a 2-second deterministic o
 
 ### Non-deterministic bugs
 
-The goal is not a clean repro but a **higher reproduction rate**. Loop the trigger 100×, parallelise, add stress, narrow timing windows, inject sleeps. A 50%-flake bug is debuggable; 1% is not, so keep raising the rate until it's debuggable.
+The goal is not a clean repro but a **higher reproduction rate**. Repeat the trigger, parallelise, add stress, narrow timing windows, or inject sleeps, but only within the shared-host bounds below. Prefer controlled timing and deterministic fixtures over more load. If the bug remains too rare within those bounds, record what you observed and stop; a reproduction is not worth saturating the operator's machine.
+
+#### Shared-host bounds
+
+**Deliberate load** is load added on top of a command: stress loops, CPU burners, or extra concurrent copies beyond the command's own runner. Ordinary feedback loops declared in `AGENTS.md`, including their built-in test workers, are not deliberate load: they inherit the Run's Host yield policy, need no additional clamp or time cap, run to completion, and report their actual exit.
+
+- On macOS, launch deliberate load under `taskpolicy -c utility <command>`; children inherit the `utility` QoS clamp. `nice` is not a substitute. If the clamp cannot be applied, do not run the load.
+- Bound total concurrent load, including child workers and extra command copies, to at most about 2x the logical CPUs. State the CPU count and concurrency ceiling before starting.
+- Give each invocation a wall-clock cap: the issue's cap when specified, otherwise 30 minutes. Arrange timeout and cleanup before launching, not after a hang.
+- If the cap cuts an invocation off before completion, report the reproduction as **inconclusive**, never as a pass. A completed invocation reports what it actually found.
+- Never escalate beyond these bounds to force a reproduction, and never raise inherited priority. Record the observations and stop instead.
+- After every invocation, including failure or interruption, reap the processes you started and their descendants. Before finishing, use `pgrep` to check for survivors, establish ownership, end your survivors by PID, and report what you ended. Never kill an unrelated process; report any survivor whose ownership you cannot establish. This cleanup also applies to ordinary feedback loops.
 
 ### When you genuinely cannot build a loop
 
@@ -138,4 +149,5 @@ Required before declaring done:
 - [ ] Regression test passes (or absence of seam is documented)
 - [ ] All `[DEBUG-...]` instrumentation removed (`grep` the prefix)
 - [ ] Throwaway prototypes deleted (or moved to a clearly-marked debug location)
+- [ ] All processes started by the diagnosis are reaped, including survivors of failed or interrupted feedback loops; cleanup and any uncertain ownership are reported
 - [ ] The hypothesis that turned out correct is stated in the commit / PR message, so the next debugger learns
