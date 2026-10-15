@@ -549,6 +549,15 @@
       "need": 78305,
       "need_source": "git-loopy:chore p95 of 14 runs"
     },
+    "release-assessment": {
+      "role": "copilot:task",
+      "model": "claude-sonnet-5.5",
+      "effort": "low",
+      "context": "200K",
+      "tier": "default",
+      "need": 70000,
+      "need_source": "copilot:task profile estimate"
+    },
     "research": {
       "role": "copilot:research",
       "model": "gpt-6-astra",

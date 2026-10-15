@@ -186,6 +186,7 @@
     "prototype": "git-loopy:implementation",
     "push": "git-loopy:chore",
     "release": "git-loopy:chore",
+    "release-assessment": "copilot:task",
     "research": "copilot:research",
     "retro": "git-loopy:planning",
     "setup-git-loopy-skills": "git-loopy:chore",

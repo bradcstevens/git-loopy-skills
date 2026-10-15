@@ -105,6 +105,7 @@ situation matches. The rest you invoke by name.
 | [prototype](docs/prototype.md) | automatic | Build a throwaway prototype to answer a design question. |
 | [push](docs/push.md) | automatic | Publish current work by staging intended changes, committing, pushing, and opening a pull request when needed. |
 | [release](docs/release.md) | `/release` | Release completed work at the next patch version, or the version you specify. |
+| release-assessment | `/release-assessment` | Read an advisory release assessment in Copilot App and ask follow-up questions about its review packet. |
 | [research](docs/research.md) | automatic | Investigate a question against high-trust primary sources and capture the findings as a Markdown file in the repo. |
 | retro | `/retro` | Conduct a retrospective on a coding session. |
 | [set-task-models](docs/set-task-models.md) | `/set-task-models` | Set the model, effort, and context of every Copilot built-in subagent and git-loopy task type from fresh model research, and enforce them. |
