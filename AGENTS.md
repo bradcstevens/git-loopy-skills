@@ -14,6 +14,12 @@ relative to the repository root and resolve their tools through `PATH`.
 | Skill validation and script suites | `scripts/validate-skills.sh` | Any change under `skills/`, `profiles/`, `docs/`, `scripts/`, `.github/agents/` or `.github/hooks/`, or edits `.gitignore` |
 | README skill index | `node scripts/build-readme.mjs --check` | Any change that adds, removes, renames or re-describes a skill, changes its invocation mode, adds or removes `docs/<skill>.md`, or edits `scripts/build-readme.mjs`, `.gitignore` or `README.md` |
 
+Hook suites must invoke the resolver from a throwaway fixture repository, not this
+checkout. The invocation logger uses the process working directory to find the
+primary checkout's `.git-loopy/hook-invocations.jsonl`; a fixture payload's `cwd`
+does not isolate that log. `scripts/test-chain-hook.sh` asserts that every resolver
+call appears in its fixture repository's log.
+
 ## Skill headers
 
 Every `SKILL.md` names the GitHub Copilot model, reasoning effort and context size
