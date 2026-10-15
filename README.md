@@ -133,17 +133,53 @@ situation matches. The rest you invoke by name.
 ```
 skills/<name>/SKILL.md    the skill itself — this is what `npx skills add` installs
 skills/<name>/agents/     per-agent interface and policy overrides
+profiles/                 role profiles (bugfix, chore, docs, implementation, planning, review, test)
 docs/<name>.md            the long-form write-up: what it does, when to reach for it, where it fits
-scripts/                  maintainer tooling (see below)
+docs/adr/                 architecture decision records for the chain and the next loop
+docs/agents/              repo config the skills read: issue tracker, triage labels, domain docs
+GLOSSARY.md               the project's vocabulary (single context)
+scripts/                  maintainer tooling and test suites (see Development)
+.github/agents/           one generated custom agent per skill, plus the `*-agent` chain carriers
+.github/hooks/            the chain hooks: git-loopy-chain.json/.sh, the agent-stop hook, the hook log
+.github/skills/           repo-local skills; `upstream-sync` drives the upstream-sync loop
+.github/agent-prompts/    prompts for the loop's agent actuator
+.github/agent-memory/     durable memory the upstream-sync agent distils between runs
+.github/upstream-sync.json  scope gate and settings for the upstream-sync loop
+.github/workflows/        CI: skill validation and the upstream-sync workflows
 ```
 
 ## Development
 
 ```bash
-scripts/validate-skills.sh    # check frontmatter, naming and docs links
+scripts/validate-skills.sh    # check frontmatter, naming and docs links, then run the script suites
 node scripts/build-readme.mjs # regenerate the skill index above
 scripts/list-skills.sh        # list every SKILL.md path
 scripts/link-skills.sh        # symlink all skills into ~/.copilot/skills for local testing
+```
+
+`scripts/validate-skills.sh` also runs the script test suites, fail-fast per suite:
+`test-chain.sh`, `test-chain-entry.py`, `test-link-skills.sh`, `test-chain-hook.sh`,
+`test-hook-log.sh`, `test-review-clean-record.sh`, `test-handoff.sh`, `test-next-runtime.py`,
+`test-plan-handoff.py`, `test-set-task-models.py`, `test-model-scorecard.py`,
+`test-profile-roles.py`, `test-next-sessions.py`, `test-upstream-sync.py` and
+`test-load-guidance.py`, alongside the validators `validate-chain-hook.py` and
+`validate-profile-roles.py`. Run a single suite directly, for example
+`python3 scripts/test-upstream-sync.py`.
+
+Other entry points under `scripts/`: `generate-shell-env.sh` (see Shell wrappers),
+`agent-iteration.py` (the shared `/iterate` helper for agent-opened PRs),
+`review-clean-record.py` (creates and matches the review-clean evidence record), and
+`upstream-sync.py` (the upstream-sync loop). Test inputs live in `scripts/fixtures/`.
+
+### Upstream-sync loop
+
+A scheduled loop keeps this repo synced with mattpocock/skills releases. Its design and steering are in
+[docs/upstream-sync-loop.md](docs/upstream-sync-loop.md). Run it locally, read-only until `apply`:
+
+```bash
+python3 scripts/upstream-sync.py sense --out /tmp/sensor.json   # measure
+python3 scripts/upstream-sync.py control /tmp/sensor.json       # decide
+python3 scripts/upstream-sync.py shepherd --dry-run             # both, plus what apply would do
 ```
 
 `scripts/link-skills.sh` is a maintainer convenience for working on skills in place — it symlinks
