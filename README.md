@@ -87,7 +87,7 @@ situation matches. The rest you invoke by name.
 | [design-control-loop](docs/design-control-loop.md) | automatic | interview the user to design an agentic control loop (sensor, controller, actuator under disturbances) tailored to their codebase, then build it as locally-runnable components plus a scheduled GitHub Copilot CLI workflow |
 | [diagnosing-bugs](docs/diagnosing-bugs.md) | automatic | Diagnosis loop for hard bugs and performance regressions. |
 | [domain-modeling](docs/domain-modeling.md) | automatic | Build and sharpen a project's domain model. |
-| grill-me | `/grill-me` | A relentless interview to sharpen a plan or design. |
+| [grill-me](docs/grill-me.md) | `/grill-me` | A relentless interview to sharpen a plan or design. |
 | [grill-with-docs](docs/grill-with-docs.md) | `/grill-with-docs` | A relentless interview to sharpen a plan or design, which also creates docs (ADR's and glossary) as we go. |
 | [grilling](docs/grilling.md) | automatic | Grill the user relentlessly about a plan, decision, or idea. |
 | [handoff](docs/handoff.md) | automatic | Launch a `/next` recommendation — its prompt and the runtime its routed skill names — as a background agent, then watch it to its exit and route on. |
