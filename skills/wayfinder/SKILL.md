@@ -162,5 +162,5 @@ named:
 - **Any other destination** (an in-place change, a proof of concept) still has to be built, and
   wayfinder plans rather than builds. The closing hand-off to "next" routes the build.
 
-At the conclusion of a `/wayfinder` session that did not hand the map to "to-spec", call the
+At the conclusion of a `/wayfinder` session that did not hand the map to `/to-spec`, call the
 Skill tool with "next".

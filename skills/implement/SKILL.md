@@ -23,3 +23,5 @@ Run typechecking regularly, single test files regularly, and the full test suite
 Once done, call the Skill tool with "code-review" to review the work.
 
 Commit your work to the current branch.
+
+At the conclusion of a `/implement` session, run the `/next` skill.

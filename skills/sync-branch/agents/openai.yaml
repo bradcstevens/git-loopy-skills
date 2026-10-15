@@ -1,0 +1,5 @@
+interface:
+  display_name: "Sync Branch"
+  short_description: "Reconcile the current branch with its upstream without losing work"
+policy:
+  allow_implicit_invocation: false

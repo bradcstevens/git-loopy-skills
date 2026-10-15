@@ -603,6 +603,15 @@
       "need": 100997,
       "need_source": "git-loopy:docs p95 of 9 runs"
     },
+    "sync-branch": {
+      "role": "git-loopy:chore",
+      "model": "claude-sonnet-5.5",
+      "effort": "low",
+      "context": "200K",
+      "tier": "default",
+      "need": 78305,
+      "need_source": "git-loopy:chore p95 of 14 runs"
+    },
     "sync-model-roster": {
       "role": "git-loopy:chore",
       "model": "claude-sonnet-5.5",
