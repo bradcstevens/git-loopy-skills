@@ -121,7 +121,11 @@ Ordinary arrows route or nest, thick arrows spawn, and dotted arrows publish or 
 
 ## 1. The main line: idea to ship
 
-The spine of the set. Grill → spec → tickets stays in **one unbroken context**; each `/implement`
+The spine of the set. Grill → spec stays in **one unbroken context**. In a
+configured repository with `git-loopy` on `PATH`, spec → decomposition starts a
+**fresh interactive Planner** through `git-loopy plan <spec>`; see
+[to-spec's handoff](./to-spec.md#decomposition-handoff). The diagrams below show
+the fallback `/to-tickets` flow, which keeps the spec context. Each `/implement`
 ticket starts in a **fresh one**.
 
 ```mermaid
@@ -603,8 +607,9 @@ These have no workflow edges. Reach for them directly; they neither route onward
 
 ## Rules that govern the edges
 
-- **Context boundaries.** `/grill-with-docs` → `/to-spec` → `/to-tickets` stays in one context.
-  Every `/implement` ticket starts in a fresh one.
+- **Context boundaries.** `/grill-with-docs` → `/to-spec` stays in one context.
+  The configured Planner handoff starts fresh; fallback `/to-tickets` continues
+  in the spec context. Every `/implement` ticket starts in a fresh one.
 - **Nesting owns nothing.** A skill running inside another's session hands its evidence back and
   records no transition of its own.
 - **Spawning owns the transition.** The five allowlisted routes can run as in-session subagents

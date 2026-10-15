@@ -13,7 +13,9 @@ primitive directly only when the user wants the interview without either wrapper
 
 ## Build scope
 
-A multi-session build needs `/to-spec` and `/to-tickets` before `/implement`.
+A multi-session build needs `/to-spec` and decomposition before `/implement`.
+Use the main skill's **Decomposition handoff**: a fresh `git-loopy plan <spec>`
+when its configuration-and-PATH check passes, otherwise `/to-tickets`.
 Tickets carry their blocking edges and are worked blockers-first; each
 implementation starts from its self-contained ticket in fresh context. A small,
 agreed change can go straight to `/implement` in the current context.

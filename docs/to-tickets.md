@@ -18,7 +18,11 @@ Every ticket is a **tracer bullet** — a thin *vertical* slice that cuts throug
 
 ## When to reach for it
 
-You invoke this by typing `/to-tickets` — the agent won't reach for it on its own.
+Invoke the Skill with `/to-tickets`, or let the workflow reach it as the
+non-git-loopy fallback. Its former interactive persona and shell wrapper are
+retired. [to-spec](./to-spec.md) and [next](./next.md) instead hand configured
+repositories with `git-loopy` on `PATH` to `git-loopy plan <spec>`: a fresh
+interactive Planner session that uses this Skill and the published spec.
 
 Reach for it once you have an agreed plan or a written spec and you want it split into tickets. Point it at the conversation, or pass a spec or issue reference and it fetches the body and comments first. If the change hasn't been written up as a spec yet, produce one first — for that, use [to-spec](./to-spec.md).
 

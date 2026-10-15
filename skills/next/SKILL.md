@@ -95,7 +95,7 @@ does not make an explicit standalone request complete.
 | Domain language itself blocks the decision | `/domain-modeling` |
 | A module interface, seam, or boundary needs designing | `/codebase-design` |
 | The destination is agreed but no durable spec exists | `/to-spec` |
-| A spec exists but executable tracer-bullet tickets do not | `/to-tickets` |
+| A spec exists but executable tracer-bullet tickets do not | `git-loopy plan <spec>` when the decomposition check below passes; otherwise `/to-tickets` |
 | A raw incoming issue or external PR needs readiness work | `/triage` |
 | An in-progress merge, rebase, or cherry-pick has conflicts | `/implement` |
 | A concrete behavior should be built test-first without the broader ticket flow | `/tdd` |
@@ -109,7 +109,8 @@ does not make an explicit standalone request complete.
 
 Apply these flow rules:
 
-- Keep `/grill-with-docs`, `/to-spec`, and `/to-tickets` in one unbroken context.
+- Keep `/grill-with-docs` and `/to-spec` in one unbroken context. Decomposition
+  uses the handoff below; only the `/to-tickets` fallback continues here.
 - At an intentional phase boundary, `PHASE-BOUNDARIES.md` alone chooses the
   context transition. Use `/handoff` only for its portability cases: a new
   harness, directory, colleague, or mid-phase side task.
@@ -119,7 +120,7 @@ Apply these flow rules:
 - Route source-answerable gaps to `/research` and answers held by another person
   to `/to-questionnaire`. Resume the decision flow with either result in
   `/grill-with-docs` or `/to-spec`.
-- `/to-tickets` output is already agent-ready; reserve `/triage` for work that
+- Planner and `/to-tickets` output is already agent-ready; reserve `/triage` for work that
   arrived raw.
 - If a Wayfinder map has an open frontier, continue `/wayfinder`. When the
   destination is clear and no decision ticket remains, route to `/to-spec`, not
@@ -136,6 +137,34 @@ Apply these flow rules:
 
 This step is complete when every candidate is classified as ready, blocked, or
 complete.
+
+## Decomposition handoff
+
+From the repository root, use the same configuration test as step 1 (tracker
+instructions and chain hook present), plus `git-loopy` on `PATH`:
+
+```bash
+test -f docs/agents/issue-tracker.md &&
+test -f .github/hooks/git-loopy-chain.json &&
+command -v git-loopy >/dev/null 2>&1
+```
+
+If the check succeeds, the decomposition route is `git-loopy plan <spec>`, with
+`<spec>` replaced by the durable spec issue URL. Otherwise it is `/to-tickets`
+in this conversation. The missing-configuration gate in step 1 still routes
+engineering setup first; it never recommends an unavailable Planner.
+
+When the command route wins ranking, return **HITL**, **Context: Fresh session**,
+and **Runtime: git-loopy planning Routing**. Give the human the exact
+`git-loopy plan <spec>` shell command to run interactively from this repository,
+not a slash-command prompt to paste into Copilot. This is an explicit exception
+to steps 4–6: git-loopy owns the runtime and fresh Planner boundary, so skip the
+skill-header lookup, phase-boundary choice and chain spawn gate for this route.
+Stop after recommending it; a launch failure is a blocker, not permission to
+fall back silently.
+
+The Planner drafts from the published spec alone. If facts needed for the graph
+remain only in this conversation, finish `/to-spec` before handing off.
 
 ## 3. Rank the actions
 

@@ -20,7 +20,7 @@ It does **not** interview you again. By the time you reach for it, the alignment
 
 You invoke this by typing `/to-spec` — the agent won't reach for it on its own.
 
-Reach for it once a change has been talked through and the domain language is settled, and you want that shared understanding written down before any code is written. If you *haven't* aligned yet, grill first — for that, use [grill-with-docs](./grill-with-docs.md). To split the finished spec into tickets, use [to-tickets](./to-tickets.md).
+Reach for it once a change has been talked through and the domain language is settled, and you want that shared understanding written down before any code is written. If you *haven't* aligned yet, grill first — for that, use [grill-with-docs](./grill-with-docs.md). To split the finished spec into tickets, follow the decomposition handoff below.
 
 ## Prerequisites
 
@@ -52,10 +52,24 @@ That matters for agentic development: a good interface gives tests something dur
 
 ## Where it fits
 
+### Decomposition handoff
+
+When `docs/agents/issue-tracker.md` and `.github/hooks/git-loopy-chain.json` exist
+and `git-loopy` is on `PATH`, the closing step gives you
+`git-loopy plan <spec>` with the published spec issue URL. Run it from the
+repository for a fresh interactive Planner session. git-loopy's planning
+Routing chooses its runtime; the Planner relies on the durable spec alone.
+Every decision needed for decomposition must therefore be published before
+the handoff. A launch failure is reported rather than silently bypassed.
+
+Elsewhere, the closing step runs [to-tickets](./to-tickets.md) in the same
+conversation. `to-spec` and `wayfinder` retain their interactive personas;
+the `to-tickets` persona and shell wrapper are retired, not the Skill.
+
 `to-spec` is a step in the main build chain:
 
 ```txt
-grill-with-docs → to-spec → to-tickets → implement → code-review
+grill-with-docs → to-spec → decomposition → implement → code-review
 ```
 
 Reach for it after the plan and domain language are resolved, and before you break the work into implementation tickets. Its key neighbours are [grill-with-docs](./grill-with-docs.md), which sharpens the context so the spec is precise, and [to-tickets](./to-tickets.md), which turns the spec into a set of tickets for [implement](./implement.md) to build. When you're unsure which skill or flow fits, [next](./next.md) routes you.

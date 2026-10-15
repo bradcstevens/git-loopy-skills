@@ -351,6 +351,29 @@ class SkillHeaderTests(unittest.TestCase):
         self.assertEqual(sorted(p.name for p in (self.repo / "skills/build").iterdir()), ["SKILL.md"])
         self.assertEqual(self.run_sync("--check"), (0, "0 of 3 skill headers differ\n0 of 3 skill agents differ\n"))
 
+    def test_retired_to_tickets_persona_is_not_recreated_but_skill_is_sized(self):
+        path = self.repo / "skills/to-tickets/SKILL.md"
+        path.parent.mkdir()
+        path.write_text("---\nname: to-tickets\ndescription: Decompose a spec.\n---\n")
+        picks = json.loads(self.picks.read_text())
+        picks["skills"]["to-tickets"] = picks["skills"]["plan"]
+        self.picks.write_text(json.dumps(picks))
+
+        code, output = self.run_sync("--write")
+        self.assertEqual(code, 0, output)
+        self.assertIn("model: big-model\neffort: medium\ncontext: 1M\n", path.read_text())
+        self.assertFalse((self.repo / ".github/agents/to-tickets.agent.md").exists())
+        self.assertTrue((self.repo / ".github/agents/plan.agent.md").exists())
+        self.assertEqual(self.run_sync("--check")[0], 0)
+
+        retired = self.repo / ".github/agents/to-tickets.agent.md"
+        retired.write_text("Stale persona with hand-written instructions.\n")
+        for flag in ("--check", "--write"):
+            code, output = self.run_sync(flag)
+            self.assertEqual(code, 2, output)
+            self.assertIn("retired persona still exists", output)
+            self.assertEqual(retired.read_text(), "Stale persona with hand-written instructions.\n")
+
     def test_existing_agent_preserves_instructions_metadata_mode_and_crlf(self):
         agents = self.repo / ".github/agents"
         agents.mkdir(parents=True)

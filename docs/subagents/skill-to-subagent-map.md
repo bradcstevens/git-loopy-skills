@@ -166,8 +166,11 @@ user, which rules out two whole families.
 rounds of question and answer; the decisions are the user's. Delegate the fact-finding *inside*
 them, never the interview.
 
-**Context-bound.** `/to-spec` and `/to-tickets` synthesise *this* conversation — hand them a fresh
-window and there is nothing to synthesise. `/unslop` applies to your own prose as you write it.
+**Context-bound.** `/to-spec` synthesises *this* conversation. Its
+[decomposition handoff](../to-spec.md#decomposition-handoff) starts a fresh
+interactive `git-loopy plan <spec>` from the durable spec when configured;
+fallback `/to-tickets` keeps the conversation. Neither is an AFK subagent.
+`/unslop` applies to your own prose as you write it.
 `/wait-what` re-pitches the message that just failed to land. `/next` reads live state and must put
 its answer in front of you.
 
@@ -216,7 +219,7 @@ are read into whatever session needs them rather than dispatched anywhere.
 | `/teach` | — | Main session |
 | `/to-questionnaire` | — | Main session |
 | `/to-spec` | — | Main session |
-| `/to-tickets` | — | Main session |
+| `/to-tickets` | — | Fresh interactive Planner via `git-loopy plan <spec>` when configured; main-session fallback elsewhere |
 | `/triage` | `general-purpose` per issue | Interactive roles stay in main |
 | `/unslop` | — | Always, in whatever session writes |
 | `/wait-what` | — | Main session |
