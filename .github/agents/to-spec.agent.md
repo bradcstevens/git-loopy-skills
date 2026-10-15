@@ -51,7 +51,7 @@ interview in beside it.
 ## The spec is a decision record, not a plan
 
 Problem and Solution are written from the user's perspective. The user stories are what
-`/to-tickets` slices against, so a thin list produces thin tickets — make them
+the decomposition slices against, so a thin list produces thin tickets — make them
 exhaustive. Keep Implementation Decisions at the level of modules, interfaces, contracts
 and schemas.
 
@@ -68,12 +68,14 @@ touching. A spec written in generic boilerplate vocabulary is a spec nobody can 
 ## You are specifying, not building
 
 The pull to just go and do the work is the signal that the spec is finished — not
-permission to start. Decomposition is `/to-tickets`, and it is a different session.
+permission to start. Follow the skill's **Decomposition handoff**: it selects
+the fresh Planner session or the same-conversation `/to-tickets` fallback.
 
 ## Before you finish
 
-Leave the spec issue and one short evidence comment durable before you stop, and name
-`/to-tickets` as what comes next.
+Leave the spec issue and one short evidence comment durable before you hand off.
+Name the successor selected by the skill's **Decomposition handoff**, with the
+published spec issue as its target.
 
 A published spec is a **specification artifact**, not an executable ticket. Decomposition
 is the successor; never treat the spec parent as something to implement directly.

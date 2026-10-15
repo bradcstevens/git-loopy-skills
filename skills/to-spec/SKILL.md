@@ -77,4 +77,26 @@ Any further notes about the feature.
 
 </spec-template>
 
-At the conclusion of a `/to-spec` session, run `/to-tickets` on the spec issue to decompose it.
+## Decomposition handoff
+
+Publish every decision the decomposition needs in the spec issue before handing
+off: the next session must be able to draft from that durable spec alone.
+
+From the repository root, check `/next`'s existing configuration test (tracker
+instructions and chain hook present), plus `git-loopy` on `PATH`:
+
+```bash
+test -f docs/agents/issue-tracker.md &&
+test -f .github/hooks/git-loopy-chain.json &&
+command -v git-loopy >/dev/null 2>&1
+```
+
+If the check succeeds, close by giving the human `git-loopy plan <spec>` with
+`<spec>` replaced by the published spec issue URL. This starts a **fresh,
+interactive Planner session** in this repository; git-loopy selects its runtime
+through planning Routing. Stop here rather than decomposing in this conversation
+or launching an AFK subagent. A launch failure is a blocker to report, not a
+reason to silently switch to same-session decomposition.
+
+Otherwise, run `/to-tickets` on the spec issue in this conversation, preserving
+the non-git-loopy flow.

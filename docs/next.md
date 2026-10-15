@@ -34,6 +34,21 @@ The idea `next` runs on is the **gate** — the first unresolved condition stand
 
 Every recommendation is labelled **HITL** or **AFK-safe** — whether the next action needs your judgement, or is specified tightly enough to be left to run on its own. Blocked actions are still returned, but must name the condition that would make them ready.
 
+### Decomposition
+
+A spec without executable tickets routes to `git-loopy plan <spec>` when
+`docs/agents/issue-tracker.md` and `.github/hooks/git-loopy-chain.json` exist and
+`git-loopy` is on `PATH`. Otherwise the decomposition route remains `/to-tickets`
+in the current conversation; missing repository configuration still gates on
+setup first.
+
+The Planner recommendation is **HITL**, **Fresh session**, with **Runtime:
+git-loopy planning Routing** and a shell command carrying the published spec
+issue URL. This is the exception to the skill-runtime and paste-a-prompt format
+below. Run it interactively from the repository; `/next` neither spawns it as a
+chain subagent nor decomposes in the old context. Publish any decisions that
+remain only in conversation before handing off.
+
 ## The sessions it tracks
 
 Before ranking anything, `next` runs `scripts/sessions.py scan` to see which GitHub Copilot CLI sessions are live in the repository. A session counts as live when its `~/.copilot/session-state/<id>/inuse.<pid>.lock` names a running `copilot` process. The session's `workspace.yaml` places it in the main checkout or in one of its worktrees. The scan reports each worktree with the sessions working in it, along with their names, branches, and any chain targets they hold. An action another session already holds is left to that session.
@@ -117,13 +132,15 @@ subagent.
 - You get back exactly one action, with a live target — a linked issue, PR, spec, branch, or the current conversation — and never a menu of possibilities.
 - Fan-out never turns that into a menu either: the chain reaches its ten concurrent worktrees by asking for one recommendation at a time, and names which of the three limits stopped it — the ceiling of ten, no ready action left, or every remaining candidate waiting on a worktree another agent holds.
 - Once the ten are running, the chain keeps itself full: each finished run frees its slot, and the batch of runs that finished since the last turn comes back as one re-entry that refills every one of them while ready work remains.
-- A recommendation names the model, effort, and context window its routed skill's header sets, and carries no command to run.
+- A skill recommendation names the model, effort, and context window its routed skill's header sets.
+  The Planner route instead names git-loopy planning Routing and its shell command.
 - An AFK-safe recommendation for one of the four allowlisted routes arrives with its in-session
   subagent already running only when `chain.sh plan` returns `spawn`; on `decline`, it remains at
   the checkpoint boundary as a prompt.
 - The recommendation names whether to continue in this context, start a fresh session, or run as a
-  subagent, matching the flow's own rules: grill → spec → tickets stays in one context, while the
-  chain starts only approved delivery work.
+  subagent, matching the flow's own rules: grill → spec stays in one context,
+  the Planner starts fresh, and only fallback `/to-tickets` stays in the spec context.
+  The chain starts only approved delivery work.
 - For engineering work in a repo missing either its tracker configuration or
   `.github/hooks/git-loopy-chain.json`, it routes to
   [setup-git-loopy-skills](./setup-git-loopy-skills.md) and nothing else.

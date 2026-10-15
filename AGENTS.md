@@ -33,6 +33,10 @@ headers and `.github/agents/<skill>.agent.md`. `/set-task-models` uses that same
 with its decision map. A new skill needs a `skills` entry in `profiles.json`, a header and
 a generated same-named agent. Run the projection rather than hand-tuning them.
 
+`to-tickets` is the exception: its interactive persona is retired in favor of
+git-loopy's Planner. Keep the Skill and its model mapping for the Planner and
+non-git-loopy fallback; the projection guards against recreating its persona.
+
 Agent `model` and `reasoning-effort` are runtime fields. Context is advisory metadata,
 not an agent runtime setting: each agent includes an exact CLI launch command applying
 all three settings. Preserve hand-written agent instructions outside the generated

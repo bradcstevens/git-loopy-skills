@@ -30,6 +30,9 @@ _MODEL_ID = re.compile(r"[a-z0-9][a-z0-9.-]*")
 _CONTEXT = re.compile(r"[0-9]+[KM]")
 AGENT_START = "<!-- model-scorecard: start -->"
 AGENT_END = "<!-- model-scorecard: end -->"
+# Decomposition belongs to git-loopy's Planner; the Skill remains its procedure
+# and the fallback outside git-loopy, but no longer has an interactive persona.
+RETIRED_PERSONAS = {"to-tickets"}
 
 
 class HeaderError(Exception):
@@ -314,9 +317,14 @@ def main(argv: list[str] | None = None) -> int:
             text = _read(path)
             updated = set_header(text, wanted[name])
             agent_path = repo / ".github/agents" / f"{name}.agent.md"
-            previous = _read(agent_path) if agent_path.exists() else None
-            agent = agent_text(name, text, wanted[name], agent_tier(name, wanted[name], headers), previous,
-                               path.relative_to(repo).as_posix())
+            previous = agent = None
+            if name in RETIRED_PERSONAS:
+                if agent_path.exists():
+                    raise HeaderError(f"{name}: retired persona still exists at {agent_path}; remove it explicitly")
+            else:
+                previous = _read(agent_path) if agent_path.exists() else None
+                agent = agent_text(name, text, wanted[name], agent_tier(name, wanted[name], headers), previous,
+                                   path.relative_to(repo).as_posix())
         except (OSError, HeaderError, TypeError, ValueError) as error:
             print(f"error: {path}: {error}", file=sys.stderr)
             return 2

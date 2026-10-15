@@ -63,8 +63,11 @@ Two skills are worth installing first:
   of any other engineering skill. It records where your issues live, what your triage labels are
   called, and where domain docs sit; the rest of the skills read that config.
 
-The main flow runs idea → ship: `/grill-with-docs` → `/to-spec` → `/to-tickets` → `/implement` →
-`/code-review`. Everything else is either an on-ramp onto that flow or a standalone you reach for on
+The main flow runs idea → ship: `/grill-with-docs` → `/to-spec` → decomposition → `/implement` →
+`/code-review`. Decomposition is a fresh `git-loopy plan <spec>` when the repository has
+`docs/agents/issue-tracker.md`, `.github/hooks/git-loopy-chain.json`, and `git-loopy` on `PATH`;
+elsewhere it remains `/to-tickets` in the current conversation. The Planner reads the published
+spec, not the preceding conversation. Everything else is either an on-ramp onto that flow or a standalone you reach for on
 its own. [**Skill connections**](docs/skill-connections.md) maps the whole set — which skills route
 to which, which nest inside another's session, and the sequence diagrams for each workflow.
 
@@ -170,8 +173,11 @@ wayfinder                       # open a session on the /wayfinder skill
 wayfinder <loose idea>          # chart a new map
 wayfinder <map> [ticket]        # work through an existing map
 to-spec                         # synthesize the conversation into a spec
-to-tickets [spec]               # slice a spec into tracer-bullet tickets
 ```
+
+The `to-tickets` persona and shell wrapper are retired. In a configured repository,
+run `git-loopy plan <spec>` for a fresh interactive Planner session. The `/to-tickets`
+Skill remains available as its procedure and as the fallback elsewhere.
 
 The wrappers call `co` when it is defined and fall back to the `copilot` binary otherwise, so the
 file loads in both zsh and bash. `GIT_LOOPY_MODEL`, `GIT_LOOPY_EFFORT` and `GIT_LOOPY_CONTEXT` are
