@@ -81,13 +81,35 @@ This step is complete when the remote branch resolves to the local `HEAD`.
 ## 6. Resolve the pull request
 
 For a GitHub remote on a non-default branch, use `gh` to find an open pull
-request for the branch. Return its URL if one exists; otherwise create one
-against the remote default branch using the commit range, validation results,
-and relevant issue references for the title and body. A default-branch push or
-non-GitHub remote makes a pull request inapplicable.
+request for the branch and read its current body if one exists. A default-branch
+push or non-GitHub remote makes a pull request inapplicable.
 
-This step is complete when the pull-request URL is known or its inapplicability
-is established.
+Call the Skill tool with "pr" when creating or updating an applicable pull
+request's body. Use the full commit range against the PR's base (the remote
+default branch for a new PR), validation results, relevant tickets, and any
+existing body as context. Write its Summary, Evidence, and Merge Danger sections,
+preserving relevant human-authored context and repository-required information.
+
+Keep the chain's evidence inside that three-section body:
+
+- Under `## Summary`, include a separate `Closes #<n>` reference for
+  every issue the branch resolves, not just the current ticket. Reconcile the
+  existing body, commit messages, and tickets; preserve valid closing references
+  on updates. Do not claim to close issues the branch only mentions or partially
+  addresses. Use `Closes owner/repo#<n>` for issues in another repository.
+- Under `## Evidence`, retain the validation results from step 2: exact commands
+  and outcomes for the published head, alongside concrete before-and-after
+  evidence. Do not invent a failing run, screenshot, or result; state plainly
+  when before evidence was not captured.
+
+Create the PR with `gh pr create --body-file <path>` against the remote default
+branch, deriving its title from the commit range and honoring user preferences.
+For an existing PR, update its body with `gh pr edit <number> --body-file <path>`;
+do not just return the old URL. Read the saved body back with `gh pr view` and
+confirm the closing references and validation results survived.
+
+This step is complete when the pull-request URL and updated body are verified
+or its inapplicability is established.
 
 ## 7. Report the durable result
 

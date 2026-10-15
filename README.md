@@ -104,7 +104,7 @@ situation matches. The rest you invoke by name.
 | narrow-react-prop-types | automatic | narrow React component prop types to match live code paths |
 | [next](docs/next.md) | automatic | Route the engineering workflow or choose a skill for the current situation. |
 | playwright-cli | automatic | Automates browser interactions for web testing, form filling, screenshots, and data extraction. |
-| pr | automatic | Use when writing a PR body. |
+| [pr](docs/pr.md) | automatic | Use when writing a PR body. |
 | [prototype](docs/prototype.md) | automatic | Build a throwaway prototype to answer a design question. |
 | [push](docs/push.md) | automatic | Publish current work by staging intended changes, committing, pushing, and opening a pull request when needed. |
 | [release](docs/release.md) | `/release` | Release completed work at the next patch version, or the version you specify. |
