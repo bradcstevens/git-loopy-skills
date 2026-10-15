@@ -92,7 +92,7 @@ situation matches. The rest you invoke by name.
 | [grilling](docs/grilling.md) | automatic | Grill the user relentlessly about a plan, decision, or idea. |
 | [handoff](docs/handoff.md) | automatic | Launch a `/next` recommendation — its prompt and the runtime its routed skill names — as a background agent, then watch it to its exit and route on. |
 | [implement](docs/implement.md) | automatic | Implement a spec or tickets, or reconcile a branch with a moved remote head and resolve merge, rebase, or cherry-pick conflicts. |
-| implement-spec | `/implement-spec` | Implement the result of /to-spec and /to-tickets in code. |
+| [implement-spec](docs/implement-spec.md) | `/implement-spec` | Implement the result of /to-spec and /to-tickets in code. |
 | [improve-codebase-architecture](docs/improve-codebase-architecture.md) | `/improve-codebase-architecture` | Scan a codebase for deepening opportunities, present them as a visual HTML report, then grill through whichever one you pick. |
 | jev-ultrafast | automatic | Run fast goal-driven browser automation with Jev Ultrafast for navigating, searching, and interacting with visible web pages. |
 | [loop-me](docs/loop-me.md) | `/loop-me` | Grill me about specs for the workflows I want to build, within this workspace. |
