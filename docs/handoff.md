@@ -12,6 +12,8 @@ npx skills update handoff
 
 ## What it does
 
+For a portable document without launching a session, use [/to-handoff](./to-handoff.md).
+
 `handoff` takes the recommendation [next](./next.md) just made — its prompt and the runtime its routed skill names — and **launches a fresh GitHub Copilot CLI session in the background** to carry it out. The work starts immediately, in the same working directory, while you keep your own session. If `/next` hasn't just run, `handoff` runs it first, because its output is the seed.
 
 The session is launched by [`handoff.sh`](https://github.com/bradcstevens/git-loopy-skills/blob/main/skills/handoff/handoff.sh), which takes the model, effort, and context tier from the recommendation's `Runtime` line and the path to a file holding the prompt:

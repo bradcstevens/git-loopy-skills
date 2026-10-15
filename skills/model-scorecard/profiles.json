@@ -194,6 +194,7 @@
     "sync-model-roster": "git-loopy:chore",
     "tdd": "git-loopy:test",
     "teach": "git-loopy:docs",
+    "to-handoff": "git-loopy:docs",
     "to-questionnaire": "git-loopy:planning",
     "to-spec": "git-loopy:planning",
     "to-tickets": "git-loopy:planning",
