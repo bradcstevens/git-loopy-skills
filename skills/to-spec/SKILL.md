@@ -1,6 +1,6 @@
 ---
 name: to-spec
-description: Turn the current conversation into a spec and publish it to the project issue tracker — no interview, just synthesis of what you've already discussed.
+description: "Turn the current conversation into a spec and publish it to the project issue tracker: no interview, just synthesis of what you've already discussed."
 model: claude-opus-5.5
 effort: medium
 context: 1M
@@ -19,7 +19,7 @@ The issue tracker and triage label vocabulary should have been provided to you. 
 
 Check with the user that these seams match their expectations.
 
-3. Write the spec using the template below, then publish it to the project issue tracker. Apply the `ready-for-agent` triage label - no need for additional triage.
+3. Write the spec using the template below, then publish it to the project issue tracker. A spec is a **planning document**, not work: apply the planning-document triage role, `ready-for-human`. Never apply `ready-for-agent`: an AFK runner refuses a planning document at pickup, so the label would only mint a candidate it re-excludes every iteration and a human has to strip by hand. The tickets sliced out of the spec are what carry `ready-for-agent`, and `/to-tickets` applies it to each of them.
 
 ### Bound deliberate host load
 
@@ -89,6 +89,19 @@ Any further notes about the feature.
 
 </spec-template>
 
+## Record the specification
+
+Publishing a spec is a durable workflow transition, and this skill owns it. Record it so the
+next session, human or agent, reads the same answer you did.
+
+**Only record after the spec is durably published.** Post one short evidence comment on that
+issue describing what this transition changed and what it came from
+(`gh issue comment <spec-issue> --body "..."`). Name the successor selected by the
+**Decomposition handoff** below, with the published spec issue as its target.
+
+A published spec is a **specification artifact**, not an executable ticket. Its successor is
+decomposition, never implementation of the whole parent in one run.
+
 ## Decomposition handoff
 
 Publish every decision the decomposition needs in the spec issue before handing
@@ -110,5 +123,5 @@ through planning Routing. Stop here rather than decomposing in this conversation
 or launching an AFK subagent. A launch failure is a blocker to report, not a
 reason to silently switch to same-session decomposition.
 
-Otherwise, run `/to-tickets` on the spec issue in this conversation, preserving
-the non-git-loopy flow.
+Otherwise, continue in this conversation. Call the Skill tool with "to-tickets"
+on the spec issue, preserving the non-git-loopy flow.
