@@ -154,6 +154,7 @@
   ],
   "skills": {
     "capacity": "copilot:task",
+    "chief-of-staff": "git-loopy:planning",
     "code-review": "copilot:code-review",
     "codebase-audit": "copilot:code-review",
     "codebase-design": "git-loopy:planning",
