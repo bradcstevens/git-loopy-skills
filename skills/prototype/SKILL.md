@@ -28,5 +28,27 @@ The two branches produce very different artifacts, so getting this wrong wastes 
 5. **Surface the state.** After every action (logic) or on every variant switch (UI), print or render the full relevant state so the user can see what changed.
 6. **Capture it when done.** Fold any validated decision into the real code, then capture the prototype itself as a **primary source**: commit it to a throwaway branch, out of main, and leave a context pointer to that branch on the implementation issue. Capture the answer too (the verdict and the question it settled) in the issue or a commit. The main branch keeps only the validated decision.
 
-At the conclusion of a `/prototype` session invoked directly on a ticket, run `/to-spec` if the
-verdict settles what to build, or leave the ticket open for a follow-up `/prototype` session.
+## Owning the transition, or not
+
+Most prototypes are **nested**: another skill, such as `/wayfinder`, `/grill-with-docs`, or a tracer
+bullet under `/implement`, needed something concrete before it could decide. A nested prototype
+records nothing of its own; it hands its durable pointers back to the skill that asked: the
+throwaway branch name and head SHA, and the comment recording the verdict. That skill records
+once, for the transition it owns.
+
+A prototype owns this record **only** when it was invoked directly on its own tracker ticket
+(a `wayfinder:prototype` ticket, say) and durably resolves it. Then, and only then:
+
+1. Push the throwaway branch and note its head SHA.
+2. Post the verdict as a resolution comment on the ticket and **close the ticket**. That comment
+   is the durable record of what the prototype found.
+
+### When the question survives the session
+
+Not every directly-owned ticket gets settled. If the prototype ran and the branch is pushed but
+the experiment was inconclusive, or it answered a smaller question than the ticket asked,
+leave the ticket open and post the inconclusive result as a comment anyway, naming the branch,
+so the next session starts from that run rather than from scratch.
+
+At the conclusion of a `/prototype` session invoked directly on a ticket, call the Skill tool with "to-spec"
+if the verdict settles what to build, or leave the ticket open for a follow-up `/prototype` session.
