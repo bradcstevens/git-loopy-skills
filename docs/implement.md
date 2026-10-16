@@ -85,7 +85,7 @@ Check its evidence comment. This fork records the pushed candidate and routes it
 
 **Can I point it at all my tickets at once, or run several in parallel?**
 
-Not with `/implement`: one invocation, one ticket. Upstream's `implement-spec` handles a whole spec on one integration branch; it is not yet published in this catalog. Running several `/implement` sessions side by side in one checkout is worse than unsupported. One field report describes a `git commit --amend` in one session landing on another session's commit, a stash vanishing from `refs/stash`, and commits landing on the wrong branch, all in a single afternoon across three issues. The sessions share one working directory, one index, and one HEAD. Users work around this with git worktrees, but `refs/stash` is shared across worktrees too, so worktrees alone do not fix the stash case.
+Not with `/implement`: one invocation, one ticket. [implement-spec](./implement-spec.md) handles a whole spec on one integration branch. Running several `/implement` sessions side by side in one checkout is worse than unsupported. One field report describes a `git commit --amend` in one session landing on another session's commit, a stash vanishing from `refs/stash`, and commits landing on the wrong branch, all in a single afternoon across three issues. The sessions share one working directory, one index, and one HEAD. Users work around this with git worktrees, but `refs/stash` is shared across worktrees too, so worktrees alone do not fix the stash case.
 
 **Can it open a pull request instead of committing?**
 
