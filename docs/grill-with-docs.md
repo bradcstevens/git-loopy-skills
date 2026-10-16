@@ -12,7 +12,7 @@ npx skills update grill-with-docs
 
 ## What it does
 
-`grill-with-docs` interviews you about a plan or design until you and the [agent](https://www.aihero.dev/ai-coding-dictionary/agent) share one understanding of it, and writes the vocabulary and the hard decisions into your repo while it does. It is the same interview [grill-me](../skills/grill-me/SKILL.md) runs (a round of questions, then wait, then the next round), pointed at a codebase.
+`grill-with-docs` interviews you about a plan or design until you and the [agent](https://www.aihero.dev/ai-coding-dictionary/agent) share one understanding of it, and writes the vocabulary and the hard decisions into your repo while it does. It is the same interview [grill-me](./grill-me.md) runs (a round of questions, then wait, then the next round), pointed at a codebase.
 
 It is **[stateful](https://www.aihero.dev/ai-coding-dictionary/stateful)**. Every other grilling skill leaves the [session](https://www.aihero.dev/ai-coding-dictionary/session) in your head; this one leaves files on disk. When a term resolves, the skill writes it to `GLOSSARY.md` at once, not in a batch at the end. When a decision passes three gates, the skill writes it as an ADR. That is the whole difference, and it also causes most of the trouble people have with the skill. The artifacts are real files in a real repo, so they can be missing when you expected them, and they can drift when more than one person writes them.
 
@@ -24,7 +24,7 @@ Reach for it at the start of a change, in a repo, when the plan is still fuzzy a
 
 | What you have | Reach for |
 | --- | --- |
-| You aren't working in a working directory at all | [grill-me](../skills/grill-me/SKILL.md) |
+| You aren't working in a working directory at all | [grill-me](./grill-me.md) |
 | A repo, and a change you can settle in one session | `grill-with-docs` |
 | An effort too big to hold in one session (a greenfield build, a large feature) | [wayfinder](./wayfinder.md) |
 | A repo with no domain docs at all, and no particular feature in mind | `grill-with-docs`, aimed at the repo rather than a change |
@@ -93,4 +93,4 @@ Nobody is happy with the name. There is an open suggestion to rename it `grill-d
 grill-with-docs → to-spec → to-tickets → implement → code-review → retro
 ```
 
-It comes before anything is written down as a spec. It produces the shared understanding and settled vocabulary that [to-spec](./to-spec.md) then synthesises without interviewing you again. Its close neighbours are [grill-me](../skills/grill-me/SKILL.md), the same interview with no repo and no files, and [domain-modeling](./domain-modeling.md), the glossary-and-ADR discipline it drives; both use the [grilling](./grilling.md) primitive for the interview. Upstream of it, [wayfinder](./wayfinder.md) charts efforts too large for one session and can hand parts of the map back down to it. When you're unsure which skill or flow fits, [next](./next.md) routes you.
+It comes before anything is written down as a spec. It produces the shared understanding and settled vocabulary that [to-spec](./to-spec.md) then synthesises without interviewing you again. Its close neighbours are [grill-me](./grill-me.md), the same interview with no repo and no files, and [domain-modeling](./domain-modeling.md), the glossary-and-ADR discipline it drives; both use the [grilling](./grilling.md) primitive for the interview. Upstream of it, [wayfinder](./wayfinder.md) charts efforts too large for one session and can hand parts of the map back down to it. When you're unsure which skill or flow fits, [next](./next.md) routes you.

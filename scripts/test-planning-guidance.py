@@ -2,6 +2,7 @@
 """Offline contracts for the independently installed planning Skills."""
 
 from pathlib import Path
+import re
 import unittest
 
 
@@ -64,6 +65,10 @@ class PlanningGuidanceTests(unittest.TestCase):
                 self.assertIn(f"/tree/main/skills/{name})", page)
                 self.assertIn("## Common questions", page)
                 self.assertNotIn("aihero.dev/skills-", page)
+                for target in re.findall(r"\]\(([^)]+)\)", page):
+                    if target.startswith(("./", "../")):
+                        self.assertRegex(target, r"^\./[^/]+\.md$")
+                        self.assertTrue((ROOT / "docs" / target).is_file(), target)
                 self.assertNotIn("CONTEXT-MAP.md", page)
                 self.assertNotIn("\u2014", page)
                 self.assertNotIn("\u2014", self.skill(name))
