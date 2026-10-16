@@ -99,6 +99,7 @@ bash scripts/test-handoff.sh || fail=1
 python3 scripts/test-next-runtime.py || fail=1
 python3 scripts/test-plan-handoff.py || fail=1
 python3 scripts/test-planning-guidance.py || fail=1
+python3 scripts/test-to-handoff.py || fail=1
 python3 scripts/test-set-task-models.py || fail=1
 python3 scripts/test-model-scorecard.py || fail=1
 python3 scripts/validate-profile-roles.py || fail=1

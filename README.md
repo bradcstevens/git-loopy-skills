@@ -117,6 +117,7 @@ situation matches. The rest you invoke by name.
 | [sync-model-roster](docs/sync-model-roster.md) | `/sync-model-roster` | Reconcile git-loopy's pinned model roster and one config.toml scope with authenticated harness evidence. |
 | [tdd](docs/tdd.md) | automatic | Test-driven development. |
 | [teach](docs/teach.md) | `/teach` | Teach the user a new skill or concept, within this workspace. |
+| [to-handoff](docs/to-handoff.md) | `/to-handoff` | Compact the current conversation into a handoff document for another agent to pick up. |
 | [to-questionnaire](docs/to-questionnaire.md) | `/to-questionnaire` | Turn a decision you can't fully answer into a questionnaire for someone else to fill in. |
 | [to-spec](docs/to-spec.md) | automatic | Turn the current conversation into a spec and publish it to the project issue tracker: no interview, just synthesis of what you've already discussed. |
 | [to-tickets](docs/to-tickets.md) | automatic | Break a plan, spec, or the current conversation into a set of tracer-bullet tickets, each declaring its blocking edges, published to the configured tracker (edges as text in one file per ticket locally, or native blocking links on a real tracker). |

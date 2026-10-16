@@ -630,6 +630,15 @@
       "need": 100997,
       "need_source": "git-loopy:docs p95 of 9 runs"
     },
+    "to-handoff": {
+      "role": "git-loopy:docs",
+      "model": "claude-sonnet-5.5",
+      "effort": "medium",
+      "context": "200K",
+      "tier": "default",
+      "need": 100997,
+      "need_source": "git-loopy:docs p95 of 9 runs"
+    },
     "to-questionnaire": {
       "role": "git-loopy:planning",
       "model": "claude-opus-5.5",
