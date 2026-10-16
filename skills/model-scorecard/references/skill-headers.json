@@ -270,6 +270,15 @@
       "need": 70000,
       "need_source": "copilot:task profile estimate"
     },
+    "chief-of-staff": {
+      "role": "git-loopy:planning",
+      "model": "claude-opus-5.5",
+      "effort": "medium",
+      "context": "1M",
+      "tier": "long_context",
+      "need": 170832,
+      "need_source": "git-loopy:planning p95 of 5 runs"
+    },
     "code-review": {
       "role": "copilot:code-review",
       "model": "claude-opus-5.5",
