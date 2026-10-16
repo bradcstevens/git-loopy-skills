@@ -99,6 +99,8 @@ git -C "$tmp_dir" init --quiet "$fixture_repo"
 git -C "$fixture_repo" -c user.name=test -c user.email=test@example.com \
   commit --quiet --allow-empty -m initial
 fixture_ledger="$fixture_repo/.git-loopy/subagents.jsonl"
+fixture_hook_log="$fixture_repo/.git-loopy/hook-invocations.jsonl"
+resolver_payloads="$tmp_dir/resolver-payloads.jsonl"
 mkdir -p "$(dirname "$fixture_ledger")"
 fixture_worktree="$tmp_dir/reentry-linked-worktree"
 git -C "$fixture_repo" worktree add --quiet -b agent-stop-fixture "$fixture_worktree"
@@ -130,11 +132,15 @@ agent_stop_payload() {
   printf '{%s}' "$fields"
 }
 
-reenter() {
+reenter() (
+  payload="$(agent_stop_payload "$@")"
+  printf '%s\n' "$payload" >> "$resolver_payloads"
+  # The logger resolves the repository from the process cwd, not the payload.
+  cd "$fixture_repo"
   COPILOT_HOME="$tmp_dir/missing-copilot-home" \
     "$REPO/.github/hooks/git-loopy-chain.sh" reenter \
-    <<< "$(agent_stop_payload "$@")"
-}
+    <<< "$payload"
+)
 
 block_decision='{"decision":"block","reason":"A completed run is unrouted. Run /next now.","targets":["issue-26"]}'
 
@@ -432,11 +438,7 @@ with open(sys.argv[1], "w", encoding="utf-8") as ledger:
         "outcome": "reclaimed",
     }) + "\n")
 PY
-reclaimed_output="$(
-  COPILOT_HOME="$tmp_dir/missing-copilot-home" \
-    "$REPO/.github/hooks/git-loopy-chain.sh" reenter \
-    <<< "$(agent_stop_payload false)"
-)"
+reclaimed_output="$(reenter false)"
 if [ "$reclaimed_output" != '{"decision":"allow","reason":"no-unrouted-completion"}' ]; then
   err "agentStop treated a reclaimed reservation as a completed run"
 fi
@@ -573,5 +575,26 @@ with open(sys.argv[1], "w", encoding="utf-8") as ledger:
 PY
 assert_decision "an anonymous stop with an owned row" \
   "$(reenter false 2026-08-22T04:01:00Z "")" "$(block_decision_for issue-mine)"
+
+if [ ! -f "$fixture_hook_log" ]; then
+  err "resolver calls did not create the fixture repository's hook invocation log"
+elif ! python3 - "$fixture_hook_log" "$resolver_payloads" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as log:
+    rows = [json.loads(line) for line in log]
+with open(sys.argv[2], encoding="utf-8") as payloads:
+    expected = [json.loads(line) for line in payloads]
+
+assert len(rows) == len(expected), (len(rows), len(expected))
+for row, payload in zip(rows, expected):
+    assert row["event"] == "reenter", row
+    assert row["run"]["session_id"] == payload.get("sessionId"), (row, payload)
+    assert row["run"]["timestamp"] == payload.get("timestamp"), (row, payload)
+PY
+then
+  err "fixture hook invocation log did not record every resolver call in order"
+fi
 
 exit "$fail"
