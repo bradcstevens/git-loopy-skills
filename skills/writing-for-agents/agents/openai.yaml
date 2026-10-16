@@ -1,5 +1,3 @@
 interface:
   display_name: "Writing for Agents"
-  short_description: "Principles for documents agents read"
-policy:
-  allow_implicit_invocation: false
+  short_description: "Write documents agents consume"
