@@ -1,9 +1,11 @@
 """Repository lookup, ledger storage and interoperable ledger locks."""
 
 import datetime
+from contextlib import contextmanager
 import glob
 import json
 import os
+import signal
 import subprocess
 import tempfile
 import time
@@ -190,30 +192,67 @@ def cleanup_replacements(ledger_path: str) -> None:
 
 def read_ledger(ledger_path: str) -> Optional[list]:
     try:
-        with open(ledger_path, encoding="utf-8") as ledger:
-            return [json.loads(line) for line in ledger if line.strip()]
+        return load_ledger(ledger_path, missing_ok=False)
     except (OSError, json.JSONDecodeError):
         return None
 
 
-def write_ledger(ledger_path: str, rows: list) -> bool:
+def load_ledger(ledger_path: str, missing_ok: bool = True) -> list:
+    """Strict command-side load; unlike reenter, missing ledgers start empty."""
+    if missing_ok and not os.path.exists(ledger_path):
+        return []
+    with open(ledger_path, encoding="utf-8") as ledger:
+        return [json.loads(line) for line in ledger if line.strip()]
+
+
+@contextmanager
+def locked_ledger(ledger_path: str):
+    lock_dir = ledger_path + ".lock"
+    os.makedirs(os.path.dirname(ledger_path) or ".", exist_ok=True)
+    acquired = False
+
+    def interrupted(signum, frame):
+        raise SystemExit(130)
+
+    handlers = {sig: signal.signal(sig, interrupted) for sig in (signal.SIGINT, signal.SIGTERM)}
+    try:
+        acquired = acquire_lock(lock_dir, timeout=None)
+        yield
+    finally:
+        if acquired:
+            release_lock(lock_dir)
+        for sig, handler in handlers.items():
+            signal.signal(sig, handler)
+
+
+@contextmanager
+def ledger_rewrite(ledger_path: str, rows: list):
+    """Stage the rows before worktree cleanup, then publish under the caller's lock."""
     replacement = None
     try:
         with tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", dir=os.path.dirname(ledger_path),
+            mode="w", encoding="utf-8", dir=os.path.dirname(ledger_path) or ".",
             prefix=".subagents.", delete=False,
         ) as temporary:
             replacement = temporary.name
             for row in rows:
                 temporary.write(json.dumps(row, separators=(",", ":")) + "\n")
+        yield
         os.replace(replacement, ledger_path)
-        return True
-    except OSError:
+    finally:
         if replacement is not None:
             try:
                 os.unlink(replacement)
             except FileNotFoundError:
                 pass
+
+
+def write_ledger(ledger_path: str, rows: list) -> bool:
+    try:
+        with ledger_rewrite(ledger_path, rows):
+            pass
+        return True
+    except OSError:
         return False
 
 
