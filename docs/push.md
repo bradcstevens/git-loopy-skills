@@ -45,8 +45,19 @@ is nothing to publish.
 
 Pushing uses a normal fast-forward push, setting an upstream when necessary.
 For a GitHub non-default branch, `push` finds an existing open PR or creates one
-against the remote default branch. This is part of `push` itself, not a separate
-`/pr` step. A default-branch push or non-GitHub remote makes a PR inapplicable.
+against the remote default branch. On both create and update it calls the Skill
+tool with [pr](./pr.md) to write the body: Summary, Evidence, and Merge Danger.
+`pr` runs inside `push` as a format reference, not a separate publication route.
+A default-branch push or non-GitHub remote makes a PR inapplicable.
+
+The body covers the full branch diff against the PR's base, not just the latest
+commit. Summary retains a separate `Closes #<n>` for every issue the branch
+resolves; merely mentioned or partially addressed issues are not marked closed.
+Evidence includes the exact validation commands and outcomes for the published
+head, plus concrete before-and-after evidence. Missing before evidence is stated,
+never invented. Updates preserve relevant human-authored context and
+repository-required information, and `push` reads the saved body back to verify
+the closing references and validation results.
 
 For ticketed non-default-branch work, it records the durable candidate SHA and
 PR on the ticket only after publication succeeds, saying that the exact head is

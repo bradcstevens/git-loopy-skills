@@ -108,4 +108,5 @@ python3 scripts/test-upstream-sync.py || fail=1
 python3 scripts/test-load-guidance.py || fail=1
 python3 scripts/test-implement-spec.py || fail=1
 python3 scripts/test-skill-sync.py || fail=1
+python3 scripts/test-pr-guidance.py || fail=1
 exit "$fail"
