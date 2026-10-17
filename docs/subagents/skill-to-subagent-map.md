@@ -15,6 +15,7 @@ effectively designed to carry — plus the skills that ride along inside it.
 | Subagent | `agent_type` | Slash entry | Primary skill | Why it's the fit |
 | --- | --- | --- | --- | --- |
 | Explore | `explore` | — | `/improve-codebase-architecture` | The skill already says to walk the codebase with an Explore agent |
+| `/jev-ultrafast` | — | Main session, drives the browser itself |
 | Task | `task` | — | `/tdd` | Brief on success, full output on failure — exactly a red/green verdict |
 | General-purpose | `general-purpose` | `/delegate` | `/implement` | A whole ticket, full toolset, fresh window — but see the caveat below when `/next` spawns it |
 | Rubber duck | `rubber-duck` | `/rubber-duck` | `/codebase-design` | Design-it-twice needs an independent critic to compare the drafts |
@@ -105,6 +106,7 @@ at spawn time.
 | `/code-review` | `code-review-agent` | `/code-review` |
 | `/research` | `research-agent` | `/research` |
 | `/push` | `push-agent` | `/push` |
+| `/release` | — | Main session |
 
 ## Rubber duck — `/codebase-design`
 
@@ -195,6 +197,7 @@ are read into whatever session needs them rather than dispatched anywhere.
 | `/codebase-audit` | `security-review` | Detect in agent, fix in main |
 | `/codebase-design` | `rubber-duck` | Parallel drafts, one critic |
 | `/create-readme` | `general-purpose` | Sync |
+| `/design-control-loop` | — | Main session, interview |
 | `/diagnosing-bugs` | `task` (+ `explore`) | Loop in agent, hypotheses in main |
 | `/domain-modeling` | — (`explore` to harvest terms) | Main session |
 | `/grill-me`, `/grill-with-docs`, `/grilling` | — (`explore`, `research` for facts) | Main session |
@@ -204,9 +207,11 @@ are read into whatever session needs them rather than dispatched anywhere.
 | `/improve-codebase-architecture` | `explore` | Parallel threads |
 | `/loop-me` | — | Main session |
 | `/mermaid-diagrams` | — | Reference |
+| `/model-scorecard` | — | Main session, runs its build script |
 | `/microsoft-code-reference` | `research` | Sync |
 | `/microsoft-docs` | `research` | Sync |
 | `/microsoft-foundry` | `task` | Deploy and eval runs |
+| `/narrow-react-prop-types` | — | Main session |
 | `/next` | — | Main session |
 | `/playwright-cli` | `task` | Sync |
 | `/pr` | — | Main session |
@@ -214,7 +219,10 @@ are read into whatever session needs them rather than dispatched anywhere.
 | `/push` | `push-agent`, via the `/next` chain only | Background when AFK-safe, else main session |
 | `/research` | `research`; `research-agent` when chain-spawned | Background |
 | `/retro` | — (`explore` to read session logs) | Main session |
+| `/set-task-models` | — | Main session, configures the subagents themselves |
+| `/show-me` | — | Main session |
 | `/setup-git-loopy-skills` | — | Main session |
+| `/sync-model-roster` | — | Main session |
 | `/tdd` | `task` | Sync, per red/green step |
 | `/teach` | — | Main session |
 | `/to-questionnaire` | — | Main session |

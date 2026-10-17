@@ -113,6 +113,22 @@ flowchart LR
     rmc --> review
 
     next --> questionnaire
+
+    subgraph TUNING["Loop design and model tuning"]
+        dcl["/design-control-loop"]
+        scorecard["/model-scorecard"]
+        stm["/set-task-models"]
+        jev["/jev-ultrafast"]
+    end
+
+    dcl --> grilling
+    dcl --> domain
+    dcl --> implement
+    dcl --> review
+    dcl --> next
+    scorecard --> jev
+    scorecard --> stm
+    stm -.->|config| scorecard
 ```
 
 Ordinary arrows route or nest, thick arrows spawn, and dotted arrows publish or read config.
@@ -543,9 +559,13 @@ These have no workflow edges. Reach for them directly; they neither route onward
 | `/codebase-audit` | Line-by-line pre-push sweep for junk, dead code, and security holes |
 | `/create-readme` | Write a project README |
 | `/mermaid-diagrams` | Author diagrams in Mermaid |
+| [`/narrow-react-prop-types`](./narrow-react-prop-types.md) | Narrow React component prop types to match live code paths |
 | `/playwright-cli` | Drive a browser for testing, screenshots, and extraction |
 | `/pr` | A PR-body template: summary sketch, before/after evidence, merge danger |
+| [`/release`](./release.md) | Release completed work at the next patch version, or the version you specify |
 | `/retro` | A retrospective that suggests improvements to the agent's environment, read through `/writing-for-agents` |
+| [`/show-me`](./show-me.md) | Explain the current topic with concise diagrams, sketches and HTML artifacts |
+| [`/sync-model-roster`](./sync-model-roster.md) | Reconcile the pinned model roster and one config scope with harness evidence |
 | [`/teach`](./teach.md) | A stateful, multi-session learning workspace |
 | [`/to-questionnaire`](./to-questionnaire.md) | Turn a decision only another person can answer into a document to send |
 | [`/wait-what`](./wait-what.md) | Re-pitch the last message when it did not land |
@@ -595,7 +615,11 @@ These have no workflow edges. Reach for them directly; they neither route onward
 | `resolving-merge-conflicts` | `code-review` | routes to | A resolved head is a new candidate |
 | `setup-git-loopy-skills` | `triage`, `domain-modeling` | reads config from | Writes the labels and domain layout they use |
 | `azure-mcaps-resource-deployment` | `microsoft-foundry` | routes to | Creating or configuring a Foundry resource |
+| `design-control-loop` | `grilling`, `domain-modeling` | runs inside | The set-point interview, and vocabulary that blocks a decision |
+| `design-control-loop` | `implement`, `code-review`, `next` | routes to | The built loop's actuator reaches them |
 | `model-scorecard` | `jev-ultrafast` | runs inside | Capturing the live leaderboard for the scorecard |
+| `model-scorecard` | `set-task-models` | routes to | The scorecard's subagent and task-type picks are recommendations only |
+| `set-task-models` | `model-scorecard` | reads config from | The `profiles.json` role map assigns each skill its profile |
 | eleven producers | the ticket | publishes to | On completing a transition they own |
 
 ### Chain hook edges
