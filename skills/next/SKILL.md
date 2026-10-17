@@ -46,6 +46,11 @@ workstream referenced by the conversation from its configured tracker: issue or 
 labels, assignees, comments, sub-issues, and blockers. Inspect the local branch, commits, and
 diff when review or publication may be next.
 
+For a Wayfinder map, also read its Destination, Notes, Decisions so far,
+Not yet specified, and closing summary comment, including when the map is closed.
+Follow its linked spec or recorded follow-up work rather than inferring a build
+from an empty ticket list.
+
 When the conversation names no workstream, review the open workflow-bearing
 issues and their relationships to find the active maps, specs, tickets, and PRs.
 Use live records rather than session summaries because concurrent sessions may
@@ -87,6 +92,10 @@ does not make an explicit standalone request complete.
 | The phase-boundary tree selects portability to a new harness, directory, colleague, or mid-phase side task | `/to-handoff` (HITL) |
 | The user wants to pursue a long-running goal held in one session | `/chief-of-staff` (HITL) |
 | A codebase property should improve through a measured, recurring agentic loop | `/design-control-loop` |
+| A Wayfinder map has an open decision ticket or remaining fog | `/wayfinder` |
+| A finished Wayfinder map has a decision destination | No next route: report completion unless the recorded decisions themselves call for follow-up work; route that work through its own gate |
+| A finished Wayfinder map has a specification destination | Continue from the spec wayfinder handed to `/to-spec`, using the spec and delivery gates below |
+| A finished Wayfinder map names an in-place change or proof of concept still to build | `/to-spec`, or `/implement` only when the effort proved genuinely small |
 | An idea outside a codebase still needs sharpening | `/grill-me` |
 | An idea in a codebase still has human decisions | `/grill-with-docs` |
 | The destination is too foggy or large for one planning context | `/wayfinder` |
@@ -96,7 +105,7 @@ does not make an explicit standalone request complete.
 | A runnable behavior or visual answer is cheaper than more discussion | `/prototype` |
 | Domain language itself blocks the decision | `/domain-modeling` |
 | A module interface, seam, or boundary needs designing | `/codebase-design` |
-| The destination is agreed but no durable spec exists | `/to-spec` |
+| A build destination is agreed but no durable spec exists | `/to-spec` |
 | A spec exists but executable tracer-bullet tickets do not | `git-loopy plan <spec>` when the decomposition check below passes; otherwise `/to-tickets` |
 | A raw incoming issue or external PR needs readiness work | `/triage` |
 | An in-progress merge, rebase, or cherry-pick has conflicts | `/implement` |
@@ -126,9 +135,18 @@ Apply these flow rules:
   `/grill-with-docs` or `/to-spec`.
 - Planner and `/to-tickets` output is already agent-ready; reserve `/triage` for work that
   arrived raw.
-- If a Wayfinder map has an open frontier, continue `/wayfinder`. When the
-  destination is clear and no decision ticket remains, route to `/to-spec`, not
-  directly to implementation unless the effort proved genuinely small.
+- If a Wayfinder map has an open frontier, continue `/wayfinder`. An empty ticket
+  list alone is not completion: a finished map has no open decision ticket and no fog
+  in **Not yet specified**, and wayfinder closes it with a closing summary comment.
+  Route by its named destination before applying the generic spec gate.
+  For a specification destination, wayfinder already handed the map to `/to-spec`:
+  continue from the resulting spec through the usual gates; do not synthesize it again.
+  If that handoff has not produced a durable spec, name the missing spec as the
+  unresolved gate rather than assuming the handoff succeeded.
+  A decision destination is complete unless the recorded decisions themselves call
+  for follow-up work; route only that work through its own gate, not the map to `/to-spec`.
+  An in-place change or proof of concept still to build routes to `/to-spec`, or
+  directly to `/implement` only when the effort proved genuinely small.
 - `/implement` drives `/tdd` internally and closes with `/code-review`. Route
   directly to those skills only for their standalone branches.
 - `/implement-spec` is the user-invoked alternative to per-ticket `/implement`

@@ -31,9 +31,31 @@ Reach for it whenever you're unsure which skill or flow a situation calls for: a
 
 ## The earliest unresolved gate
 
-The idea `next` runs on is the **gate** — the first unresolved condition standing between the work and its destination. The flow is composable, not a fixed sequence, so it doesn't ask "which step comes after the last one" but "what is the earliest thing still unresolved". An idea that still has human decisions in it gates on grilling; an agreed destination with no durable spec gates on [to-spec](./to-spec.md); an unblocked ticket gates on [implement](./implement.md). Ranking follows from that: ready actions before blocked ones, the workstream you're already in before a cold one, and the action that clears the most downstream blockers before the rest.
+The idea `next` runs on is the **gate**, the first unresolved condition standing between the work and its destination. The flow is composable, not a fixed sequence, so it doesn't ask "which step comes after the last one" but "what is the earliest thing still unresolved". An idea that still has human decisions in it gates on grilling; an agreed build destination with no durable spec gates on [to-spec](./to-spec.md); an unblocked ticket gates on [implement](./implement.md). Ranking follows from that: ready actions before blocked ones, the workstream you're already in before a cold one, and the action that clears the most downstream blockers before the rest.
 
 Every recommendation is labelled **HITL** or **AFK-safe** — whether the next action needs your judgement, or is specified tightly enough to be left to run on its own. Blocked actions are still returned, but must name the condition that would make them ready.
+
+### Wayfinder destinations
+
+[Wayfinder](./wayfinder.md) finishes a map when there is no open decision ticket and no fog
+in **Not yet specified**, not merely when its ticket list is empty. It closes the map
+with a closing summary comment. `next` reads that comment, the named destination,
+and the recorded decisions before applying the generic spec gate.
+
+| Map state | Route |
+| --- | --- |
+| Open frontier or remaining fog | Continue `/wayfinder` |
+| Finished, specification destination | Continue from the spec through the usual gates; wayfinder already called `/to-spec` |
+| Finished, decision destination | No next route: report completion unless the recorded decisions themselves call for follow-up work; route that work through its own gate |
+| Finished, in-place change or proof of concept still to build | `/to-spec`, or `/implement` only when the effort proved genuinely small |
+
+Do not synthesize an existing spec again. If the specification handoff has not
+produced a durable spec, name that missing spec as the unresolved gate.
+A finished decision destination does not need a spec or a build just to count as complete.
+
+This is a kept git-loopy overlay over upstream `ask-matt` at pin
+`49dd158d1076134a641b33efb035946536778336`: upstream merges every cleared map
+at `/to-spec`; git-loopy routes by the destination instead.
 
 ### Decomposition
 
