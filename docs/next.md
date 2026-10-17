@@ -19,6 +19,7 @@ situation. Its co-installed `SKILL-SELECTION.md` covers interview wrappers, buil
 scope, and standalone requests such as release, human-only setup, learning, agent
 writing, and model configuration. Those requests use the context their branch
 needs rather than requiring an engineering tracker and chain hook.
+Interview wrappers retain the project's domain language in `GLOSSARY.md`.
 
 It does not itself grill, write a spec, or fix anything. It either orients at a checkpoint boundary or, when the chain gate approves, records and launches work owned by the spawned route. What separates it from a checklist is where it looks: not at what you told it in conversation, but at `docs/agents/issue-tracker.md`, the tracker itself, and your branch and diff. Concurrent sessions move that state underneath you, so the recommendation is drawn from live records rather than from a session summary.
 
@@ -48,6 +49,45 @@ issue URL. This is the exception to the skill-runtime and paste-a-prompt format
 below. Run it interactively from the repository; `/next` neither spawns it as a
 chain subagent nor decomposes in the old context. Publish any decisions that
 remain only in conversation before handing off.
+
+### Whole-spec builds and retrospectives
+
+Once a spec has executable tickets, [implement-spec](./implement-spec.md) is the
+**HITL**, user-invoked alternative to driving [implement](./implement.md) per
+ticket. It coordinates the ready frontier in parallel on one integration branch
+and finishes with a review of that branch; it does not replace decomposition.
+
+`next` offers [retro](./retro.md) after a build or a `/diagnosing-bugs` fix,
+before considering [improve-codebase-architecture](./improve-codebase-architecture.md).
+The retrospective improves the agent's environment, not the code. Run it in the
+session it examines before clearing, or point it at that session's log afterward.
+It is **HITL** and user-invoked: completed or declined retrospectives are not
+offered again for the same work. Accepted improvements return through the relevant
+idea, spec, or ticket gate. A diagnosis exposing a missing seam or structural cause
+can then warrant an architecture survey.
+
+Publication still routes to [push](./push.md). [pr](./pr.md) shapes the body
+inside `/push`; it is not a direct route.
+
+### Portable context and long-running goals
+
+The co-installed `PHASE-BOUNDARIES.md` uses the upstream ordered tree: continue,
+clear irrelevant context, make a portable file, delegate AFK work, then compact.
+The first applicable choice wins; decide at a phase boundary, not mid-phase.
+Portability routes to [to-handoff](./to-handoff.md) for a new harness (for example,
+Copilot CLI to Codex), a new directory, a colleague, or a mid-phase side task.
+A prototype detour uses it in both directions when context must travel.
+The recommendation says **Continue here** to write the file; the user takes it
+to the destination. It does not launch a session.
+
+[handoff](./handoff.md) keeps its separate job: launching a `/next` recommendation
+in the background on its resolved runtime. It is neither the portable-file writer
+nor the chain's in-session launcher.
+
+For a long-running goal held in one session, [chief-of-staff](./chief-of-staff.md)
+coordinates subagents and recurring schedules while retaining strategic context.
+Like `/implement-spec` and `/retro`, `/to-handoff` and `/chief-of-staff` are
+**HITL**, user-invoked recommendations. This map does not enlarge the chain allowlist.
 
 ## The sessions it tracks
 
