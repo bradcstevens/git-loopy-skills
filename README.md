@@ -111,7 +111,7 @@ situation matches. The rest you invoke by name.
 | [release](docs/release.md) | `/release` | Release completed work at the next patch version, or the version you specify. |
 | release-assessment | `/release-assessment` | Read an advisory release assessment in Copilot App and ask follow-up questions about its review packet. |
 | [research](docs/research.md) | automatic | Investigate a question against high-trust primary sources and capture the findings as a Markdown file in the repo. |
-| retro | `/retro` | Conduct a retrospective on a coding session. |
+| [retro](docs/retro.md) | `/retro` | Conduct a retrospective on a coding session. |
 | [set-task-models](docs/set-task-models.md) | `/set-task-models` | Set the model, effort, and context of every Copilot built-in subagent and git-loopy task type from fresh model research, and enforce them. |
 | [setup-git-loopy-skills](docs/setup-git-loopy-skills.md) | `/setup-git-loopy-skills` | Configure this repo for the engineering skills: set up its issue tracker, triage label vocabulary, and domain doc layout. |
 | [show-me](docs/show-me.md) | automatic | Help the user understand the current topic visually with concise diagrams, code-shape sketches, and focused HTML artifacts. |

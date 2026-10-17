@@ -125,7 +125,7 @@ No. It diffs `<fixed-point>..."$reviewed_head"`. The three-dot form measures fro
 `code-review` is the review step near the tail of the build chain: `grill-with-docs → to-spec → git-loopy plan → implement → code-review → push`. Outside git-loopy, [to-tickets](./to-tickets.md) supplies the decomposition fallback. Review also stands alone on any branch or PR you point it at.
 
 - [implement](./implement.md) is the closest neighbour. It drives the build, commits and pushes, then calls this skill to review that exact candidate.
-- [push](./push.md) publishes a clean reviewed head and opens its pull request. [implement-spec](./implement-spec.md) handles a whole spec on one integration branch. Upstream's `pr` and `retro` neighbours are not yet published in this catalog.
+- [push](./push.md) publishes a clean reviewed head and opens its pull request using [pr](./pr.md). [implement-spec](./implement-spec.md) handles a whole spec on one integration branch. Run [retro](./retro.md) afterward to propose improvements to the agent's environment from the session's record.
 - [to-spec](./to-spec.md) and [to-tickets](./to-tickets.md) produce the document the Spec axis checks against, so a vague spec makes that axis vague.
 - [improve-codebase-architecture](./improve-codebase-architecture.md) is the whole-codebase counterpart, because this skill only looks at one diff.
 
