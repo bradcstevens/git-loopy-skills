@@ -17,8 +17,11 @@ A multi-session build needs `/to-spec` and decomposition before `/implement`.
 Use the main skill's **Decomposition handoff**: a fresh `git-loopy plan <spec>`
 when its configuration-and-PATH check passes, otherwise `/to-tickets`.
 Tickets carry their blocking edges and are worked blockers-first; each
-implementation starts from its self-contained ticket in fresh context. A small,
-agreed change can go straight to `/implement` in the current context.
+implementation starts from its self-contained ticket in fresh context.
+For a whole spec whose tickets already exist, recommend `/implement-spec` (HITL)
+when the user wants to orchestrate the ready frontier on one integration branch
+rather than drive `/implement` per ticket. A small, agreed change can go straight
+to `/implement` in the current context.
 
 Keep interview, spec, and ticket synthesis together while the next phase fits
 the remaining smart zone. At a phase boundary where it no longer fits, apply
@@ -30,8 +33,10 @@ the remaining smart zone. At a phase boundary where it no longer fits, apply
 | --- | --- | --- |
 | Design and build a recurring agentic loop to move a codebase property toward a target | `/design-control-loop` | Interview on the set point and scope, then build and validate the locally runnable loop and its workflow. |
 | Build a whole published spec in one run, its ticket frontier in parallel on one integration branch | `/implement-spec` | User-invoked alternative to ticket-by-ticket `/implement`; ends with `/code-review` of the integration branch. |
-| Write a pull request body | `/pr` | Summary visual, before/after evidence, and merge danger. |
+| Publish reviewed work or write its pull request body | `/push` | Reaches `/pr` internally for the summary visual, before/after evidence, and merge danger; do not route directly to `/pr`. |
 | Look back at a session for improvements to the agent's environment | `/retro` | Navigation, automated checks, coding standards, steering files, tool economy, and information access; user-invoked. |
+| Carry context to a new harness, directory, colleague, or mid-phase side task | `/to-handoff` | Write a portable file, not a background launch; user-invoked. Apply the ordered phase-boundary tree before a context transition. |
+| Pursue a long-running goal held in one session | `/chief-of-staff` | User-invoked coordination of subagents and recurring schedules while the session retains strategic context. |
 | Publish completed, integrated work as a project-versioned GitHub release | `/release` | Follow the target project's release gates; user-invoked, outside the delivery chain. |
 | Perform a step only a human can take | `/wizard` | Generate an interactive bash wizard for provisioning, credentials, dashboards, or cutovers. Agent-executable work stays with the agent. |
 | Re-pitch the last message with its missing context | `/wait-what` | Stay in this conversation and use the project's domain vocabulary. |

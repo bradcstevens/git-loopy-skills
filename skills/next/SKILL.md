@@ -84,6 +84,8 @@ does not make an explicit standalone request complete.
 | --- | --- |
 | The repository is not configured for the engineering skills | `/setup-git-loopy-skills` |
 | An intentional phase boundary needs a context transition | Apply `PHASE-BOUNDARIES.md` before choosing a route |
+| The phase-boundary tree selects portability to a new harness, directory, colleague, or mid-phase side task | `/to-handoff` (HITL) |
+| The user wants to pursue a long-running goal held in one session | `/chief-of-staff` (HITL) |
 | A codebase property should improve through a measured, recurring agentic loop | `/design-control-loop` |
 | An idea outside a codebase still needs sharpening | `/grill-me` |
 | An idea in a codebase still has human decisions | `/grill-with-docs` |
@@ -99,9 +101,11 @@ does not make an explicit standalone request complete.
 | A raw incoming issue or external PR needs readiness work | `/triage` |
 | An in-progress merge, rebase, or cherry-pick has conflicts | `/implement` |
 | A concrete behavior should be built test-first without the broader ticket flow | `/tdd` |
+| A spec has executable tickets and the user wants the whole ready frontier orchestrated on one integration branch | `/implement-spec` (HITL) |
 | An unblocked `ready-for-agent` ticket or small agreed change is available | `/implement` |
 | Implemented work or review fixes still need a fixed-point review | `/code-review` |
 | Reviewed work remains local or the current branch lacks its PR | `/push` |
+| A build or `/diagnosing-bugs` fix is complete and its session has not had a retrospective offered | `/retro` (HITL) |
 | No delivery work is active and codebase health needs a survey | `/improve-codebase-architecture` |
 | The user wants a stateful learning path | `/teach` |
 | The task is to write or revise a document an agent consumes | `/writing-for-agents` |
@@ -112,9 +116,9 @@ Apply these flow rules:
 - Keep `/grill-with-docs` and `/to-spec` in one unbroken context. Decomposition
   uses the handoff below; only the `/to-tickets` fallback continues here.
 - At an intentional phase boundary, `PHASE-BOUNDARIES.md` alone chooses the
-  context transition. Use `/handoff` only for its portability cases: a new
+  context transition. Use `/to-handoff` only for its portability cases: a new
   harness, directory, colleague, or mid-phase side task.
-- Bridge a prototype detour with `/handoff` in both directions when its new
+- Bridge a prototype detour with `/to-handoff` in both directions when its new
   directory or mid-phase fork needs portability. Route the validated answer
   back into the main flow.
 - Route source-answerable gaps to `/research` and answers held by another person
@@ -127,9 +131,24 @@ Apply these flow rules:
   directly to implementation unless the effort proved genuinely small.
 - `/implement` drives `/tdd` internally and closes with `/code-review`. Route
   directly to those skills only for their standalone branches.
-- If review finds defects, route back to `/implement` with the findings. After a
-  bug fix, route to `/improve-codebase-architecture` only when the diagnosis
-  exposed a missing seam or structural cause.
+- `/implement-spec` is the user-invoked alternative to per-ticket `/implement`
+  once a spec has its tickets. Its implementers drive `/tdd`, and it closes with
+  `/code-review` of the integration branch.
+- Reach `/pr` through `/push`, not as a direct route; it shapes the PR body
+  inside publication.
+- If review finds defects, route back to `/implement` with the findings.
+  After a build or a `/diagnosing-bugs` fix, offer `/retro` to improve the agent's
+  environment before considering `/improve-codebase-architecture`.
+  Run `/retro` in the session it examines before clearing; if that session is
+  already cleared, point it at the session log. Do not re-offer a completed or
+  declined retrospective for the same work. Route its accepted improvements
+  through the relevant idea, spec, or ticket gate; no accepted improvements means
+  no new work. After a bug fix, consider `/improve-codebase-architecture` only
+  when the diagnosis exposed a missing seam or structural cause.
+- `/implement-spec`, `/retro`, `/to-handoff`, and `/chief-of-staff` are
+  user-invoked: mark their recommendations HITL and leave invocation to the
+  human. They do not extend the chain allowlist. `/handoff` remains the
+  background launcher of a `/next` recommendation, not the portable-file route.
 - A candidate selected by `/improve-codebase-architecture` becomes an idea for
   `/grill-with-docs`; the survey does not implement it.
 - Reach for `/domain-modeling` or `/codebase-design` directly only when the
@@ -342,8 +361,8 @@ recommendation is launched by the chain gate in step 7. When the context is
 directory, because the prompt opens with the `chain.sh claim` that makes the
 worktree and moves the agent before it writes.
 
-For `/handoff`, use `Continue here` and say that its output opens the fresh
-session.
+For `/to-handoff`, use `Continue here` and say that its output is a portable
+file the user takes to the destination session; it does not launch that session.
 
 For a terminal workstream, return:
 
