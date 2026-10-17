@@ -2024,7 +2024,14 @@ for row in rows:
     parent_pid = row.get("parent_pid")
     parent_start = row.get("parent_start")
     parent_is_gone = False
-    if isinstance(parent_pid, int) and isinstance(parent_start, str) and parent_start:
+    parent_is_known = (
+        isinstance(parent_pid, int)
+        and not isinstance(parent_pid, bool)
+        and parent_pid > 0
+        and isinstance(parent_start, str)
+        and bool(parent_start)
+    )
+    if parent_is_known:
         liveness = subprocess.run(
             [
                 sys.executable,
@@ -2041,7 +2048,9 @@ for row in rows:
     timed_out = (
         recovered_at - spawned_at
     ).total_seconds() >= stale_after_seconds
-    if parent_is_gone or (not is_bound and timed_out):
+    # A bound run with a usable parent identity waits for proof its parent is gone;
+    # one whose identity cannot be evaluated never could, so age is its only exit.
+    if parent_is_gone or (timed_out and (not is_bound or not parent_is_known)):
         row["finish_time"] = (
             recovered_at.astimezone(datetime.timezone.utc)
             .isoformat(timespec="seconds")

@@ -102,7 +102,8 @@ kept; a transient failure leaves the target retryable, while a permanent one hal
 
 **Abandoned run**:
 A bound reservation whose reserving parent ended before the run completed. `chain.sh recover`
-reclaims it only once that parent is proven gone, never on age alone.
+reclaims it only once that parent is proven gone, never on age alone. A legacy row whose parent
+identity cannot be evaluated has no proof to wait for, so it is reclaimed once it is stale.
 
 **In flight**:
 A target held by an active bound run, where routing a second agent would duplicate or corrupt the

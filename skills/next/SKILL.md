@@ -405,7 +405,8 @@ the durable reserve, bind, complete, and guard operations. Each reservation reco
 identity of its reserving parent, which is this routing session and never the shell that runs the
 command: pass `--parent-pid "$PPID"` from that shell, whose own parent is the session. Recovery
 reclaims an unbound orphan when that parent is gone, with the configured timeout as a backstop. It
-reclaims a bound abandoned run only when that parent is proven gone. `plan` runs that recovery before
+reclaims a bound abandoned run only when that parent is proven gone; a bound row whose parent
+identity cannot be evaluated is reclaimed by the timeout instead. `plan` runs that recovery before
 it evaluates concurrency, so an orphan cannot make a later candidate appear to be at the ceiling.
 Launch the agent on the recommendation's paste-safe prompt and resolved runtime: its `model`,
 `effort` and `tier` become the `task` invocation's `model`, `reasoning_effort` and `context_tier`,

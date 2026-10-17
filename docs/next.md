@@ -165,7 +165,9 @@ its reserving parent — the routing session itself, never the shell that runs t
 with it: recovery reclaims an unbound orphan immediately when that
 parent is gone, or after `CHAIN_RESERVATION_STALE_SECONDS` (300 seconds by default), marking it
 `reclaimed` rather than as a completed run. An abandoned run is reclaimed only when the same
-liveness check proves its reserving parent is gone; age alone never reclaims an in-flight run.
+liveness check proves its reserving parent is gone; age alone never reclaims an in-flight run. A bound
+row whose parent identity cannot be evaluated (a missing, null or non-positive `parent_pid`, or an
+empty `parent_start`) predates that identity and is reclaimed once it is older than the stale threshold.
 Reclaiming releases the row's slot and applies the same worktree rule as completion, below. Every
 `plan` runs recovery before checking capacity, so
 reclaimed slots immediately become available to the next candidate. It stops at a checkpoint
