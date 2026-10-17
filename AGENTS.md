@@ -20,6 +20,11 @@ primary checkout's `.git-loopy/hook-invocations.jsonl`; a fixture payload's `cwd
 does not isolate that log. `scripts/test-chain-hook.sh` asserts that every resolver
 call appears in its fixture repository's log.
 
+When changing hook-suite isolation, run the full validation loop from a linked
+worktree. Snapshot the primary checkout's hook invocation log before and after,
+compare its contents (not just its line count), and record both line counts in
+the pull request. Do not truncate or restore the live log to make the check pass.
+
 ## Skill headers
 
 Every `SKILL.md` names the GitHub Copilot model, reasoning effort and context size
