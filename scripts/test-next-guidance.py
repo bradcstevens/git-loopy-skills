@@ -11,6 +11,74 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class NextGuidanceTests(unittest.TestCase):
+    def test_wayfinder_destinations_precede_the_generic_spec_gate(self):
+        text = (ROOT / "skills/next/SKILL.md").read_text(encoding="utf-8")
+        table = text.split("| Current state | Next route |", 1)[1].split(
+            "Apply these flow rules:", 1
+        )[0]
+        rows = [
+            tuple(cell.strip() for cell in row.strip("|").split("|"))
+            for row in table.splitlines() if row.startswith("|")
+        ]
+        cases = (
+            ("open decision ticket or remaining fog", ("`/wayfinder`",)),
+            ("decision destination", ("No next route", "follow-up work")),
+            ("specification destination", ("from the spec", "wayfinder", "gates below")),
+            ("in-place change or proof of concept", (
+                "`/to-spec`", "`/implement`", "only", "genuinely small",
+            )),
+        )
+        generic_gate = next(
+            index for index, (state, _) in enumerate(rows)
+            if "no durable spec exists" in state
+        )
+        for destination, outcomes in cases:
+            with self.subTest(destination=destination):
+                matches = [
+                    (index, route) for index, (state, route) in enumerate(rows)
+                    if destination in state
+                ]
+                self.assertEqual(len(matches), 1)
+                index, route = matches[0]
+                self.assertLess(index, generic_gate)
+                for outcome in outcomes:
+                    self.assertIn(outcome, route)
+                if destination == "decision destination":
+                    self.assertNotIn("`/to-spec`", route)
+                    self.assertNotIn("`/implement`", route)
+        flow = " ".join(text.split("Apply these flow rules:", 1)[1].split())
+        self.assertIn("no open decision ticket and no fog", flow)
+        self.assertIn("closing summary comment", flow)
+        self.assertIn("recorded decisions themselves call for follow-up work", flow)
+        self.assertIn("do not synthesize it again", flow)
+        self.assertNotIn(
+            "destination is clear and no decision ticket remains, route to `/to-spec`",
+            flow,
+        )
+
+    def test_docs_explain_finished_maps_without_inventing_a_build(self):
+        docs = (ROOT / "docs/next.md").read_text(encoding="utf-8")
+        self.assertIn("### Wayfinder destinations", docs)
+        section = docs.split("### Wayfinder destinations", 1)[1].split("\n### ", 1)[0]
+        for rule in (
+            "no open decision ticket and no fog",
+            "closing summary comment",
+            "Open frontier or remaining fog | Continue `/wayfinder`",
+            "Finished, specification destination | Continue from the spec",
+            "wayfinder already called `/to-spec`",
+            "Finished, decision destination | No next route",
+            "recorded decisions themselves call for follow-up work",
+            "Finished, in-place change or proof of concept still to build | `/to-spec`",
+            "`/implement` only when the effort proved genuinely small",
+            "kept git-loopy overlay",
+            "`ask-matt`",
+            "49dd158d1076134a641b33efb035946536778336",
+        ):
+            with self.subTest(rule=rule):
+                self.assertIn(rule, " ".join(section.split()))
+        self.assertNotIn("\u2014", section)
+        self.assertNotIn("an agreed destination with no durable spec gates", docs)
+
     def test_selection_covers_the_pinned_catalog_without_retired_skills(self):
         route = (ROOT / "skills/next/SKILL.md").read_text(encoding="utf-8")
         selection = (ROOT / "skills/next/references/SKILL-SELECTION.md").read_text(
