@@ -97,6 +97,7 @@ bash scripts/test-hook-log.sh || fail=1
 bash scripts/test-review-clean-record.sh || fail=1
 bash scripts/test-handoff.sh || fail=1
 python3 scripts/test-next-runtime.py || fail=1
+python3 scripts/test-next-guidance.py || fail=1
 python3 scripts/test-plan-handoff.py || fail=1
 python3 scripts/test-planning-guidance.py || fail=1
 python3 scripts/test-to-handoff.py || fail=1
