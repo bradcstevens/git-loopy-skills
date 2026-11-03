@@ -145,9 +145,10 @@ head**:
    (`gh issue comment <ticket-issue> --body-file <report>`). The HTML report is a session
    artifact; the findings a later session remediates from must be on the tracker.
 4. When the review finds no blocking defects, post one short evidence comment recording that
-   this exact head was reviewed and passed. Include the output of
-   `python3 scripts/review-clean-record.py emit "$reviewed_head"` as its own line, and name
-   `/push` as the succeeding skill.
+   this exact head was reviewed and passed. Set `SKILL_DIR` to this skill's base directory
+   (the directory containing its `SKILL.md`, not the reviewed repository). Include the output of
+   `python3 "$SKILL_DIR/../../scripts/review-clean-record.py" emit "$reviewed_head"` as its own
+   line, and name `/push` as the succeeding skill.
    That script is the single source of truth for the matchable record shape; the merge gate
    matches it through the same script. A review that finds blocking defects posts the findings
    comment but does not emit a `review-clean` record.

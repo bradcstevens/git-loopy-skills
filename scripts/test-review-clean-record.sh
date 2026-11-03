@@ -27,6 +27,43 @@ if printf '%s\n' "review-clean: head=$head" | python3 "$RECORD" match \
   exit 1
 fi
 
+python3 - "$REPO" "$head" <<'PY'
+import re
+import shlex
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+repo = Path(sys.argv[1])
+head = sys.argv[2]
+producer = (repo / "skills/code-review/SKILL.md").read_text()
+commands = re.findall(r'`(python3 [^`\n]+ emit "\$reviewed_head")`', producer)
+if len(commands) != 1:
+    sys.exit("error: producer must document one emit command")
+command = [
+    argument.replace("$SKILL_DIR", str(repo / "skills/code-review"))
+    .replace("$reviewed_head", head)
+    for argument in shlex.split(commands[0])
+]
+with tempfile.TemporaryDirectory(prefix="review-clean-") as outside:
+    result = subprocess.run(command, cwd=outside, capture_output=True, text=True)
+    if result.returncode != 0:
+        sys.exit(f"error: documented emit command failed outside the repo:\n{result.stderr}")
+    if result.stdout != f"review-clean: head={head}\n":
+        sys.exit("error: documented emit command did not emit the canonical record")
+
+gate = (repo / "skills/next/scripts/chain.sh").read_text()
+gate_path = re.search(r'^review_clean_record="([^"]+)"$', gate, re.M)
+if gate_path is None:
+    sys.exit("error: merge gate does not name its record source")
+gate_record = Path(
+    gate_path[1].replace("$script_dir", str(repo / "skills/next/scripts"))
+)
+if not Path(command[1]).samefile(gate_record):
+    sys.exit("error: documented emitter and merge gate resolve to different scripts")
+PY
+
 grep -Fq 'scripts/review-clean-record.py' "$PRODUCER" ||
   { echo "error: producer does not cite the canonical record source" >&2; exit 1; }
 grep -Fq 'scripts/review-clean-record.py' "$CONSUMER" ||
