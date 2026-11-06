@@ -13,7 +13,7 @@ If the user passes a ticket reference, fetch it from the issue tracker and state
 
 ## Check the target's holders
 
-From the target's checkout, right after fetching the ticket and before any write,
+From the caller's current checkout, right after fetching the ticket and before any write,
 run the read-only command shipped in the installed `/next` skill:
 
 ```bash

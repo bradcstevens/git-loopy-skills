@@ -75,8 +75,9 @@ git-loopy runner holding one: a git-loopy run names the issue it bound in the ne
 directory another session is writing collides with it, and an `ended` session's uncommitted
 worktree is abandoned work to name, not free space.
 
-For each engineering target, run this skill's read-only holder command from the
-candidate's checkout:
+For each engineering target, run this skill's read-only holder command from
+this session's own checkout, retaining its caller identity rather than switching
+to a discovered holder's worktree:
 
 ```bash
 python3 <this skill>/scripts/target-holders.py --target <ticket-or-PR>

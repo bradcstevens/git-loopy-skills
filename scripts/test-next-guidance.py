@@ -21,13 +21,14 @@ class NextGuidanceTests(unittest.TestCase):
         for rule in (
             "right after fetching the ticket", "before any write", "target-holders.py",
             "`held: true`", "review or merge", "wait", "coordinate",
-            "`own: true`", "--caller-branch", "lookup fails",
+            "`own: true`", "--caller-branch", "lookup fails", "caller's current checkout",
         ):
             self.assertIn(rule, guard)
         refresh = (ROOT / "skills/next/SKILL.md").read_text(encoding="utf-8").split(
             "## 1. Refresh the durable state", 1
         )[1].split("## 2.", 1)[0]
-        for rule in ("target-holders.py", "`held: true`", "candidate set", "lookup fails"):
+        for rule in ("target-holders.py", "`held: true`", "candidate set", "lookup fails",
+                     "this session's own checkout"):
             self.assertIn(rule, refresh)
 
     def test_wayfinder_destinations_precede_the_generic_spec_gate(self):
