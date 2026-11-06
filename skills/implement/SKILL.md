@@ -11,6 +11,28 @@ Implement the work described by the user in the spec or tickets.
 
 If the user passes a ticket reference, fetch it from the issue tracker and state its title before starting. If the reference is ambiguous, ask.
 
+## Check the target's holders
+
+From the target's checkout, right after fetching the ticket and before any write,
+run the read-only command shipped in the installed `/next` skill:
+
+```bash
+python3 <installed next skill>/scripts/target-holders.py --target <ticket-or-PR>
+```
+
+It uses `plan`'s canonical target and reports closing pull requests, open bound
+runs, and live owners of their head-branch worktrees. If `held: true`, stop
+without writing and name every holder whose `own` is false: review or merge the
+open pull request, wait for the bound session and agent, or coordinate with the
+worktree's owning process. If the lookup fails, stop and report the blocker;
+unreadable state is not a free target.
+
+The command marks holders in this checkout or on its current branch `own: true`;
+they remain in the report but do not block this caller. For an already assigned
+branch remediation from a different checkout, pass `--caller-branch <that-branch>`.
+Use only the branch this caller is remediating, not another holder's branch to
+bypass the guard. Continue only when the command succeeds with `held: false`.
+
 For a diverged branch or an in-progress merge, rebase, or cherry-pick, follow
 [Conflict resolution](references/conflict-resolution.md) first. Finish the operation
 and record the checked, committed, pushed resolution before the closing review.
