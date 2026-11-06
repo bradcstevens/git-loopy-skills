@@ -75,6 +75,21 @@ git-loopy runner holding one: a git-loopy run names the issue it bound in the ne
 directory another session is writing collides with it, and an `ended` session's uncommitted
 worktree is abandoned work to name, not free space.
 
+For each engineering target, run this skill's read-only holder command from
+this session's own checkout, retaining its caller identity rather than switching
+to a discovered holder's worktree:
+
+```bash
+python3 <this skill>/scripts/target-holders.py --target <ticket-or-PR>
+```
+
+It shares `plan`'s canonical target and reports closing pull requests, open bound
+runs, and live owners of head-branch worktrees. Drop targets with `held: true`
+from the candidate set and name their holders instead of recommending another
+implementation. Holders marked `own: true` belong to this checkout or branch and
+do not block its continuation. If the lookup fails, classify that target as
+blocked rather than treating it as unheld.
+
 This step is complete when a standalone request has a concrete outcome and its
 branch's required context, or every engineering candidate has current state and
 blocker information from its durable source, this run's scan is in the session log,

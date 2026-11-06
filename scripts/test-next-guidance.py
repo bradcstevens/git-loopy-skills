@@ -11,6 +11,26 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class NextGuidanceTests(unittest.TestCase):
+    def test_implement_checks_holders_after_fetch_and_next_excludes_held_candidates(self):
+        implement = (ROOT / "skills/implement/SKILL.md").read_text(encoding="utf-8")
+        guard = implement.split("## Check the target's holders", 1)[1].split(
+            "For a diverged branch", 1
+        )[0]
+        self.assertLess(implement.index("fetch it from the issue tracker"),
+                        implement.index("## Check the target's holders"))
+        for rule in (
+            "right after fetching the ticket", "before any write", "target-holders.py",
+            "`held: true`", "review or merge", "wait", "coordinate",
+            "`own: true`", "--caller-branch", "lookup fails", "caller's current checkout",
+        ):
+            self.assertIn(rule, guard)
+        refresh = (ROOT / "skills/next/SKILL.md").read_text(encoding="utf-8").split(
+            "## 1. Refresh the durable state", 1
+        )[1].split("## 2.", 1)[0]
+        for rule in ("target-holders.py", "`held: true`", "candidate set", "lookup fails",
+                     "this session's own checkout"):
+            self.assertIn(rule, refresh)
+
     def test_wayfinder_destinations_precede_the_generic_spec_gate(self):
         text = (ROOT / "skills/next/SKILL.md").read_text(encoding="utf-8")
         table = text.split("| Current state | Next route |", 1)[1].split(
