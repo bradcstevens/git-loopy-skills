@@ -1,9 +1,9 @@
 ---
 name: set-task-models
 description: Set the model, effort, and context of every Copilot built-in subagent and git-loopy task type from fresh model research, and enforce them.
-model: gpt-6-astra
+model: gpt-6.1-sol
 effort: medium
-context: 1050K
+context: 922K
 disable-model-invocation: true
 ---
 

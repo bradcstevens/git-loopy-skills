@@ -1,9 +1,9 @@
 ---
 name: wait-what
 description: "Stop. That last message did not land: re-pitch it."
-model: claude-sonnet-5.5
-effort: medium
-context: 200K
+model: gpt-6-astra
+effort: low
+context: 272K
 disable-model-invocation: false
 ---
 

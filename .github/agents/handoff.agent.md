@@ -1,11 +1,11 @@
 ---
 name: handoff
 description: Run the /handoff skill.
-model: claude-sonnet-5.5
+model: gpt-6.1-sol
 reasoning-effort: low
 metadata:
-  scorecard-context: "936K"
-  scorecard-context-tier: "long_context"
+  scorecard-context: "272K"
+  scorecard-context-tier: "default"
 ---
 
 <!-- model-scorecard: start -->
@@ -15,7 +15,7 @@ If the skill is not installed, read and follow [SKILL.md](../../skills/handoff/S
 For the recorded context, launch from the repository root with:
 
 ```bash
-copilot --agent handoff --model claude-sonnet-5.5 --reasoning-effort low --context long_context -i 'Invoke the /handoff skill.'
+copilot --agent handoff --model gpt-6.1-sol --reasoning-effort low --context default -i 'Invoke the /handoff skill.'
 ```
 
 Context metadata is advisory; selecting this agent alone does not set the context tier.

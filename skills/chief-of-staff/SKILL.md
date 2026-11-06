@@ -1,9 +1,9 @@
 ---
 name: chief-of-staff
 description: Pursue a long-running goal in a single session by co-ordinating subagents.
-model: claude-opus-5.5
+model: gpt-6-astra
 effort: medium
-context: 1M
+context: 272K
 disable-model-invocation: true
 ---
 

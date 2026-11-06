@@ -1,11 +1,11 @@
 ---
 name: teach
 description: Run the /teach skill.
-model: claude-sonnet-5.5
-reasoning-effort: medium
+model: gpt-6-astra
+reasoning-effort: low
 disable-model-invocation: true
 metadata:
-  scorecard-context: "200K"
+  scorecard-context: "272K"
   scorecard-context-tier: "default"
 ---
 
@@ -16,7 +16,7 @@ If the skill is not installed, read and follow [SKILL.md](../../skills/teach/SKI
 For the recorded context, launch from the repository root with:
 
 ```bash
-copilot --agent teach --model claude-sonnet-5.5 --reasoning-effort medium --context default -i 'Invoke the /teach skill.'
+copilot --agent teach --model gpt-6-astra --reasoning-effort low --context default -i 'Invoke the /teach skill.'
 ```
 
 Context metadata is advisory; selecting this agent alone does not set the context tier.

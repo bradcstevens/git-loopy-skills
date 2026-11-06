@@ -1,9 +1,9 @@
 ---
 name: push
 description: Publish current work by staging intended changes, committing, pushing, and opening a pull request when needed.
-model: claude-sonnet-5.5
+model: gpt-6.1-sol
 effort: low
-context: 200K
+context: 272K
 disable-model-invocation: false
 ---
 

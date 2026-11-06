@@ -1,9 +1,9 @@
 ---
 name: to-questionnaire
 description: Turn a decision you can't fully answer into a questionnaire for someone else to fill in.
-model: claude-opus-5.5
+model: gpt-6-astra
 effort: medium
-context: 1M
+context: 272K
 disable-model-invocation: true
 ---
 

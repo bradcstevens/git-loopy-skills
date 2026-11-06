@@ -1,9 +1,9 @@
 ---
 name: retro
 description: "Conduct a retrospective on a coding session."
-model: claude-opus-5.5
+model: gpt-6-astra
 effort: medium
-context: 1M
+context: 1050K
 disable-model-invocation: true
 ---
 

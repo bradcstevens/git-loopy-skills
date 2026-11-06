@@ -208,6 +208,14 @@ class Capture(unittest.TestCase):
         wrong = "Model A (high)\n1M\nVendor A\n12\n$1.00\n5\n1.00\n2.00\n"
         self.assertEqual(len(capture.cross_check(self.MODELS, wrong)["conflicts"]), 1)
 
+    def test_cross_check_reads_time_per_task_and_first_answer_columns(self):
+        current = {"shortName": "Model A (xhigh)", "intelligenceIndex": 55.31, "intelligenceIndexCostPerTask": 3.6589,
+                   "intelligenceIndexTimePerTask": 622.64, "timeToFirstAnswerToken": 124.0888}
+        seen = "Model A (xhigh)\n1M\nVendor A\n55\n$3.66\n10.4\n124.09\nModel\n"
+        self.assertEqual(capture.cross_check([current], seen)["matched"], ["Model A (xhigh)"])
+        wrong = "Model A (xhigh)\n1M\nVendor A\n55\n$3.66\n99.9\n1.00\nModel\n"
+        self.assertEqual(len(capture.cross_check([current], wrong)["conflicts"]), 1)
+
 
 class Scoring(unittest.TestCase):
     def pool(self, rows, models):
@@ -219,6 +227,14 @@ class Scoring(unittest.TestCase):
         pool = self.pool(rows, [("alpha-1", ["low", "high"], "enabled"), ("beta-2", ["low"], None),
                                 ("gamma-3", ["high"], "enabled"), ("delta-4", ["high"], "disabled")])
         self.assertEqual(sorted((c["id"], c["effort"]) for c in pool), [("alpha-1", "high"), ("beta-2", "low")])
+
+    def test_build_candidates_reads_the_current_dataset_shape(self):
+        current = {"shortName": "Alpha 1 (high)", "deprecated": False, "modelCreatorName": "Vendor A",
+                   "intelligenceIndex": 50, "timeToFirstAnswerToken": 7.0, "timeToFirstToken": 7.0, "outputSpeed": 50.0,
+                   "scores": {"terminalbench-4-0": 0.6, "artificial-analysis-long-context-reasoning": 0.8}}
+        [candidate] = self.pool([current], [("alpha-1", ["high"], "enabled")])
+        self.assertEqual((candidate["first_answer"], candidate["throughput"], candidate["end_to_end"]), (7.0, 50.0, 17.0))
+        self.assertEqual(candidate["benchmarks"], {"terminalBench40": 0.6, "lcr": 0.8})
 
     def test_in_band_beats_below_floor_at_equal_speed(self):
         pool = self.pool([row("Alpha 1 (high)", 48), row("Beta 2 (high)", 40)],
@@ -322,7 +338,7 @@ class ProfilesAndRender(unittest.TestCase):
         builtins = {f"copilot:{name}" for name in measure.BUILTINS}
         task_types = {f"git-loopy:{key}" for key in ("planning", "review", "implementation", "test", "docs", "chore", "bugfix")}
         self.assertEqual(set(roles), builtins | task_types)
-        self.assertEqual(PROFILES["fields"][0]["id"], "success")
+        self.assertEqual([field["id"] for field in PROFILES["fields"][:2]], ["first_answer", "success"])
         for role_id, role in roles.items():
             self.assertLess(role["band"][0], role["band"][1], role_id)
             self.assertIn(role["harness"], {"copilot-cli", "git-loopy"}, role_id)

@@ -1,9 +1,9 @@
 ---
 name: model-scorecard
 description: Score Copilot models 1–100 for every SDLC task type, Copilot built-in subagent and git-loopy task type from the live Artificial Analysis leaderboard, and rewrite the scorecard reference.
-model: claude-sonnet-5.5
+model: gpt-6.1-sol
 effort: low
-context: 200K
+context: 272K
 disable-model-invocation: true
 ---
 

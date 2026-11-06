@@ -1,11 +1,11 @@
 ---
 name: design-control-loop
 description: Run the /design-control-loop skill.
-model: claude-opus-5.5
+model: gpt-6-astra
 reasoning-effort: medium
 metadata:
-  scorecard-context: "1M"
-  scorecard-context-tier: "long_context"
+  scorecard-context: "272K"
+  scorecard-context-tier: "default"
 ---
 
 <!-- model-scorecard: start -->
@@ -15,7 +15,7 @@ If the skill is not installed, read and follow [SKILL.md](../../skills/design-co
 For the recorded context, launch from the repository root with:
 
 ```bash
-copilot --agent design-control-loop --model claude-opus-5.5 --reasoning-effort medium --context long_context -i 'Invoke the /design-control-loop skill.'
+copilot --agent design-control-loop --model gpt-6-astra --reasoning-effort medium --context default -i 'Invoke the /design-control-loop skill.'
 ```
 
 Context metadata is advisory; selecting this agent alone does not set the context tier.

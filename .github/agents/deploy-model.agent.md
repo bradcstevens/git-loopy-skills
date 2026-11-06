@@ -1,10 +1,10 @@
 ---
 name: deploy-model
 description: Run the /deploy-model skill.
-model: claude-sonnet-5.5
+model: gpt-6.1-sol
 reasoning-effort: low
 metadata:
-  scorecard-context: "200K"
+  scorecard-context: "272K"
   scorecard-context-tier: "default"
 ---
 
@@ -15,7 +15,7 @@ If the skill is not installed, read and follow [SKILL.md](../../skills/microsoft
 For the recorded context, launch from the repository root with:
 
 ```bash
-copilot --agent deploy-model --model claude-sonnet-5.5 --reasoning-effort low --context default -i 'Invoke the /deploy-model skill.'
+copilot --agent deploy-model --model gpt-6.1-sol --reasoning-effort low --context default -i 'Invoke the /deploy-model skill.'
 ```
 
 Context metadata is advisory; selecting this agent alone does not set the context tier.

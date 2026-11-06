@@ -1,9 +1,9 @@
 ---
 name: loop-me
 description: Grill me about specs for the workflows I want to build, within this workspace.
-model: claude-opus-5.5
+model: gpt-6-astra
 effort: medium
-context: 1M
+context: 272K
 disable-model-invocation: true
 argument-hint: "A workflow to design, or nothing to go find one"
 ---

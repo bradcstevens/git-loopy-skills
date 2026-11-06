@@ -1,9 +1,9 @@
 ---
 name: to-handoff
 description: Compact the current conversation into a handoff document for another agent to pick up.
-model: claude-sonnet-5.5
-effort: medium
-context: 200K
+model: gpt-6-astra
+effort: low
+context: 272K
 argument-hint: "What will the next session be used for?"
 disable-model-invocation: true
 ---

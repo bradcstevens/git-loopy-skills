@@ -2,7 +2,7 @@
 name: code-review
 description: Run the /code-review skill.
 model: claude-opus-5.5
-reasoning-effort: medium
+reasoning-effort: high
 metadata:
   scorecard-context: "200K"
   scorecard-context-tier: "default"
@@ -15,7 +15,7 @@ If the skill is not installed, read and follow [SKILL.md](../../skills/code-revi
 For the recorded context, launch from the repository root with:
 
 ```bash
-copilot --agent code-review --model claude-opus-5.5 --reasoning-effort medium --context default -i 'Invoke the /code-review skill.'
+copilot --agent code-review --model claude-opus-5.5 --reasoning-effort high --context default -i 'Invoke the /code-review skill.'
 ```
 
 Context metadata is advisory; selecting this agent alone does not set the context tier.

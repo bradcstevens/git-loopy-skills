@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
   "fields": [
+    {"id": "first_answer", "label": "Time to first answer token", "source": "timeToFirstAnswerToken (thinking + prompt processing)"},
     {"id": "success", "label": "Task-fit success", "source": "intelligenceIndex inside the role's band, times the role's benchmarks"},
-    {"id": "first_answer", "label": "Time to first answer token", "source": "medianTimeToFirstAnswerTokenSeconds (thinking + prompt processing)"},
-    {"id": "end_to_end", "label": "End-to-end time", "source": "medianEndToEndResponseTimeSeconds (first answer token + 500 tokens)"},
+    {"id": "end_to_end", "label": "End-to-end time", "source": "first answer token + 500 tokens at outputSpeed"},
     {"id": "token_appetite", "label": "Token appetite", "source": "intelligenceIndexCostPerTask / price1mOutputTokens (tokens spent per task)"},
-    {"id": "consistency", "label": "Consistency", "source": "p95/p05 spread of time to first token and of output tokens/s"},
-    {"id": "throughput", "label": "Output tokens/s", "source": "medianOutputTokensPerSecond"}
+    {"id": "consistency", "label": "Consistency", "source": "p95/p05 spread of time to first token and of output tokens/s; the current dataset omits percentiles, so it scores 0.5"},
+    {"id": "throughput", "label": "Output tokens/s", "source": "outputSpeed"}
   ],
   "roles": {
     "copilot:explore": {

@@ -1,9 +1,9 @@
 ---
 name: release-assessment
 description: Read an advisory release assessment in Copilot App and ask follow-up questions about its review packet.
-model: claude-sonnet-5.5
+model: gpt-6.1-sol
 effort: low
-context: 200K
+context: 272K
 disable-model-invocation: true
 ---
 

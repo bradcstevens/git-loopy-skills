@@ -1,11 +1,11 @@
 ---
 name: grill-with-docs
 description: Run the /grill-with-docs skill.
-model: claude-opus-5.5
+model: gpt-6-astra
 reasoning-effort: medium
 disable-model-invocation: true
 metadata:
-  scorecard-context: "1M"
+  scorecard-context: "1050K"
   scorecard-context-tier: "long_context"
 ---
 
@@ -16,7 +16,7 @@ If the skill is not installed, read and follow [SKILL.md](../../skills/grill-wit
 For the recorded context, launch from the repository root with:
 
 ```bash
-copilot --agent grill-with-docs --model claude-opus-5.5 --reasoning-effort medium --context long_context -i 'Invoke the /grill-with-docs skill.'
+copilot --agent grill-with-docs --model gpt-6-astra --reasoning-effort medium --context long_context -i 'Invoke the /grill-with-docs skill.'
 ```
 
 Context metadata is advisory; selecting this agent alone does not set the context tier.

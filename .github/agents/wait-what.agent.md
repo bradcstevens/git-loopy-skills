@@ -1,11 +1,11 @@
 ---
 name: wait-what
 description: Run the /wait-what skill.
-model: claude-sonnet-5.5
-reasoning-effort: medium
+model: gpt-6-astra
+reasoning-effort: low
 disable-model-invocation: false
 metadata:
-  scorecard-context: "200K"
+  scorecard-context: "272K"
   scorecard-context-tier: "default"
 ---
 
@@ -16,7 +16,7 @@ If the skill is not installed, read and follow [SKILL.md](../../skills/wait-what
 For the recorded context, launch from the repository root with:
 
 ```bash
-copilot --agent wait-what --model claude-sonnet-5.5 --reasoning-effort medium --context default -i 'Invoke the /wait-what skill.'
+copilot --agent wait-what --model gpt-6-astra --reasoning-effort low --context default -i 'Invoke the /wait-what skill.'
 ```
 
 Context metadata is advisory; selecting this agent alone does not set the context tier.

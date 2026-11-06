@@ -1,10 +1,10 @@
 ---
 name: preset
 description: Run the /preset skill.
-model: claude-sonnet-5.5
+model: gpt-6.1-sol
 reasoning-effort: low
 metadata:
-  scorecard-context: "200K"
+  scorecard-context: "272K"
   scorecard-context-tier: "default"
 ---
 
@@ -15,7 +15,7 @@ If the skill is not installed, read and follow [SKILL.md](../../skills/microsoft
 For the recorded context, launch from the repository root with:
 
 ```bash
-copilot --agent preset --model claude-sonnet-5.5 --reasoning-effort low --context default -i 'Invoke the /preset skill.'
+copilot --agent preset --model gpt-6.1-sol --reasoning-effort low --context default -i 'Invoke the /preset skill.'
 ```
 
 Context metadata is advisory; selecting this agent alone does not set the context tier.

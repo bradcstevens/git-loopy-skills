@@ -1,12 +1,12 @@
 ---
 name: to-questionnaire
 description: Run the /to-questionnaire skill.
-model: claude-opus-5.5
+model: gpt-6-astra
 reasoning-effort: medium
 disable-model-invocation: true
 metadata:
-  scorecard-context: "1M"
-  scorecard-context-tier: "long_context"
+  scorecard-context: "272K"
+  scorecard-context-tier: "default"
 ---
 
 <!-- model-scorecard: start -->
@@ -16,7 +16,7 @@ If the skill is not installed, read and follow [SKILL.md](../../skills/to-questi
 For the recorded context, launch from the repository root with:
 
 ```bash
-copilot --agent to-questionnaire --model claude-opus-5.5 --reasoning-effort medium --context long_context -i 'Invoke the /to-questionnaire skill.'
+copilot --agent to-questionnaire --model gpt-6-astra --reasoning-effort medium --context default -i 'Invoke the /to-questionnaire skill.'
 ```
 
 Context metadata is advisory; selecting this agent alone does not set the context tier.

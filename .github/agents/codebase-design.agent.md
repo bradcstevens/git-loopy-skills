@@ -1,11 +1,11 @@
 ---
 name: codebase-design
 description: Run the /codebase-design skill.
-model: claude-opus-5.5
+model: gpt-6-astra
 reasoning-effort: medium
 metadata:
-  scorecard-context: "1M"
-  scorecard-context-tier: "long_context"
+  scorecard-context: "272K"
+  scorecard-context-tier: "default"
 ---
 
 <!-- model-scorecard: start -->
@@ -15,7 +15,7 @@ If the skill is not installed, read and follow [SKILL.md](../../skills/codebase-
 For the recorded context, launch from the repository root with:
 
 ```bash
-copilot --agent codebase-design --model claude-opus-5.5 --reasoning-effort medium --context long_context -i 'Invoke the /codebase-design skill.'
+copilot --agent codebase-design --model gpt-6-astra --reasoning-effort medium --context default -i 'Invoke the /codebase-design skill.'
 ```
 
 Context metadata is advisory; selecting this agent alone does not set the context tier.

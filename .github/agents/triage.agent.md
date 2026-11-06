@@ -1,11 +1,11 @@
 ---
 name: triage
 description: Run the /triage skill.
-model: claude-opus-5.5
+model: gpt-6-astra
 reasoning-effort: medium
 disable-model-invocation: true
 metadata:
-  scorecard-context: "1M"
+  scorecard-context: "1050K"
   scorecard-context-tier: "long_context"
 ---
 
@@ -16,7 +16,7 @@ If the skill is not installed, read and follow [SKILL.md](../../skills/triage/SK
 For the recorded context, launch from the repository root with:
 
 ```bash
-copilot --agent triage --model claude-opus-5.5 --reasoning-effort medium --context long_context -i 'Invoke the /triage skill.'
+copilot --agent triage --model gpt-6-astra --reasoning-effort medium --context long_context -i 'Invoke the /triage skill.'
 ```
 
 Context metadata is advisory; selecting this agent alone does not set the context tier.

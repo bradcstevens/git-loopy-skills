@@ -29,6 +29,23 @@ BENCHMARKS = (
     "terminalBench40", "terminalbenchHard", "scicode", "lcr", "hle", "gpqa", "critpt",
     "gdpvalNormalized", "ifbench", "omniscienceNonHallucination", "tau2", "mmmuPro",
 )
+# The dataset's current benchmark keys, inside each row's ``scores`` map; older captures
+# carried them as flat camelCase fields, which still take precedence.
+_SCORE_KEYS = {
+    "terminalBench40": "terminalbench-4-0",
+    "terminalbenchHard": "terminalbench-hard",
+    "scicode": "scicode",
+    "lcr": "artificial-analysis-long-context-reasoning",
+    "hle": "humanitys-last-exam",
+    "gpqa": "gpqa-diamond",
+    "critpt": "critpt",
+    "gdpvalNormalized": "gdpval-aa-normalized",
+    "ifbench": "ifbench",
+    "omniscienceNonHallucination": "omniscience-non-hallucination",
+    "tau2": "tau2-bench",
+    "mmmuPro": "mmmu-pro",
+}
+END_TO_END_TOKENS = 500
 MIN_SAMPLES = 5
 FIELD_IDS = {"success", "first_answer", "end_to_end", "token_appetite", "consistency", "throughput"}
 DEFAULT_COMPACTION_RATIO = 0.8
@@ -72,6 +89,19 @@ def _spread(row: dict) -> float | None:
     return statistics.mean(logs) if logs else None
 
 
+def _metric(row: dict, *keys: str) -> float | None:
+    """The first present, non-zero value among ``keys``: the dataset renames fields across captures."""
+    for key in keys:
+        if row.get(key):
+            return row[key]
+    return None
+
+
+def _benchmark(row: dict, name: str) -> float | None:
+    value = row.get(name)
+    return (row.get("scores") or {}).get(_SCORE_KEYS[name]) if value is None else value
+
+
 def build_candidates(rows: list[dict], listing: dict) -> list[dict]:
     """Leaderboard variants the harness can select, one per (model id, effort)."""
     models = {model["id"]: model for model in listing["models"] if model.get("policy") != "disabled"}
@@ -91,6 +121,14 @@ def build_candidates(rows: list[dict], listing: dict) -> list[dict]:
         if not model["efforts"] and effort is not None:
             continue
         cost, out_price = row.get("intelligenceIndexCostPerTask"), row.get("price1mOutputTokens")
+        first_answer = _metric(
+            row, "medianTimeToFirstAnswerTokenSeconds", "timeToFirstAnswerToken",
+            "medianTimeToFirstTokenSeconds", "timeToFirstToken",
+        )
+        throughput = _metric(row, "medianOutputTokensPerSecond", "outputSpeed")
+        end_to_end = _metric(row, "medianEndToEndResponseTimeSeconds")
+        if end_to_end is None and first_answer and throughput:
+            end_to_end = first_answer + END_TO_END_TOKENS / throughput
         candidate = {
             "id": model["id"],
             "effort": effort,
@@ -98,13 +136,12 @@ def build_candidates(rows: list[dict], listing: dict) -> list[dict]:
             "aa": row.get("shortName"),
             "ii": row["intelligenceIndex"],
             "ii_estimated": bool(row.get("intelligenceIndexIsEstimated")),
-            "first_answer": row.get("medianTimeToFirstAnswerTokenSeconds")
-            or row.get("medianTimeToFirstTokenSeconds"),
-            "end_to_end": row.get("medianEndToEndResponseTimeSeconds"),
+            "first_answer": first_answer,
+            "end_to_end": end_to_end,
             "token_appetite": cost / out_price * 1e6 if cost and out_price else None,
             "consistency": _spread(row),
-            "throughput": row.get("medianOutputTokensPerSecond") or None,
-            "benchmarks": {name: row.get(name) for name in BENCHMARKS if row.get(name) is not None},
+            "throughput": throughput,
+            "benchmarks": {name: value for name in BENCHMARKS if (value := _benchmark(row, name)) is not None},
             "default_cap": model["default_cap"],
             "long_cap": model["long_cap"],
         }

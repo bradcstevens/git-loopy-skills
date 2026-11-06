@@ -1,10 +1,10 @@
 ---
 name: research
 description: Run the /research skill.
-model: gpt-6-astra
+model: gpt-6.1-sol
 reasoning-effort: medium
 metadata:
-  scorecard-context: "1050K"
+  scorecard-context: "922K"
   scorecard-context-tier: "long_context"
 ---
 
@@ -15,7 +15,7 @@ If the skill is not installed, read and follow [SKILL.md](../../skills/research/
 For the recorded context, launch from the repository root with:
 
 ```bash
-copilot --agent research --model gpt-6-astra --reasoning-effort medium --context long_context -i 'Invoke the /research skill.'
+copilot --agent research --model gpt-6.1-sol --reasoning-effort medium --context long_context -i 'Invoke the /research skill.'
 ```
 
 Context metadata is advisory; selecting this agent alone does not set the context tier.

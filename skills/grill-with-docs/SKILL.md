@@ -1,9 +1,9 @@
 ---
 name: grill-with-docs
 description: A relentless interview to sharpen a plan or design, which also creates docs (ADR's and glossary) as we go.
-model: claude-opus-5.5
+model: gpt-6-astra
 effort: medium
-context: 1M
+context: 1050K
 disable-model-invocation: true
 ---
 

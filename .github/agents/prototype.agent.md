@@ -1,7 +1,7 @@
 ---
 name: prototype
 description: Run the /prototype skill.
-model: gpt-6-astra
+model: gpt-6.1-sol
 reasoning-effort: medium
 metadata:
   scorecard-context: "272K"
@@ -15,7 +15,7 @@ If the skill is not installed, read and follow [SKILL.md](../../skills/prototype
 For the recorded context, launch from the repository root with:
 
 ```bash
-copilot --agent prototype --model gpt-6-astra --reasoning-effort medium --context default -i 'Invoke the /prototype skill.'
+copilot --agent prototype --model gpt-6.1-sol --reasoning-effort medium --context default -i 'Invoke the /prototype skill.'
 ```
 
 Context metadata is advisory; selecting this agent alone does not set the context tier.

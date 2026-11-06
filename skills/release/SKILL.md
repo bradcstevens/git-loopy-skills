@@ -1,9 +1,9 @@
 ---
 name: release
 description: Release completed work at the next patch version, or the version you specify.
-model: claude-sonnet-5.5
+model: gpt-6.1-sol
 effort: low
-context: 200K
+context: 272K
 disable-model-invocation: true
 ---
 
