@@ -65,11 +65,16 @@ Copilot CLI sessions with this skill's own script:
 python3 <this skill>/scripts/sessions.py scan
 ```
 
-It lists each worktree (`git worktree list`) with the live sessions working in it — session id,
-name, branch, and any chain targets the session holds — and appends the scan to the **session
-log**, `.git-loopy/next/sessions.jsonl` at the repository root. Each session is marked `new` or
-`continuing` against the previous `/next` run, and sessions gone since then come back as
-`ended`; `self: true` marks this one. Then read the uncommitted files in each worktree and any
+Each `worktrees[]` entry lists session ids in `sessions`. Look those ids up by `session_id`
+in the top-level `sessions` list for `name`, `pid`, `branch`, `self`, `chain_targets` and
+`status`. A session appears at its launch worktree and in every worktree whose owner marker
+matches its live pid and UTC process start time; its `owned_worktrees` lists the latter.
+The current `inuse` lock identifies the session when a process has hosted successive sessions.
+The scan appends a line with `sessions`, `new` and `ended` to the **session log**,
+`.git-loopy/next/sessions.jsonl` at the repository root; that line has no `worktrees`.
+Each reported session is marked `new` or `continuing` against the previous scan, and sessions
+gone since then come back as `ended`; `self: true` marks this one.
+Then read the uncommitted files in each worktree and any
 git-loopy runner holding one: a git-loopy run names the issue it bound in the newest
 `.git-loopy/logs/` file and works in the worktree it was started from. Work recommended into a
 directory another session is writing collides with it, and an `ended` session's uncommitted

@@ -79,6 +79,81 @@ class SessionScanTest(unittest.TestCase):
         with open(os.path.join(self.repo, ".git-loopy", "next", "sessions.jsonl"), encoding="utf-8") as log:
             return [json.loads(line) for line in log]
 
+    def owner(self, worktree: str, pid: int, start: str = "") -> None:
+        if not start:
+            start = subprocess.check_output(
+                ["ps", "-o", "lstart=", "-p", str(pid)],
+                text=True, env=dict(os.environ, TZ="UTC"),
+            ).strip()
+        marker = os.path.join(worktree, ".git-loopy", "worktree-owner")
+        os.makedirs(os.path.dirname(marker), exist_ok=True)
+        with open(marker, "w", encoding="utf-8") as target:
+            target.write(f"{pid}\t{start}\n")
+
+    def test_places_current_session_in_every_owned_worktree_and_keeps_launch_fields(self) -> None:
+        pid = self.copilot.pid
+        self.session("before-clear", self.repo, pid)
+        os.remove(os.path.join(self.state, "before-clear", f"inuse.{pid}.lock"))
+        self.session("current", self.repo, pid)
+        self.owner(self.linked, pid)
+        self.owner(self.nested, pid)
+
+        report = self.scan(self_id="current")
+
+        self.assertEqual(len(report["sessions"]), 1)
+        session = report["sessions"][0]
+        self.assertEqual(session["session_id"], "current")
+        self.assertEqual((session["worktree"], session["branch"]), (self.repo, "main"))
+        self.assertEqual(set(session["owned_worktrees"]), {self.linked, self.nested})
+        self.assertTrue(session["self"])
+        self.assertEqual(session["status"], "new")
+        for worktree in report["worktrees"]:
+            self.assertEqual(worktree["sessions"], ["current"])
+        record = self.log_lines()[0]
+        self.assertNotIn("worktrees", record)
+        self.assertEqual(record["new"], ["current"])
+
+    def test_includes_owner_that_launched_outside_this_repository(self) -> None:
+        self.session("elsewhere", self.other, self.copilot.pid)
+        self.owner(self.linked, self.copilot.pid)
+
+        report = self.scan("--no-record")
+
+        self.assertEqual(len(report["sessions"]), 1)
+        session = report["sessions"][0]
+        self.assertEqual(session["session_id"], "elsewhere")
+        self.assertEqual((session["cwd"], session["git_root"]), (self.other, self.other))
+        self.assertIsNone(session["worktree"])
+        self.assertIsNone(session["branch"])
+        self.assertEqual(session["owned_worktrees"], [self.linked])
+        held = {w["path"]: w["sessions"] for w in report["worktrees"]}
+        self.assertEqual(held, {self.repo: [], self.linked: ["elsewhere"], self.nested: []})
+
+    def test_dead_reused_or_malformed_owner_markers_do_not_place_sessions(self) -> None:
+        pid = self.copilot.pid
+        self.session("current", self.repo, pid)
+        old_start = "Mon Jan 01 00:00:00 2001"
+        markers = (
+            (self.dead_pid(), old_start),
+            (pid, old_start),
+            (pid, "not a process start"),
+            (pid, " "),
+            (0, old_start),
+            ("not-a-pid", old_start),
+        )
+        for owner_pid, start in markers:
+            with self.subTest(pid=owner_pid, start=start):
+                self.owner(self.linked, owner_pid, start)
+
+                report = self.scan("--no-record")
+
+                session = report["sessions"][0]
+                self.assertEqual(session["owned_worktrees"], [])
+                self.assertEqual((session["worktree"], session["branch"]), (self.repo, "main"))
+                held = {w["path"]: w["sessions"] for w in report["worktrees"]}
+                self.assertEqual(held[self.repo], ["current"])
+                self.assertEqual(held[self.linked], [])
+
     def test_reports_only_live_copilot_sessions_in_this_repository(self) -> None:
         pid = self.copilot.pid
         self.session("main-s", self.repo, pid)
@@ -98,6 +173,7 @@ class SessionScanTest(unittest.TestCase):
         self.assertTrue(by_id["main-s"]["self"])
         self.assertFalse(by_id["linked-s"]["self"])
         self.assertEqual({s["status"] for s in report["sessions"]}, {"new"})
+        self.assertTrue(all(s["owned_worktrees"] == [] for s in report["sessions"]))
         held = {w["path"]: w["sessions"] for w in report["worktrees"]}
         self.assertEqual(held[self.linked], ["linked-s"])
 
