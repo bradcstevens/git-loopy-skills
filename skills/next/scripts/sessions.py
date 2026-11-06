@@ -8,6 +8,7 @@ While a process holds the session it writes ``inuse.<pid>.lock``; the session
 is live when that process still runs and is a ``copilot`` process (a reused
 PID running anything else is not). ``workspace.yaml`` records the directory
 the session started in, which places it in one of the repository's worktrees.
+Worktree owner markers also place it in every worktree its live process owns.
 
 Each scan prints JSON to stdout and, unless ``--no-record`` is given, appends
 one line to the /next session log (default
@@ -27,6 +28,9 @@ import re
 import subprocess
 import sys
 from typing import Dict, List, Optional, Tuple
+
+sys.dont_write_bytecode = True
+from chain_ledger import parse_process_start, process_start
 
 LOCK_PATTERN = re.compile(r"^inuse\.(\d+)\.lock$")
 COPILOT_EXECUTABLE = re.compile(r"^copilot(?:$|[-.])", re.IGNORECASE)
@@ -155,6 +159,29 @@ def place(path: Optional[str], worktrees: List[Dict[str, Optional[str]]]) -> Opt
     return best
 
 
+def owned_worktrees(
+    worktrees: List[Dict[str, Optional[str]]], processes: Dict[int, str]
+) -> Dict[int, List[str]]:
+    owned: Dict[int, List[str]] = {}
+    for worktree in worktrees:
+        path = worktree["path"]
+        if not path:
+            continue
+        try:
+            with open(os.path.join(path, ".git-loopy", "worktree-owner"), encoding="utf-8") as marker:
+                pid_text, start = marker.read().rstrip("\n").split("\t", 1)
+            pid = int(pid_text)
+            recorded = parse_process_start(start)
+            if pid not in processes or recorded is None:
+                continue
+            current = parse_process_start(process_start(pid))
+        except (OSError, ValueError, subprocess.SubprocessError):
+            continue
+        if current == recorded:
+            owned.setdefault(pid, []).append(path)
+    return owned
+
+
 def open_ledger_rows(ledger: str) -> List[Dict[str, object]]:
     rows = []
     try:
@@ -205,13 +232,16 @@ def scan(repo: str, state_dir: str, log_path: Optional[str], record: bool) -> Tu
     self_id = os.environ.get("COPILOT_AGENT_SESSION_ID") or None
 
     ledger_rows = open_ledger_rows(os.path.join(root, ".git-loopy", "subagents.jsonl"))
+    processes = copilot_processes()
+    owned = owned_worktrees(worktrees, processes)
     in_repo = []
-    for session in live_sessions(state_dir, copilot_processes()):
+    for session in live_sessions(state_dir, processes):
         worktree = place(session["cwd"], worktrees) or place(session["git_root"], worktrees)
-        if worktree is None:
+        session["owned_worktrees"] = owned.get(session["pid"], [])
+        if worktree is None and not session["owned_worktrees"]:
             continue
-        session["worktree"] = worktree["path"]
-        session["branch"] = worktree["branch"]
+        session["worktree"] = worktree["path"] if worktree else None
+        session["branch"] = worktree["branch"] if worktree else None
         session["self"] = session["session_id"] == self_id
         session["chain_targets"] = sorted(
             {str(row.get("target")) for row in ledger_rows if row.get("session_id") == session["session_id"]}
@@ -238,7 +268,10 @@ def scan(repo: str, state_dir: str, log_path: Optional[str], record: bool) -> Tu
             {
                 "path": w["path"],
                 "branch": w["branch"],
-                "sessions": [s["session_id"] for s in in_repo if s["worktree"] == w["path"]],
+                "sessions": [
+                    s["session_id"] for s in in_repo
+                    if s["worktree"] == w["path"] or w["path"] in s["owned_worktrees"]
+                ],
             }
             for w in worktrees
         ],

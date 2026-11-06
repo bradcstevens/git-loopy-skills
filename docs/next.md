@@ -113,9 +113,11 @@ Like `/implement-spec` and `/retro`, `/to-handoff` and `/chief-of-staff` are
 
 ## The sessions it tracks
 
-Before ranking anything, `next` runs `scripts/sessions.py scan` to see which GitHub Copilot CLI sessions are live in the repository. A session counts as live when its `~/.copilot/session-state/<id>/inuse.<pid>.lock` names a running `copilot` process. The session's `workspace.yaml` places it in the main checkout or in one of its worktrees. The scan reports each worktree with the sessions working in it, along with their names, branches, and any chain targets they hold. An action another session already holds is left to that session.
+Before ranking anything, `next` runs `scripts/sessions.py scan` to see which GitHub Copilot CLI sessions are live in the repository. A session counts as live when its `~/.copilot/session-state/<id>/inuse.<pid>.lock` names a running `copilot` process. Its `workspace.yaml` places it at its launch worktree. It also appears in every worktree whose `.git-loopy/worktree-owner` marker matches that pid and its UTC process start time. The current `inuse` lock identifies the session when one process has hosted successive sessions.
 
-Each run appends its scan to the **session log**, `.git-loopy/next/sessions.jsonl` at the repository root. The `.git-loopy/` runtime directory is gitignored and shared by every worktree. Each line records when the scan ran, which session invoked `/next`, and the sessions it saw. The next scan compares against that line, so it reports each session as `new` or `continuing` and lists the ones that have `ended` since. Pass `--no-record` to look without logging.
+Each `worktrees[]` entry lists session ids in `sessions`; look them up by `session_id` in the top-level `sessions` list for `name`, `pid`, `branch`, `self`, `chain_targets` and `status`. A session's `owned_worktrees` lists its marker-confirmed worktrees. Its existing `worktree` and `branch` fields still describe its launch placement, or are null if it launched outside this repository. An action another session already holds is left to that session.
+
+Each run appends its scan to the **session log**, `.git-loopy/next/sessions.jsonl` at the repository root. The `.git-loopy/` runtime directory is gitignored and shared by every worktree. Each line records when the scan ran, which session invoked `/next`, and `sessions`, `new` and `ended`; it has no `worktrees`. The next scan compares against that line, so it reports each session as `new` or `continuing` and lists the ones that have `ended` since. Pass `--no-record` to look without logging.
 
 ## The runtime it names
 
