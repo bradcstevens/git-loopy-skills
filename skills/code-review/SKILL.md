@@ -1,9 +1,6 @@
 ---
 name: code-review
 description: "Review the changes since a fixed point (commit, branch, tag, or merge-base) along two axes: Standards (does the code follow this repo's documented coding standards?) and Spec (does the code match what the originating issue/spec asked for?). Runs both reviews in parallel sub-agents and reports them side by side. Use when the user wants to review a branch, a PR, work-in-progress changes, or asks to \"review since X\"."
-model: claude-opus-5.5
-effort: high
-context: 200K
 ---
 
 Two-axis review of the diff between `HEAD` and a fixed point the user supplies:
@@ -11,48 +8,17 @@ Two-axis review of the diff between `HEAD` and a fixed point the user supplies:
 - **Standards**: does the code conform to this repo's documented coding standards?
 - **Spec**: does the code faithfully implement the originating issue / spec?
 
-Both axes run as **parallel sub-agents** so they don't pollute each other's context, then this skill aggregates their findings.
+Both axes run as **parallel sub-agents** so they don't pollute each other's context, then this skill aggregates their findings. Start every sub-agent with a fresh context window.
 
 The issue tracker should have been provided to you. If not, tell the user to run `/setup-git-loopy-skills`.
 
-If the code refers to any Microsoft technologies:
-
-- Call the Skill tool with "microsoft-code-reference" to check API usage.
-- Call the Skill tool with "microsoft-docs" to check the documented behavior.
-
 ## Process
-
-### Access boundary
-
-When the caller makes this review read-only, carry that boundary into both
-sub-agent briefs: inspect revisions with `git show` and `git diff`; never check
-out, switch, reset, edit files, move refs, push, or write to the tracker. Run
-feedback loops only within the caller's permitted access.
-
-If writing is unavailable, return the findings and evidence to the caller in
-the requested form instead of posting them. Include the exact reviewed head,
-fixed point, checks and their results, and separate Standards and Spec findings.
-The caller owns recording and publication. End with that answer: the recording
-and successor steps below apply only to a review with write authority.
 
 ### 1. Pin the fixed point
 
-Immediately after entering the review, capture the exact candidate being reviewed:
-
-```bash
-reviewed_head="$(git rev-parse HEAD)"
-```
-
-If the review request names a candidate head, resolve that revision instead of
-`HEAD`, without checking it out. That exact head is the review target.
-
-Keep this value unchanged for the whole review. Use it, rather than a later `HEAD`, for the
-diff (`git diff <fixed-point>..."$reviewed_head"`) and commit list
-(`git log <fixed-point>.."$reviewed_head"`) and for the evidence record.
-
 Whatever the user said is the fixed point (a commit SHA, branch name, tag, `main`, `HEAD~5`, etc.). If they didn't specify one, ask for it.
 
-Capture the diff command once: `git diff <fixed-point>..."$reviewed_head"` (three-dot, so the comparison is against the merge-base). Also note the list of commits via `git log <fixed-point>.."$reviewed_head" --oneline`.
+Capture the diff command once: `git diff <fixed-point>...HEAD` (three-dot, so the comparison is against the merge-base). Also note the list of commits via `git log <fixed-point>..HEAD --oneline`.
 
 Before going further, confirm the fixed point resolves (`git rev-parse <fixed-point>`) and the diff is non-empty. A bad ref or empty diff should fail here, not inside two parallel sub-agents.
 
@@ -121,49 +87,3 @@ A change can pass one axis and fail the other:
 - Code that does exactly what the issue asked but breaks the project's conventions → **Spec pass, Standards fail.**
 
 Reporting them separately stops one axis from masking the other.
-
-## Record the review
-
-**Write-capable reviews only.** When writing is unavailable, return the evidence
-as described under **Access boundary** and stop without invoking a successor.
-
-A review of a durable head is a durable workflow transition, and this skill owns it. Record
-it so the next session, human or agent, reads the same answer you did.
-
-**Only record once the review's own evidence is durable**, and always about **one exact
-head**:
-
-1. Before publishing any evidence, refuse to publish if the worktree moved:
-   `current_head="$(git rev-parse HEAD)"`; it must equal the captured `reviewed_head`.
-   Also confirm the durable PR head still equals `reviewed_head`:
-   `gh pr view <pr-number> --json headRefOid --jq .headRefOid`. A mismatch means the review
-   is stale and requires a fresh review.
-2. Resolve `reviewed_head` and confirm it is durable
-   (`gh api repos/<owner>/<repo>/commits/<candidate-head> --jq .sha`). A head only your
-   worktree can see is not reviewable, and its review is not recordable.
-3. Post the findings as one durable comment on the ticket when the review found anything
-   (`gh issue comment <ticket-issue> --body-file <report>`). The HTML report is a session
-   artifact; the findings a later session remediates from must be on the tracker.
-4. When the review finds no blocking defects, post one short evidence comment recording that
-   this exact head was reviewed and passed. Set `SKILL_DIR` to this skill's base directory
-   (the directory containing its `SKILL.md`, not the reviewed repository). Include the output of
-   `python3 "$SKILL_DIR/../../scripts/review-clean-record.py" emit "$reviewed_head"` as its own
-   line, and name `/push` as the succeeding skill.
-   That script is the single source of truth for the matchable record shape; the merge gate
-   matches it through the same script. A review that finds blocking defects posts the findings
-   comment but does not emit a `review-clean` record.
-
-A reviewed head never carries over: once remediation moves the branch, the review no longer
-applies, and the implementation owner should trigger a fresh review at the new head.
-
-### The head has findings
-
-The successor is remediation, based on the durable findings comment. Fold the findings back
-into `/implement` (or the skill that produced the head) so it can address them, then this
-skill reviews the remediated head as an entirely new review, never a reuse of this one.
-
-### The head is clean
-
-The successor is publication of that exact head: call the Skill tool with "push" to publish `<branch-name>` at
-the reviewed head against its default branch. A review never merges anything. The human
-merge boundary belongs to the head that was actually published, and `/push` owns it.

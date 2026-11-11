@@ -14,8 +14,6 @@ Scaffold the per-repo configuration that the engineering skills assume:
 - **Issue tracker**: where issues live (GitHub by default; local markdown is also supported out of the box)
 - **Triage labels**: the strings used for the five canonical triage roles
 - **Domain docs**: where `GLOSSARY.md` and ADRs live, and the consumer rules for reading them
-- **Chain hooks**: repository-scoped `subagentStop` and `agentStop` hooks that complete an
-  in-session route and re-enter `/next`
 
 This is a prompt-driven skill, not a deterministic script. Explore, present what you found, confirm with the user, then write.
 
@@ -26,12 +24,11 @@ This is a prompt-driven skill, not a deterministic script. Explore, present what
 Look at the current repo to understand its starting state. Read whatever exists; don't assume:
 
 - `git remote -v` and `.git/config`: is this a GitHub repo? Which one?
-- `AGENTS.md` at the repo root: does it exist? Is there already an `## Agent skills` section in either?
-- `GLOSSARY.md` and `GLOSSARY-MAP.md` at the repo root
+- `AGENTS.md` and `CLAUDE.md` at the repo root: does either exist? Is there already an `## Agent skills` section in either?
+- `GLOSSARY.md` and `GLOSSARY-MAP.md` at the repo root, and the legacy `CONTEXT.md` / `CONTEXT-MAP.md`. If a legacy file exists, offer to `git mv` it to its `GLOSSARY` name and rewrite those names in `docs/agents/domain.md`.
 - `docs/adr/` and any `src/*/docs/adr/` directories
 - `docs/agents/`: does this skill's prior output already exist?
 - `.scratch/`: a sign that a local-markdown issue tracker convention is already in use
-- `.github/hooks/git-loopy-chain.json`: does the chain hook already exist?
 - Is the `triage` skill installed? (a `triage` skill folder alongside this one, or `triage` in your available skills.) This decides whether Section B runs at all.
 - Monorepo signals: a `pnpm-workspace.yaml`, a `workspaces` field in `package.json`, or a populated `packages/*` with its own `src/`. These are present only in a genuinely large multi-package repo; their absence means single-context, which is almost every repo.
 
@@ -80,6 +77,8 @@ Default posture: these skills were designed for GitHub. If a `git remote` points
 
 Record the choice in `docs/agents/issue-tracker.md`. The GitHub and GitLab templates carry a "PRs as a request surface" flag, defaulted **off**. Leave it off and don't raise it: a user who wants external PRs in the triage queue can flip the flag in the file later.
 
+A GitHub or GitLab tracker needs a reachable repo. When the user picks one and no `git remote` points at that host, get the repo URL from them and wire it up (`git init` if needed, `git remote add origin <url>`) before going further. Done when `gh repo view` / `glab repo view` prints the project from inside this directory; if it can't, stop and tell the user what's missing.
+
 **Section B: Triage label vocabulary.** Skip this section entirely if the `triage` skill isn't installed (exploration told you), since an uninstalled skill needs no labels.
 
 If it is installed, ask exactly one question:
@@ -96,21 +95,12 @@ Also record the closed seven-label `task-type:` taxonomy from [triage-labels.md]
 
 Offer **multi-context** (a root `GLOSSARY-MAP.md` pointing to per-context `GLOSSARY.md` files) only when exploration found monorepo signals. Then confirm which layout they want.
 
-If exploration found legacy domain files, offer a migration before writing the new domain configuration:
-
-> This repo still uses `CONTEXT.md` or `CONTEXT-MAP.md`. May I move each legacy file to its `GLOSSARY.md` or `GLOSSARY-MAP.md` counterpart with `git mv`, preserving its history?
-
-List the exact source and destination paths, including per-context files referenced by the map. Offer each move only when its destination is absent; never overwrite or merge an existing glossary. If both names exist, report the conflict and ask which is canonical. If the user declines, keep the legacy paths in `docs/agents/domain.md` and leave the files untouched. Do not create an empty glossary in place of a declined migration.
-
 ### 3. Confirm and edit
 
 Show the user a draft of:
 
-- The `## Agent skills` block to add to `AGENTS.md` is being edited (see step 4 for selection rules)
+- The `## Agent skills` block to add to whichever of `CLAUDE.md` / `AGENTS.md` is being edited (see step 4 for selection rules)
 - The contents of `docs/agents/issue-tracker.md`, `docs/agents/domain.md`, and `docs/agents/triage-labels.md` (the last only when `triage` is installed)
-- `.github/hooks/git-loopy-chain.json`, with `complete` for `subagentStop` and `reenter` for
-  `agentStop`
-- Any proposed `git mv` operations and reference updates for the legacy domain files
 
 Let them edit before writing.
 
@@ -119,6 +109,7 @@ Let them edit before writing.
 **Write to the file to edit:**
 - If `AGENTS.md` exists, edit it.
 - If it doesn't exist, create it.
+
 If an `## Agent skills` block already exists in the chosen file, update its contents in-place rather than appending a duplicate. Don't overwrite user edits to the surrounding sections.
 
 The block:
@@ -141,17 +132,7 @@ The block:
 
 Include the `### Triage labels` sub-block, and write `docs/agents/triage-labels.md`, only when `triage` is installed and Section B ran. When it isn't, both are omitted.
 
-When Section B ran on GitHub or GitLab, create each configured label the tracker lacks (`gh label create` / `glab label create`). This includes the user's overridden role strings, the three fixed assertions, and all seven task-type labels. List existing labels with pagination first, compare exact names, and create only missing ones; preserve existing colors and descriptions. Follow [triage-labels.md](./triage-labels.md). For local markdown, record the vocabulary without tracker commands; for other trackers, follow the confirmed workflow. Surface authentication, permission, and creation failures rather than claiming setup succeeded.
-
-After the user approves the migration, run each approved move, for example:
-
-```bash
-git mv -- CONTEXT.md GLOSSARY.md
-git mv -- CONTEXT-MAP.md GLOSSARY-MAP.md
-git mv -- src/ordering/CONTEXT.md src/ordering/GLOSSARY.md
-```
-
-These are examples, not a batch to run blindly. Move only the discovered, approved files whose destinations remain absent. If a source is untracked or `git mv` fails, report it and ask how to proceed; do not fall back to copying and deleting it. Update references in the moved map, the chosen instruction file, and existing domain configuration to the approved paths, preserving surrounding user edits. Do not rewrite unrelated uses of the word "context".
+When Section B ran on GitHub or GitLab, create each configured label the tracker lacks (`gh label create` / `glab label create`).
 
 Then write the docs files using the seed templates in this skill folder as a starting point:
 
