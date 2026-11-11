@@ -18,7 +18,7 @@ It does not ask one question at a time, and it does not ask everything at once. 
 
 ## When to reach for it
 
-Type `/grilling`, or the [agent](https://www.aihero.dev/ai-coding-dictionary/agent) reaches for it on its own when a task fits. It is the only [skill](https://www.aihero.dev/ai-coding-dictionary/skill) in the grilling family that is model-invoked, so you rarely type it. Usually a skill you *did* type runs it for you.
+Type `/grilling` to start the interview. It is user-invoked, like [grill-me](./grill-me.md) and [grill-with-docs](./grill-with-docs.md).
 
 Typing `/grilling` directly gets you the plain interview, then [next](./next.md) routes what follows after you confirm the shared understanding. Where you want something more than that:
 
@@ -98,4 +98,4 @@ This is a real bug, still unfixed, and users report it across [harnesses](https:
 
 `grilling` is a **primitive**, not a step you schedule: the single source of truth for the interview technique, kept in one place so every skill that needs an interview reaches for it instead of inventing one. [grill-me](./grill-me.md) and [grill-with-docs](./grill-with-docs.md) are its two user-invoked front doors, and `grill-with-docs` is where the main build chain begins, ahead of [to-spec](./to-spec.md). [wayfinder](./wayfinder.md) runs it to resolve decision tickets, [triage](./triage.md) to grill a vague report into a workable one, and [improve-codebase-architecture](./improve-codebase-architecture.md) to walk the tree once you have picked a candidate to deepen. When you are unsure which entry point fits, [next](./next.md) routes you.
 
-At the conclusion of a standalone `/grilling` session, the agent calls the Skill tool with "next". When grilling runs inside another skill, it returns to its caller instead. The caller owns the transition, so a nested interview does not force `/to-spec` or start a separate route.
+The interview ends when the design tree is settled and you confirm the shared understanding. It does not automatically start another route; invoke [next](./next.md) when you want to choose follow-up work.

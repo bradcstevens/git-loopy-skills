@@ -1,7 +1,7 @@
 ---
 name: push
 description: Publish current work by staging intended changes, committing, pushing, and opening a pull request when needed.
-model: gpt-6.1-sol
+model: gpt-6.1-terra
 effort: low
 context: 272K
 disable-model-invocation: false
@@ -160,5 +160,3 @@ Unattended execution never answers one: stop, and post a ticket comment stating 
 privilege is missing (e.g. a login, MFA challenge, missing secret, consent prompt, or a
 branch-protection scope you do not hold) and why the publication needs it, so a human can
 either grant it or publish the change themselves.
-
-At the conclusion of a `/push` session, run the `/next` skill.

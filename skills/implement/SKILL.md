@@ -1,10 +1,10 @@
 ---
 name: implement
 description: "Implement a spec or tickets, or reconcile a branch with a moved remote head and resolve merge, rebase, or cherry-pick conflicts."
-model: gpt-6.1-sol
-effort: medium
-context: 922K
-disable-model-invocation: false
+model: gpt-6.1-terra
+effort: low
+context: 272K
+disable-model-invocation: true
 ---
 
 Implement the work described by the user in the spec or tickets.

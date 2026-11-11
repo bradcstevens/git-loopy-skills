@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Offline contract for the user-invoked chief-of-staff Skill."""
+"""Offline contract for the chief-of-staff coordinator."""
 
 import re
 import unittest
@@ -10,13 +10,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ChiefOfStaffTests(unittest.TestCase):
-    def test_user_invoked_coordinator_uses_copilot_background_agents(self):
+    def test_model_invoked_coordinator_uses_copilot_background_agents(self):
         skill = ROOT / "skills/chief-of-staff"
         text = (skill / "SKILL.md").read_text(encoding="utf-8")
         frontmatter = text.split("---", 2)[1]
-        self.assertIn("\ndisable-model-invocation: true\n", frontmatter)
+        self.assertNotIn("\ndisable-model-invocation: true\n", frontmatter)
         metadata = (skill / "agents/openai.yaml").read_text(encoding="utf-8")
-        self.assertIn("  allow_implicit_invocation: false\n", metadata)
+        self.assertNotIn("  allow_implicit_invocation: false\n", metadata)
         for instruction in (
             "Tactical: how do I complete the immediate task?",
             "Strategic: how do I modify the environment",
@@ -45,7 +45,7 @@ class ChiefOfStaffTests(unittest.TestCase):
         self.assertIn("`/every`", docs)
         readme = (ROOT / "README.md").read_text(encoding="utf-8")
         self.assertIn(
-            "| [chief-of-staff](docs/chief-of-staff.md) | `/chief-of-staff` |",
+            "| [chief-of-staff](docs/chief-of-staff.md) | automatic |",
             readme,
         )
 

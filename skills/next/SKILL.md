@@ -1,9 +1,10 @@
 ---
 name: next
 description: Route the engineering workflow or choose a skill for the current situation. Use when a workflow skill concludes, the user asks what to do next, or needs help choosing a skill or flow. Prioritize the oldest issues labeled `ready-for-human` to ensure efficient conversion to `ready-for-agent`.
-model: gpt-6.1-sol
-effort: low
-context: 922K
+model: claude-opus-5.5
+effort: xhigh
+context: 1M
+disable-model-invocation: true
 ---
 
 **If this skill was invoked by a user request: Ensure that the current workstreams and sessions are accounted for before making any routing decisions. This prevents conflicts and ensures that the routing logic has the most accurate view of ongoing work. Always refresh the durable state and scan for active sessions to maintain consistency. Prioritize the oldest issues first that are labeled `ready-for-human` so that issues with this label convert to `ready-for-agent` as efficiently as possible.**

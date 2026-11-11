@@ -1,9 +1,9 @@
 ---
 name: writing-for-agents
 description: Writing documents for agents. Use when creating or editing skills, or modifying AGENTS.md, .github/copilot-instructions.md or CLAUDE.md.
-model: gpt-6-astra
-effort: low
-context: 272K
+model: claude-opus-5.5
+effort: xhigh
+context: 1M
 ---
 
 Reference for writing any document an agent consumes: a skill, an `AGENTS.md` / `.github/copilot-instructions.md`, a doc reached by a pointer. The packaging differs; the writing does not: the same levers make each one predictable, since the agent takes the same _process_ every run rather than producing the same output.

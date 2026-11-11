@@ -25,7 +25,7 @@ It does not itself grill, write a spec, or fix anything. It either orients at a 
 
 ## When to reach for it
 
-This one is model-invoked — the agent reaches for it on its own when a workflow skill concludes and the next step is unclear. You can also invoke `/next` directly.
+Invoke `/next` directly when a workflow skill concludes or the next step is unclear. It is user-invoked rather than selected automatically by the agent.
 
 Reach for it whenever you're unsure which skill or flow a situation calls for: a skill just finished and you don't know what follows, you have an idea and don't know where to start, or two skills look interchangeable and you can't tell them apart. If you already know the skill you want, skip the router and invoke it directly.
 

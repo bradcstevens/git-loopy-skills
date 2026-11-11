@@ -1,7 +1,7 @@
 ---
 name: to-handoff
 description: Compact the current conversation into a handoff document for another agent to pick up.
-model: gpt-6-astra
+model: gpt-6.1-sol
 effort: low
 context: 272K
 argument-hint: "What will the next session be used for?"

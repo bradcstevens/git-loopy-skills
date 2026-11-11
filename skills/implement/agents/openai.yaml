@@ -2,4 +2,4 @@ interface:
   display_name: "Implement"
   short_description: "Implement tickets or resolve branch conflicts"
 policy:
-  allow_implicit_invocation: true
+  allow_implicit_invocation: false

@@ -167,6 +167,3 @@ skill reviews the remediated head as an entirely new review, never a reuse of th
 The successor is publication of that exact head: call the Skill tool with "push" to publish `<branch-name>` at
 the reviewed head against its default branch. A review never merges anything. The human
 merge boundary belongs to the head that was actually published, and `/push` owns it.
-
-At the conclusion of a `/code-review` session, call the Skill tool with "push" if the head is clean.
-Otherwise, call the Skill tool with "implement" to remediate the findings.

@@ -165,6 +165,3 @@ If you cannot finish the graph, do not leave it half-recorded: a partially wired
 decomposition would make a ticket look executable against a plan that doesn't fully exist
 yet. Finish creating and wiring every approved ticket before treating the decomposition as
 done.
-
-At the conclusion of a `/to-tickets` session, determine what to do after tickets are generated.
-Call the Skill tool with "next".

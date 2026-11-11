@@ -94,4 +94,4 @@ Run it after a build worth learning from, in the same session or pointed at that
 - [code-review](./code-review.md) is the reviewer agent that `retro` most often tunes. New coding standards go where its Standards axis reads them.
 - [writing-for-agents](./writing-for-agents.md) sets the writing style for every steering file and skill that `retro` proposes, and `retro` loads it before it starts.
 
-Here, `retro` asks which candidates you accept, then calls [next](./next.md) with that selection (or none), so accepted candidates can become tickets. It does not create tickets for unaccepted findings or apply the changes during the retrospective. `next` also routes across the whole set when you are unsure which skill the situation needs.
+The retrospective ends with the candidate list; it does not automatically call another skill or apply the changes. Choose which findings to pursue, then invoke [next](./next.md) when you want to route the follow-up work.

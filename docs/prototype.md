@@ -49,7 +49,7 @@ to the skill that asked. It records no separate transition.
 When invoked directly on its own tracker ticket, push the throwaway branch, record
 the verdict and close the ticket only when its question is settled. An inconclusive
 run leaves the ticket open and comments with the branch pointer so a later session
-can continue from the evidence. A settled build direction routes to [to-spec](./to-spec.md).
+can continue from the evidence. For a settled build direction, invoke [to-spec](./to-spec.md) when you want to capture the specification; the prototype does not start it automatically.
 
 ## Common questions
 

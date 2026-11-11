@@ -1,8 +1,8 @@
 ---
 name: wizard
 description: Run the /wizard skill.
-model: gpt-6.1-sol
-reasoning-effort: medium
+model: gpt-6.1-terra
+reasoning-effort: low
 metadata:
   scorecard-context: "272K"
   scorecard-context-tier: "default"
@@ -15,7 +15,7 @@ If the skill is not installed, read and follow [SKILL.md](../../skills/wizard/SK
 For the recorded context, launch from the repository root with:
 
 ```bash
-copilot --agent wizard --model gpt-6.1-sol --reasoning-effort medium --context default -i 'Invoke the /wizard skill.'
+copilot --agent wizard --model gpt-6.1-terra --reasoning-effort low --context default -i 'Invoke the /wizard skill.'
 ```
 
 Context metadata is advisory; selecting this agent alone does not set the context tier.

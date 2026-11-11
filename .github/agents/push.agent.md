@@ -1,7 +1,7 @@
 ---
 name: push
 description: Run the /push skill.
-model: gpt-6.1-sol
+model: gpt-6.1-terra
 reasoning-effort: low
 disable-model-invocation: false
 metadata:
@@ -16,7 +16,7 @@ If the skill is not installed, read and follow [SKILL.md](../../skills/push/SKIL
 For the recorded context, launch from the repository root with:
 
 ```bash
-copilot --agent push --model gpt-6.1-sol --reasoning-effort low --context default -i 'Invoke the /push skill.'
+copilot --agent push --model gpt-6.1-terra --reasoning-effort low --context default -i 'Invoke the /push skill.'
 ```
 
 Context metadata is advisory; selecting this agent alone does not set the context tier.

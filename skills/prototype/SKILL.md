@@ -49,6 +49,3 @@ Not every directly-owned ticket gets settled. If the prototype ran and the branc
 the experiment was inconclusive, or it answered a smaller question than the ticket asked,
 leave the ticket open and post the inconclusive result as a comment anyway, naming the branch,
 so the next session starts from that run rather than from scratch.
-
-At the conclusion of a `/prototype` session invoked directly on a ticket, call the Skill tool with "to-spec"
-if the verdict settles what to build, or leave the ticket open for a follow-up `/prototype` session.

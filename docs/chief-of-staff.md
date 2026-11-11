@@ -20,7 +20,7 @@ The skill is still in progress upstream. This port follows the pinned revision; 
 
 ## When to reach for it
 
-You invoke this by typing `/chief-of-staff`. The agent won't reach for it on its own. Give it the goal and pointers to the material it needs, such as a spec, previous commits, or research notes.
+Type `/chief-of-staff`, or let the agent select it for a long-running coordination goal. Give it the goal and pointers to the material it needs, such as a spec, previous commits, or research notes.
 
 Reach for it when the goal needs sustained coordination rather than a single answer: several related tasks, recurring checks, or an environment that keeps making the same work difficult. The coordinating session stays available for dialogue while agents work in the background.
 
@@ -46,7 +46,7 @@ When recurring work would help the goal, the skill suggests Copilot CLI `/every`
 
 ## Where it fits
 
-`chief-of-staff` is a user-driven coordinator, not another automatically spawned route in the git-loopy chain.
+`chief-of-staff` is a goal-driven coordinator, not another automatically spawned route in the git-loopy chain.
 
 [loop-me](./loop-me.md) designs recurring workflows. `chief-of-staff` instead carries one goal through a long session, delegating tasks and suggesting schedules where they help. [handoff](./handoff.md) launches a separate background run when work needs to leave the current session; this skill keeps its agents inside the coordinating session.
 

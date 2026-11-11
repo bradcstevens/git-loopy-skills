@@ -1,7 +1,7 @@
 ---
 name: to-handoff
 description: Run the /to-handoff skill.
-model: gpt-6-astra
+model: gpt-6.1-sol
 reasoning-effort: low
 disable-model-invocation: true
 metadata:
@@ -16,7 +16,7 @@ If the skill is not installed, read and follow [SKILL.md](../../skills/to-handof
 For the recorded context, launch from the repository root with:
 
 ```bash
-copilot --agent to-handoff --model gpt-6-astra --reasoning-effort low --context default -i 'Invoke the /to-handoff skill.'
+copilot --agent to-handoff --model gpt-6.1-sol --reasoning-effort low --context default -i 'Invoke the /to-handoff skill.'
 ```
 
 Context metadata is advisory; selecting this agent alone does not set the context tier.

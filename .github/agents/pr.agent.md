@@ -1,7 +1,7 @@
 ---
 name: pr
 description: Run the /pr skill.
-model: gpt-6-astra
+model: gpt-6.1-terra
 reasoning-effort: low
 metadata:
   scorecard-context: "272K"
@@ -15,7 +15,7 @@ If the skill is not installed, read and follow [SKILL.md](../../skills/pr/SKILL.
 For the recorded context, launch from the repository root with:
 
 ```bash
-copilot --agent pr --model gpt-6-astra --reasoning-effort low --context default -i 'Invoke the /pr skill.'
+copilot --agent pr --model gpt-6.1-terra --reasoning-effort low --context default -i 'Invoke the /pr skill.'
 ```
 
 Context metadata is advisory; selecting this agent alone does not set the context tier.

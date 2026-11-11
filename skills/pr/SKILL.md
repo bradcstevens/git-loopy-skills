@@ -1,15 +1,9 @@
 ---
 name: pr
 description: "Use when writing a PR body."
-model: gpt-6-astra
+model: gpt-6.1-terra
 effort: low
 context: 272K
-metadata:
-  credits:
-    skill: show-me
-    author: Dex Horthy
-    organisation: Humanlayer
-    url: "https://github.com/humanlayer/skills/blob/main/plugins/show-me/skills/show-me/SKILL.md"
 ---
 
 Use this template for writing the PR body:

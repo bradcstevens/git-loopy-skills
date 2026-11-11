@@ -1,8 +1,8 @@
 ---
 name: grill-me
 description: A relentless interview to sharpen a plan or design.
-model: gpt-6-astra
-effort: medium
+model: gpt-6.1-terra
+effort: low
 context: 272K
 disable-model-invocation: true
 ---

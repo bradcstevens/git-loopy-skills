@@ -37,12 +37,14 @@ class SkillSyncTests(unittest.TestCase):
                     "**close the ticket**",
                     "### When the question survives the session",
                     "leave the ticket open",
-                    'call the Skill tool with "to-spec"',
                 ):
                     with self.subTest(required=required):
                         self.assertIn(required, text)
         research = (ROOT / "skills/research/SKILL.md").read_text(encoding="utf-8")
+        self.assertIn('call the Skill tool with "to-spec"', research)
         self.assertIn('Call the Skill tool with "microsoft-docs"', research)
+        prototype = (ROOT / "skills/prototype/SKILL.md").read_text(encoding="utf-8")
+        self.assertNotIn('call the Skill tool with "to-spec"', prototype)
 
     def test_review_searches_all_standards_and_joins_foreground_reports(self):
         text = (ROOT / "skills/code-review/SKILL.md").read_text(encoding="utf-8")
@@ -55,7 +57,7 @@ class SkillSyncTests(unittest.TestCase):
     def test_implementation_records_a_pushed_candidate_before_review(self):
         text = (ROOT / "skills/implement/SKILL.md").read_text(encoding="utf-8")
         for required in (
-            "disable-model-invocation: false",
+            "disable-model-invocation: true",
             "fetch it from the issue tracker and state its title before starting",
             "If the reference is ambiguous, ask.",
             'Call the Skill tool with "tdd"',

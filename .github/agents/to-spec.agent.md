@@ -2,7 +2,7 @@
 name: to-spec
 description: Synthesize the current conversation into a spec and publish it to the repo's issue tracker.
 model: gpt-6-astra
-reasoning-effort: medium
+reasoning-effort: high
 user-invocable: true
 disable-model-invocation: true
 metadata:
@@ -17,7 +17,7 @@ If the skill is not installed, read and follow [SKILL.md](../../skills/to-spec/S
 For the recorded context, launch from the repository root with:
 
 ```bash
-copilot --agent to-spec --model gpt-6-astra --reasoning-effort medium --context long_context -i 'Invoke the /to-spec skill.'
+copilot --agent to-spec --model gpt-6-astra --reasoning-effort high --context long_context -i 'Invoke the /to-spec skill.'
 ```
 
 Context metadata is advisory; selecting this agent alone does not set the context tier.

@@ -2,4 +2,4 @@ interface:
   display_name: "Handoff"
   short_description: "Launch a /next recommendation as a background agent"
 policy:
-  allow_implicit_invocation: true
+  allow_implicit_invocation: false

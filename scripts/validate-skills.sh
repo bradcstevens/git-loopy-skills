@@ -61,7 +61,7 @@ while IFS= read -r skill_md; do
     err "$skill_md frontmatter 'model' must be a GitHub Copilot model id, not '$model'"
   [[ "$effort" =~ ^(none|minimal|low|medium|high|xhigh|max)$ ]] ||
     err "$skill_md frontmatter 'effort' must be a reasoning effort, not '$effort'"
-  [[ "$context" =~ ^[0-9]+[KM]$ ]] ||
+  [[ "$context" =~ ^[0-9]+[KM]$ || ( "$model" == auto && -z "$context" ) ]] ||
     err "$skill_md frontmatter 'context' must be a context size such as 200K or 1M, not '$context'"
 done < <(find skills -name SKILL.md -not -path '*/node_modules/*' | sort)
 

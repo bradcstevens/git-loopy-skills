@@ -444,6 +444,32 @@ class SkillHeaderTests(unittest.TestCase):
         self.assertEqual(self.read("build"), SKILL_FILES["build"])
         self.assertFalse((self.repo / ".github/agents").exists())
 
+    def test_user_selections_preserve_auto_and_advisory_context(self):
+        picks = json.loads(self.picks.read_text())
+        picks["skills"]["plan"].update(
+            model="auto", effort="max", tier="default", selection_source="user",
+        )
+        del picks["skills"]["plan"]["context"]
+        picks["skills"]["build"].update(
+            context="1M", tier="long_context", selection_source="user",
+        )
+        self.picks.write_text(json.dumps(picks))
+        code, output = self.run_sync("--write")
+        self.assertEqual(code, 0, output)
+        self.assertIn("model: auto\neffort: max\n", self.read("plan"))
+        self.assertNotIn("\ncontext:", self.read("plan"))
+        agent = (self.repo / ".github/agents/plan.agent.md").read_text()
+        self.assertIn('scorecard-context: "auto"', agent)
+        self.assertIn("--model auto --reasoning-effort max --context default", agent)
+        agent = (self.repo / ".github/agents/build.agent.md").read_text()
+        self.assertIn('scorecard-context: "1M"', agent)
+        self.assertIn("--context long_context", agent)
+        self.assertEqual(self.run_sync("--check")[0], 0)
+
+        picks["skills"]["build"]["tier"] = "invented"
+        self.picks.write_text(json.dumps(picks))
+        self.assertEqual(self.run_sync("--write")[0], 2)
+
     def test_decision_profiles_replace_picks_and_refit_context(self):
         decision = {
             "profiles": {"p": {"model": "wide-model", "effort": "low"}, "q": {"model": "big-model", "effort": None}},

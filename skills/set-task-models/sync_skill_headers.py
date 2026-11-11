@@ -6,6 +6,8 @@ scorecard. With ``--decision``, each skill instead takes the profile set-task-mo
 decided for its role, and its context is re-fitted to that model by the scorecard's
 rule. Agents use model/reasoning-effort frontmatter, context metadata and an
 explicitly sized CLI launch command: agent frontmatter cannot set runtime context.
+Explicit user selections retain their advisory context label and supported tier;
+Auto omits a fixed context size. A new scorecard build replaces these selections.
 Dry-run by default; ``--write`` edits differing files, and ``--check`` exits 1
 while any differ. Exit 2 means the inputs cannot produce every projection.
 """
@@ -79,13 +81,14 @@ def targets(headers: dict, decision: dict | None) -> dict[str, dict[str, str]]:
         if decision:
             values = decided(name, entry, decision, headers.get("models") or {}, ratio)
         else:
-            values = {key: entry[key] for key in KEYS}
+            values = {key: entry[key] for key in KEYS if key in entry}
         if not _MODEL_ID.fullmatch(str(values["model"])):
             raise HeaderError(f"{name}: model {values['model']!r} is not a Copilot model id")
         if values["effort"] not in EFFORTS:
             raise HeaderError(f"{name}: effort {values['effort']!r} is not one of {', '.join(EFFORTS)}")
-        if not _CONTEXT.fullmatch(str(values["context"])):
-            raise HeaderError(f"{name}: context {values['context']!r} is not a size like 200K or 1M")
+        if not (values["model"] == "auto" and "context" not in values):
+            if not _CONTEXT.fullmatch(str(values.get("context", ""))):
+                raise HeaderError(f"{name}: context {values.get('context')!r} is not a size like 200K or 1M")
         wanted[name] = values
     return wanted
 
@@ -142,6 +145,9 @@ def set_header(text: str, values: dict[str, str]) -> str:
 
     The keys are written, in that order, where the first of them already sits, else after ``description``.
     """
+    if "context" not in values:
+        lines, end = _split(text)
+        text = "".join([lines[0], *(line for line in lines[1:end] if _key(line) != "context"), *lines[end:]])
     return set_fields(text, values)
 
 
@@ -163,13 +169,25 @@ def set_fields(text: str, values: dict[str, str]) -> str:
 
 
 def agent_tier(name: str, values: dict[str, str], headers: dict) -> str:
-    """Resolve the recorded prompt cap to a supported CLI tier, never guess from its size."""
+    """Resolve a measured cap or an explicitly recorded user selection to a supported CLI tier."""
+    entry = headers["skills"][name]
+    manual = entry.get("selection_source") == "user" and values == {
+        key: entry[key] for key in KEYS if key in entry
+    }
+    if manual and values["model"] == "auto" and "context" not in values and entry.get("tier") == "default":
+        return "default"
     model = headers.get("models", {}).get(values["model"])
     if not model:
         raise HeaderError(f"{name}: {values['model']} has no model capabilities; rebuild the scorecard")
     efforts = model.get("efforts") or ["none"]
     if values["effort"] not in efforts:
         raise HeaderError(f"{name}: {values['model']} does not support effort {values['effort']}")
+    if manual:
+        tier = entry.get("tier")
+        cap = model.get({"default": "default_cap", "long_context": "long_cap"}.get(tier, ""))
+        if not cap:
+            raise HeaderError(f"{name}: {values['model']} does not support context tier {tier!r}")
+        return tier
     for tier, key in (("default", "default_cap"), ("long_context", "long_cap")):
         cap = model.get(key)
         if cap and context_size(cap) == values["context"]:
@@ -190,7 +208,7 @@ def agent_text(name: str, skill: str, values: dict[str, str], tier: str, text: s
     lines, end = _split(text)
     newline = "\r\n" if lines[0].endswith("\r\n") else "\n"
     metadata = (
-        f'  scorecard-context: "{values["context"]}"{newline}'
+        f'  scorecard-context: "{values.get("context", "auto")}"{newline}'
         f'  scorecard-context-tier: "{tier}"{newline}'
     )
     positions = [index for index in range(1, end) if _key(lines[index]) == "metadata"]

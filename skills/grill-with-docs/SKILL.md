@@ -1,8 +1,8 @@
 ---
 name: grill-with-docs
 description: A relentless interview to sharpen a plan or design, which also creates docs (ADR's and glossary) as we go.
-model: gpt-6-astra
-effort: medium
+model: claude-opus-5.5
+effort: xhigh
 context: 1050K
 disable-model-invocation: true
 ---
@@ -34,6 +34,3 @@ say in the comment which question is still live, so the next session knows where
 A grilling nested inside another skill's session (`/triage` step 4, a `/wayfinder` grilling
 ticket) is not a transition of its own. It records nothing separately; it hands its durable
 pointers (the resolution comment, the ADR commit SHA) back to the skill that owns the transition.
-
-At the conclusion of a `/grill-with-docs` session, determine the successor.
-Call the Skill tool with "next".

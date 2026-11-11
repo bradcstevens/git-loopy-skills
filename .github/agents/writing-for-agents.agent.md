@@ -1,11 +1,11 @@
 ---
 name: writing-for-agents
 description: Run the /writing-for-agents skill.
-model: gpt-6-astra
-reasoning-effort: low
+model: claude-opus-5.5
+reasoning-effort: xhigh
 metadata:
-  scorecard-context: "272K"
-  scorecard-context-tier: "default"
+  scorecard-context: "1M"
+  scorecard-context-tier: "long_context"
 ---
 
 <!-- model-scorecard: start -->
@@ -15,7 +15,7 @@ If the skill is not installed, read and follow [SKILL.md](../../skills/writing-f
 For the recorded context, launch from the repository root with:
 
 ```bash
-copilot --agent writing-for-agents --model gpt-6-astra --reasoning-effort low --context default -i 'Invoke the /writing-for-agents skill.'
+copilot --agent writing-for-agents --model claude-opus-5.5 --reasoning-effort xhigh --context long_context -i 'Invoke the /writing-for-agents skill.'
 ```
 
 Context metadata is advisory; selecting this agent alone does not set the context tier.

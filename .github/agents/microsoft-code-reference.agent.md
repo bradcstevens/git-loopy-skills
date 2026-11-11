@@ -1,11 +1,11 @@
 ---
 name: microsoft-code-reference
 description: Run the /microsoft-code-reference skill.
-model: gpt-6.1-sol
-reasoning-effort: medium
+model: gpt-6.1-terra
+reasoning-effort: low
 metadata:
-  scorecard-context: "922K"
-  scorecard-context-tier: "long_context"
+  scorecard-context: "272K"
+  scorecard-context-tier: "default"
 ---
 
 <!-- model-scorecard: start -->
@@ -15,7 +15,7 @@ If the skill is not installed, read and follow [SKILL.md](../../skills/microsoft
 For the recorded context, launch from the repository root with:
 
 ```bash
-copilot --agent microsoft-code-reference --model gpt-6.1-sol --reasoning-effort medium --context long_context -i 'Invoke the /microsoft-code-reference skill.'
+copilot --agent microsoft-code-reference --model gpt-6.1-terra --reasoning-effort low --context default -i 'Invoke the /microsoft-code-reference skill.'
 ```
 
 Context metadata is advisory; selecting this agent alone does not set the context tier.

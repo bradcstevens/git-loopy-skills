@@ -64,59 +64,62 @@ Each common software-lifecycle task maps to the role whose work it is; its row r
 
 Each git-loopy-skills skill inherits its role's pick and names it in its `SKILL.md` header as `model`, `effort` and `context`, the settings to choose in `/model` before running it. The scorecard build automatically synchronizes these headers and same-named agents; **Now** records the pre-application header. Context fits the skill's own p95 main-session working set once it has 5 local runs, else its role's. **Now** reads each header under `~/code/github/bradcstevens/git-loopy-skills/skills`.
 
+Rows marked **user-selected** record explicit selections in `skill-headers.json`, not benchmark scores. Their context labels are advisory; the recorded CLI tier selects the model's actual supported window. `auto` has no fixed context size. The next scorecard build replaces these one-off selections with fresh role picks.
+
 | Skill | Role | Model | Effort | Context | Score | Working set | Now |
 |---|---|---|---|---|---|---|---|
 | capacity | copilot:task | `gpt-6.1-sol` | low | 272K default | 79 | 94K (copilot:task p95 of 27 runs) | claude-sonnet-5.5 low 200K |
-| chief-of-staff | git-loopy:planning | `gpt-6-astra` | medium | 272K default | 71 | 170K (git-loopy:planning profile estimate) | claude-opus-5.5 medium 1M |
+| chief-of-staff | git-loopy:planning | `auto` | max | auto default | user-selected | 170K (git-loopy:planning profile estimate) | auto max |
 | code-review | copilot:code-review | `claude-opus-5.5` | high | 200K default | 53 | 88K (copilot:code-review p95 of 215 runs) | claude-opus-5.5 medium 200K |
-| codebase-audit | copilot:code-review | `claude-opus-5.5` | high | 200K default | 53 | 88K (copilot:code-review p95 of 215 runs) | claude-opus-5.5 medium 200K |
-| codebase-design | git-loopy:planning | `gpt-6-astra` | medium | 272K default | 71 | 170K (git-loopy:planning profile estimate) | claude-opus-5.5 medium 1M |
-| create-readme | git-loopy:docs | `gpt-6-astra` | low | 272K default | 77 | 101K (git-loopy:docs p95 of 11 runs) | claude-sonnet-5.5 medium 200K |
+| codebase-audit | copilot:code-review | `claude-opus-5.5` | xhigh | 1050K long_context | user-selected | 88K (copilot:code-review p95 of 215 runs) | claude-opus-5.5 xhigh 1050K |
+| codebase-design | git-loopy:planning | `claude-opus-5.5` | high | 1050K long_context | user-selected | 170K (git-loopy:planning profile estimate) | claude-opus-5.5 high 1050K |
+| create-readme | git-loopy:docs | `gpt-6.1-terra` | low | 272K default | user-selected | 101K (git-loopy:docs p95 of 11 runs) | gpt-6.1-terra low 272K |
 | customize | git-loopy:chore | `gpt-6.1-sol` | low | 272K default | 79 | 72K (git-loopy:chore p95 of 14 runs) | claude-sonnet-5.5 low 200K |
 | deploy-model | git-loopy:chore | `gpt-6.1-sol` | low | 272K default | 79 | 72K (git-loopy:chore p95 of 14 runs) | claude-sonnet-5.5 low 200K |
 | design-control-loop | git-loopy:planning | `gpt-6-astra` | medium | 272K default | 71 | 170K (git-loopy:planning profile estimate) | claude-opus-5.5 medium 1M |
-| diagnosing-bugs | git-loopy:bugfix | `gpt-6-astra` | medium | 272K default | 70 | 174K (git-loopy:bugfix p95 of 19 runs) | claude-opus-5.5 medium 1M |
+| diagnosing-bugs | git-loopy:bugfix | `claude-opus-5.5` | xhigh | 1050K long_context | user-selected | 174K (git-loopy:bugfix p95 of 19 runs) | claude-opus-5.5 xhigh 1050K |
 | domain-modeling | git-loopy:planning | `gpt-6-astra` | medium | 272K default | 71 | 170K (git-loopy:planning profile estimate) | claude-opus-5.5 medium 1M |
-| grill-me | git-loopy:planning | `gpt-6-astra` | medium | 272K default | 71 | 170K (git-loopy:planning profile estimate) | claude-opus-5.5 medium 1M |
-| grill-with-docs | git-loopy:planning | `gpt-6-astra` | medium | 1050K long_context | 71 | 377K (p95 of 10 /grill-with-docs runs) | claude-opus-5.5 medium 1M |
-| grilling | git-loopy:planning | `gpt-6-astra` | medium | 272K default | 71 | 170K (git-loopy:planning profile estimate) | claude-opus-5.5 medium 1M |
+| grill-me | git-loopy:planning | `gpt-6.1-terra` | low | 272K default | user-selected | 170K (git-loopy:planning profile estimate) | gpt-6.1-terra low 272K |
+| grill-with-docs | git-loopy:planning | `claude-opus-5.5` | xhigh | 1050K long_context | user-selected | 377K (p95 of 10 /grill-with-docs runs) | claude-opus-5.5 xhigh 1050K |
+| grilling | git-loopy:planning | `claude-opus-5.5` | xhigh | 1050K long_context | user-selected | 170K (git-loopy:planning profile estimate) | claude-opus-5.5 xhigh 1050K |
 | handoff | copilot:task | `gpt-6.1-sol` | low | 272K default | 79 | 186K (p95 of 11 /handoff runs) | claude-sonnet-5.5 low 936K |
-| implement | git-loopy:implementation | `gpt-6.1-sol` | medium | 922K long_context | 71 | 401K (p95 of 54 /implement runs) | gpt-6-astra medium 1050K |
-| implement-spec | git-loopy:implementation | `gpt-6.1-sol` | medium | 272K default | 71 | 204K (git-loopy:implementation p95 of 319 runs) | gpt-6-astra medium 272K |
+| implement | git-loopy:implementation | `gpt-6.1-terra` | low | 272K default | user-selected | 401K (p95 of 54 /implement runs) | gpt-6.1-terra low 272K |
+| implement-spec | git-loopy:implementation | `claude-opus-5.5` | xhigh | 1M long_context | user-selected | 204K (git-loopy:implementation p95 of 319 runs) | claude-opus-5.5 xhigh 1M |
 | improve-codebase-architecture | git-loopy:planning | `gpt-6-astra` | medium | 272K default | 71 | 170K (git-loopy:planning profile estimate) | claude-opus-5.5 medium 1M |
 | jev-ultrafast | copilot:task | `gpt-6.1-sol` | low | 272K default | 79 | 94K (copilot:task p95 of 27 runs) | claude-sonnet-5.5 low 200K |
 | loop-me | git-loopy:planning | `gpt-6-astra` | medium | 272K default | 71 | 170K (git-loopy:planning profile estimate) | claude-opus-5.5 medium 1M |
 | mermaid-diagrams | git-loopy:docs | `gpt-6-astra` | low | 272K default | 77 | 101K (git-loopy:docs p95 of 11 runs) | claude-sonnet-5.5 medium 200K |
-| microsoft-code-reference | copilot:research | `gpt-6.1-sol` | medium | 922K long_context | 72 | 233K (copilot:research profile estimate) | gpt-6-astra medium 1050K |
-| microsoft-docs | copilot:research | `gpt-6.1-sol` | medium | 922K long_context | 72 | 233K (copilot:research profile estimate) | gpt-6-astra medium 1050K |
+| microsoft-code-reference | copilot:research | `gpt-6.1-terra` | low | 272K default | user-selected | 233K (copilot:research profile estimate) | gpt-6.1-terra low 272K |
+| microsoft-docs | copilot:research | `gpt-6.1-terra` | low | 922K long_context | user-selected | 233K (copilot:research profile estimate) | gpt-6.1-terra low 922K |
 | microsoft-foundry | copilot:general-purpose | `gpt-6.1-sol` | medium | 272K default | 71 | 124K (copilot:general-purpose p95 of 52 runs) | gpt-6-astra medium 272K |
 | model-scorecard | copilot:task | `gpt-6.1-sol` | low | 272K default | 79 | 94K (copilot:task p95 of 27 runs) | claude-sonnet-5.5 low 200K |
 | narrow-react-prop-types | git-loopy:implementation | `gpt-6.1-sol` | medium | 272K default | 71 | 204K (git-loopy:implementation p95 of 319 runs) | gpt-6-astra medium 272K |
-| next | copilot:explore | `gpt-6.1-sol` | low | 922K long_context | 82 | 398K (p95 of 27 /next runs) | claude-sonnet-5.5 low 936K |
+| next | copilot:explore | `claude-opus-5.5` | xhigh | 1M long_context | user-selected | 398K (p95 of 27 /next runs) | claude-opus-5.5 xhigh 1M |
 | playwright-cli | copilot:task | `gpt-6.1-sol` | low | 272K default | 79 | 94K (copilot:task p95 of 27 runs) | claude-sonnet-5.5 low 200K |
-| pr | git-loopy:docs | `gpt-6-astra` | low | 272K default | 77 | 101K (git-loopy:docs p95 of 11 runs) | claude-sonnet-5.5 medium 200K |
+| pr | git-loopy:docs | `gpt-6.1-terra` | low | 272K default | user-selected | 101K (git-loopy:docs p95 of 11 runs) | gpt-6.1-terra low 272K |
 | preset | git-loopy:chore | `gpt-6.1-sol` | low | 272K default | 79 | 72K (git-loopy:chore p95 of 14 runs) | claude-sonnet-5.5 low 200K |
 | prototype | git-loopy:implementation | `gpt-6.1-sol` | medium | 272K default | 71 | 204K (git-loopy:implementation p95 of 319 runs) | gpt-6-astra medium 272K |
-| push | git-loopy:chore | `gpt-6.1-sol` | low | 272K default | 79 | 72K (git-loopy:chore p95 of 14 runs) | claude-sonnet-5.5 low 200K |
+| push | git-loopy:chore | `gpt-6.1-terra` | low | 272K default | user-selected | 72K (git-loopy:chore p95 of 14 runs) | gpt-6.1-terra low 272K |
 | release | git-loopy:chore | `gpt-6.1-sol` | low | 272K default | 79 | 72K (git-loopy:chore p95 of 14 runs) | claude-sonnet-5.5 low 200K |
 | release-assessment | copilot:task | `gpt-6.1-sol` | low | 272K default | 79 | 94K (copilot:task p95 of 27 runs) | claude-sonnet-5.5 low 200K |
 | research | copilot:research | `gpt-6.1-sol` | medium | 922K long_context | 72 | 233K (copilot:research profile estimate) | gpt-6-astra medium 1050K |
-| retro | git-loopy:planning | `gpt-6-astra` | medium | 1050K long_context | 71 | 682K (p95 of 16 /retro runs) | claude-opus-5.5 medium 1M |
-| set-task-models | copilot:research | `gpt-6.1-sol` | medium | 922K long_context | 72 | 233K (copilot:research profile estimate) | gpt-6-astra medium 1050K |
+| retro | git-loopy:planning | `claude-opus-5.5` | xhigh | 1M long_context | user-selected | 682K (p95 of 16 /retro runs) | claude-opus-5.5 xhigh 1M |
+| set-task-models | copilot:research | `gpt-6.1-terra` | low | 272K default | user-selected | 233K (copilot:research profile estimate) | gpt-6.1-terra low 272K |
 | setup-git-loopy-skills | git-loopy:chore | `gpt-6.1-sol` | low | 272K default | 79 | 72K (git-loopy:chore p95 of 14 runs) | claude-sonnet-5.5 low 200K |
 | show-me | git-loopy:docs | `gpt-6-astra` | low | 272K default | 77 | 101K (git-loopy:docs p95 of 11 runs) | claude-sonnet-5.5 medium 200K |
+| sync-branches | git-loopy:chore | `gpt-6.1-terra` | low | 272K default | user-selected | 72K (git-loopy:chore p95 of 14 runs) | gpt-6.1-terra low 272K |
 | sync-model-roster | git-loopy:chore | `gpt-6.1-sol` | low | 272K default | 79 | 72K (git-loopy:chore p95 of 14 runs) | claude-sonnet-5.5 low 200K |
-| tdd | git-loopy:test | `gpt-6.1-sol` | medium | 272K default | 71 | 162K (git-loopy:test p95 of 27 runs) | gpt-6-astra medium 272K |
+| tdd | git-loopy:test | `gpt-6.1-sol` | low | 272K default | user-selected | 162K (git-loopy:test p95 of 27 runs) | gpt-6.1-sol low 272K |
 | teach | git-loopy:docs | `gpt-6-astra` | low | 272K default | 77 | 101K (git-loopy:docs p95 of 11 runs) | claude-sonnet-5.5 medium 200K |
-| to-handoff | git-loopy:docs | `gpt-6-astra` | low | 272K default | 77 | 101K (git-loopy:docs p95 of 11 runs) | claude-sonnet-5.5 medium 200K |
+| to-handoff | git-loopy:docs | `gpt-6.1-sol` | low | 272K default | user-selected | 101K (git-loopy:docs p95 of 11 runs) | gpt-6.1-sol low 272K |
 | to-questionnaire | git-loopy:planning | `gpt-6-astra` | medium | 272K default | 71 | 170K (git-loopy:planning profile estimate) | claude-opus-5.5 medium 1M |
-| to-spec | git-loopy:planning | `gpt-6-astra` | medium | 1050K long_context | 71 | 472K (p95 of 7 /to-spec runs) | claude-opus-5.5 medium 1M |
+| to-spec | git-loopy:planning | `gpt-6-astra` | high | 1050K long_context | user-selected | 472K (p95 of 7 /to-spec runs) | gpt-6-astra high 1050K |
 | to-tickets | git-loopy:planning | `gpt-6-astra` | medium | 1050K long_context | 71 | 411K (p95 of 22 /to-tickets runs) | claude-opus-5.5 medium 1M |
 | triage | git-loopy:planning | `gpt-6-astra` | medium | 1050K long_context | 71 | 378K (p95 of 5 /triage runs) | claude-opus-5.5 medium 1M |
 | wait-what | git-loopy:docs | `gpt-6-astra` | low | 272K default | 77 | 101K (git-loopy:docs p95 of 11 runs) | claude-sonnet-5.5 medium 200K |
-| wayfinder | git-loopy:planning | `gpt-6-astra` | medium | 1050K long_context | 71 | 337K (p95 of 5 /wayfinder runs) | claude-opus-5.5 medium 1M |
-| wizard | git-loopy:implementation | `gpt-6.1-sol` | medium | 272K default | 71 | 204K (git-loopy:implementation p95 of 319 runs) | gpt-6-astra medium 272K |
-| writing-for-agents | git-loopy:docs | `gpt-6-astra` | low | 272K default | 77 | 101K (git-loopy:docs p95 of 11 runs) | claude-sonnet-5.5 medium 200K |
+| wayfinder | git-loopy:planning | `claude-opus-5.5` | xhigh | 1050K long_context | user-selected | 337K (p95 of 5 /wayfinder runs) | claude-opus-5.5 xhigh 1050K |
+| wizard | git-loopy:implementation | `gpt-6.1-terra` | low | 272K default | user-selected | 204K (git-loopy:implementation p95 of 319 runs) | gpt-6.1-terra low 272K |
+| writing-for-agents | git-loopy:docs | `claude-opus-5.5` | xhigh | 1M long_context | user-selected | 101K (git-loopy:docs p95 of 11 runs) | claude-opus-5.5 xhigh 1M |
 
 ## Evidence per role
 

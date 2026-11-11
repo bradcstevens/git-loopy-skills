@@ -12,14 +12,13 @@ class PlanningGuidanceTests(unittest.TestCase):
     def skill(self, name):
         return (ROOT / "skills" / name / "SKILL.md").read_text(encoding="utf-8")
 
-    def test_grilling_loads_both_skills_and_records_before_routing(self):
+    def test_grilling_loads_both_skills_and_records_without_routing(self):
         text = self.skill("grill-with-docs")
         self.assertIn('Call the Skill tool twice, for "grilling" and "domain-modeling".', text)
         self.assertIn("## Record the decision", text)
         self.assertIn("GLOSSARY.md", text)
         self.assertIn("**Never answer your own grilling questions.**", text)
-        self.assertIn('Call the Skill tool with "next"', text)
-        self.assertLess(text.index("## Record the decision"), text.index('Call the Skill tool with "next"'))
+        self.assertNotIn('Call the Skill tool with "next"', text)
 
     def test_spec_is_a_durable_planning_document_before_decomposition(self):
         text = self.skill("to-spec")
@@ -51,7 +50,7 @@ class PlanningGuidanceTests(unittest.TestCase):
         self.assertIn("## 6. Record the decomposition", text)
         self.assertIn("**Only record once the whole approved graph is durable.**", text)
         self.assertIn("gh issue comment <spec-issue>", text)
-        self.assertIn('Call the Skill tool with "next"', text)
+        self.assertNotIn('Call the Skill tool with "next"', text)
         self.assertNotIn("with `/implement`", text)
         self.assertNotIn("gh issue close <spec-issue>", text)
 

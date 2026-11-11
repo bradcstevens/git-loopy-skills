@@ -1,8 +1,8 @@
 ---
 name: wayfinder
 description: Chart and work a wayfinder map of decision tickets on the repo's issue tracker.
-model: gpt-6-astra
-reasoning-effort: medium
+model: claude-opus-5.5
+reasoning-effort: xhigh
 user-invocable: true
 disable-model-invocation: true
 metadata:
@@ -17,7 +17,7 @@ If the skill is not installed, read and follow [SKILL.md](../../skills/wayfinder
 For the recorded context, launch from the repository root with:
 
 ```bash
-copilot --agent wayfinder --model gpt-6-astra --reasoning-effort medium --context long_context -i 'Invoke the /wayfinder skill.'
+copilot --agent wayfinder --model claude-opus-5.5 --reasoning-effort xhigh --context long_context -i 'Invoke the /wayfinder skill.'
 ```
 
 Context metadata is advisory; selecting this agent alone does not set the context tier.

@@ -3,6 +3,7 @@ name: handoff
 description: Run the /handoff skill.
 model: gpt-6.1-sol
 reasoning-effort: low
+disable-model-invocation: true
 metadata:
   scorecard-context: "272K"
   scorecard-context-tier: "default"

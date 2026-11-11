@@ -1,12 +1,12 @@
 ---
 name: implement
 description: Run the /implement skill.
-model: gpt-6.1-sol
-reasoning-effort: medium
-disable-model-invocation: false
+model: gpt-6.1-terra
+reasoning-effort: low
+disable-model-invocation: true
 metadata:
-  scorecard-context: "922K"
-  scorecard-context-tier: "long_context"
+  scorecard-context: "272K"
+  scorecard-context-tier: "default"
 ---
 
 <!-- model-scorecard: start -->
@@ -16,7 +16,7 @@ If the skill is not installed, read and follow [SKILL.md](../../skills/implement
 For the recorded context, launch from the repository root with:
 
 ```bash
-copilot --agent implement --model gpt-6.1-sol --reasoning-effort medium --context long_context -i 'Invoke the /implement skill.'
+copilot --agent implement --model gpt-6.1-terra --reasoning-effort low --context default -i 'Invoke the /implement skill.'
 ```
 
 Context metadata is advisory; selecting this agent alone does not set the context tier.

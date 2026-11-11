@@ -1,7 +1,7 @@
 ---
 name: create-readme
 description: 'Create a README.md file for the project'
-model: gpt-6-astra
+model: gpt-6.1-terra
 effort: low
 context: 272K
 ---

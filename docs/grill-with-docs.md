@@ -72,7 +72,7 @@ Into the conversation only. This is the most serious open complaint about the sk
 Yes. This is the right skill for a codebase with no ADRs, no domain language and no design principles: invoke it and say "help me document my repo". Users often pair it with [improve-codebase-architecture](./improve-codebase-architecture.md) for building or repairing a `GLOSSARY.md`. Expect to steer it. It reads code and asks you about what it finds, and you decide which of the words already in the codebase are the right ones.
 
 **What should I do when the session ends?**
-After recording the decision, this repo's skill calls [next](./next.md) to select the successor. In the multi-session build flow that is [to-spec](./to-spec.md), using the same conversation. If the change is small enough to build immediately, the route can be [implement](./implement.md) instead.
+After recording the decision, the session ends without automatically starting another skill. Invoke [next](./next.md) to select a successor. In the multi-session build flow that is [to-spec](./to-spec.md), using the same conversation. If the change is small enough to build immediately, the route can be [implement](./implement.md) instead.
 
 **Why is it called that?**
 Nobody is happy with the name. There is an open suggestion to rename it `grill-domain-model`, which describes the behaviour more accurately. Nothing has moved on it. If a rename ever lands, the docs page moves with it and the URL changes.

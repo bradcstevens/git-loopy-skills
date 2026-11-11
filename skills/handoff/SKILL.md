@@ -4,6 +4,7 @@ description: Launch a `/next` recommendation — its prompt and the runtime its 
 model: gpt-6.1-sol
 effort: low
 context: 272K
+disable-model-invocation: true
 ---
 
 A `/next` recommendation is the seed: its prompt and its `Runtime` line are what this skill launches. If that output isn't the last part of this conversation, run `/next` before anything else.
@@ -78,5 +79,3 @@ End the turn once the watch is running. The runtime wakes this session when the 
 ## 5. Route from the exited session
 
 A wake means the session is over, not that it worked. Read the tail the watch printed, reaching into the log when the tail is thin, and say in a sentence how the run ended: the work finished, abandoned mid-flight, or the process killed.
-
-At the conclusion of a `/handoff` session, run `/next` on the state the exited session left, rather than the state it was launched to reach.

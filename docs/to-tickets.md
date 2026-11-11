@@ -101,7 +101,7 @@ A very large spec may need several tracker reads. The fresh Planner must read th
 The template asks for criteria and says nothing about whether they can fail, so this happens. Three shapes recur: a criterion already true at the base commit, a criterion that only work in another ticket can satisfy, and one that restates the request rather than deriving from the artifact. Vertical slicing prevents most of it, because a slice that delivers new behaviour fails at the base commit by construction. The check is still worth doing by hand. For each criterion, name the observation that would show it false, and confirm it fails at the commit the implementer starts from.
 
 **The tickets are published. How do I actually run them?**
-This repo's Skill records the graph, then calls [next](./next.md) to choose the next route. Decomposition itself does not implement tickets. The git-loopy runner can pick up executable tickets, or you can give [implement](./implement.md) one ticket per fresh session. Eligibility still depends on the saved blocking edges, not just a body label.
+This repo's Skill ends after recording the graph. Invoke [next](./next.md) when you want to choose the next route. Decomposition itself does not implement tickets. The git-loopy runner can pick up executable tickets, or you can give [implement](./implement.md) one ticket per fresh session. Eligibility still depends on the saved blocking edges, not just a body label.
 
 ## It's working if
 

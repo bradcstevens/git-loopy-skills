@@ -1,8 +1,8 @@
 ---
 name: wayfinder
 description: Plan a huge chunk of work (more than one agent session can hold) as a shared map of decision tickets on your issue tracker, and resolve them one at a time until the way to the destination is clear.
-model: gpt-6-astra
-effort: medium
+model: claude-opus-5.5
+effort: xhigh
 context: 1050K
 disable-model-invocation: true
 ---
@@ -161,6 +161,3 @@ named:
   destination.
 - **Any other destination** (an in-place change, a proof of concept) still has to be built, and
   wayfinder plans rather than builds. The closing hand-off to "next" routes the build.
-
-At the conclusion of a `/wayfinder` session that did not hand the map to "to-spec", call the
-Skill tool with "next".

@@ -80,7 +80,7 @@ situation matches. The rest you invoke by name.
 
 | Skill | Invoke | What it does |
 | --- | --- | --- |
-| [chief-of-staff](docs/chief-of-staff.md) | `/chief-of-staff` | Pursue a long-running goal in a single session by co-ordinating subagents. |
+| [chief-of-staff](docs/chief-of-staff.md) | automatic | Pursue a long-running goal in a single session by co-ordinating subagents. |
 | [code-review](docs/code-review.md) | automatic | Review the changes since a fixed point (commit, branch, tag, or merge-base) along two axes: Standards (does the code follow this repo's documented coding standards?) and Spec (does the code match what the originating issue/spec asked for?). |
 | [codebase-audit](docs/codebase-audit.md) | automatic | Deep audit before GitHub push: removes junk files, dead code, security holes, and optimization issues. |
 | [codebase-design](docs/codebase-design.md) | automatic | Shared vocabulary for designing deep modules. |
@@ -91,8 +91,8 @@ situation matches. The rest you invoke by name.
 | [grill-me](docs/grill-me.md) | `/grill-me` | A relentless interview to sharpen a plan or design. |
 | [grill-with-docs](docs/grill-with-docs.md) | `/grill-with-docs` | A relentless interview to sharpen a plan or design, which also creates docs (ADR's and glossary) as we go. |
 | [grilling](docs/grilling.md) | automatic | Grill the user relentlessly about a plan, decision, or idea. |
-| [handoff](docs/handoff.md) | automatic | Launch a `/next` recommendation — its prompt and the runtime its routed skill names — as a background agent, then watch it to its exit and route on. |
-| [implement](docs/implement.md) | automatic | Implement a spec or tickets, or reconcile a branch with a moved remote head and resolve merge, rebase, or cherry-pick conflicts. |
+| [handoff](docs/handoff.md) | `/handoff` | Launch a `/next` recommendation — its prompt and the runtime its routed skill names — as a background agent, then watch it to its exit and route on. |
+| [implement](docs/implement.md) | `/implement` | Implement a spec or tickets, or reconcile a branch with a moved remote head and resolve merge, rebase, or cherry-pick conflicts. |
 | [implement-spec](docs/implement-spec.md) | `/implement-spec` | Implement the result of /to-spec and /to-tickets in code. |
 | [improve-codebase-architecture](docs/improve-codebase-architecture.md) | `/improve-codebase-architecture` | Scan a codebase for deepening opportunities, present them as a visual HTML report, then grill through whichever one you pick. |
 | jev-ultrafast | automatic | Run fast goal-driven browser automation with Jev Ultrafast for navigating, searching, and interacting with visible web pages. |
@@ -103,7 +103,7 @@ situation matches. The rest you invoke by name.
 | microsoft-foundry | automatic | Deploy, evaluate, and manage Foundry agents end-to-end: Docker build, ACR push, hosted/prompt agent create, container start, batch eval, continuous eval, prompt optimizer workflows, agent.yaml, dataset curation from traces. |
 | [model-scorecard](docs/model-scorecard.md) | `/model-scorecard` | Score Copilot models 1–100 for every SDLC task type, Copilot built-in subagent and git-loopy task type from the live Artificial Analysis leaderboard, and rewrite the scorecard reference. |
 | [narrow-react-prop-types](docs/narrow-react-prop-types.md) | automatic | narrow React component prop types to match live code paths |
-| [next](docs/next.md) | automatic | Route the engineering workflow or choose a skill for the current situation. |
+| [next](docs/next.md) | `/next` | Route the engineering workflow or choose a skill for the current situation. |
 | playwright-cli | automatic | Automates browser interactions for web testing, form filling, screenshots, and data extraction. |
 | [pr](docs/pr.md) | automatic | Use when writing a PR body. |
 | [prototype](docs/prototype.md) | automatic | Build a throwaway prototype to answer a design question. |
@@ -115,6 +115,7 @@ situation matches. The rest you invoke by name.
 | [set-task-models](docs/set-task-models.md) | `/set-task-models` | Set the model, effort, and context of every Copilot built-in subagent and git-loopy task type from fresh model research, and enforce them. |
 | [setup-git-loopy-skills](docs/setup-git-loopy-skills.md) | `/setup-git-loopy-skills` | Configure this repo for the engineering skills: set up its issue tracker, triage label vocabulary, and domain doc layout. |
 | [show-me](docs/show-me.md) | automatic | Help the user understand the current topic visually with concise diagrams, code-shape sketches, and focused HTML artifacts. |
+| [sync-branches](docs/sync-branches.md) | `/sync-branches` | Two-way sync every local branch with its GitHub upstream: fast-forward, push, rebase clean divergence, and prune merged branches. |
 | [sync-model-roster](docs/sync-model-roster.md) | `/sync-model-roster` | Reconcile git-loopy's pinned model roster and one config.toml scope with authenticated harness evidence. |
 | [tdd](docs/tdd.md) | automatic | Test-driven development. |
 | [teach](docs/teach.md) | `/teach` | Teach the user a new skill or concept, within this workspace. |

@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PrGuidanceTests(unittest.TestCase):
-    def test_pr_matches_upstream_except_generated_copilot_headers(self):
+    def test_pr_matches_upstream_except_runtime_headers_and_duplicate_credit_metadata(self):
         # bradcstevens/mattpocock-skills at 49dd158d1076134a641b33efb035946536778336.
         upstream = {
             "SKILL.md": "ab63f1cf78647389edcd386c9427c5dfca27ed2836930c24773ffee834c19bcd",
@@ -24,6 +24,13 @@ class PrGuidanceTests(unittest.TestCase):
                 if name == "SKILL.md":
                     opening, header, body = content.split(b"---", 2)
                     header = re.sub(rb"^(model|effort|context):[^\n]*\n", b"", header, flags=re.M)
+                    self.assertNotIn(b"\nmetadata:", header)
+                    # Attribution stays in CREDITS.md; reconstruct only the removed pinned metadata.
+                    header += (
+                        b"metadata:\n  credits:\n    skill: show-me\n    author: Dex Horthy\n"
+                        b"    organisation: Humanlayer\n"
+                        b'    url: "https://github.com/humanlayer/skills/blob/main/plugins/show-me/skills/show-me/SKILL.md"\n'
+                    )
                     content = b"---".join((opening, header, body))
                 self.assertEqual(hashlib.sha256(content).hexdigest(), digest)
 

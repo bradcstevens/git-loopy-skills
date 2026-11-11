@@ -44,6 +44,11 @@ headers and `.github/agents/<skill>.agent.md`. `/set-task-models` uses that same
 with its decision map. A new skill needs a `skills` entry in `profiles.json`, a header and
 a generated same-named agent. Run the projection rather than hand-tuning them.
 
+Explicit user selections can be recorded in `references/skill-headers.json` with
+`selection_source: "user"` and a supported `tier`, then projected normally.
+Their context sizes are advisory labels, not new model capabilities; `auto` omits
+a fixed context size. A fresh scorecard build replaces these one-off selections.
+
 `to-tickets` is the exception: its interactive persona is retired in favor of
 git-loopy's Planner. Keep the Skill and its model mapping for the Planner and
 non-git-loopy fallback; the projection guards against recreating its persona.

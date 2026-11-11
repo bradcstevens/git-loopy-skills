@@ -81,19 +81,13 @@ class RetroTests(unittest.TestCase):
                 "- `AGENTS.md` / `.github/copilot-instructions.md`:",
                 "- `CLAUDE.md`/`AGENTS.md`:",
             ),
-            (
-                '\nAfter presenting the candidates, ask which the user accepts. '
-                'Propose only; do not edit files or install checks. Then call the '
-                'Skill tool with "next", passing the accepted candidates (or none) '
-                'so they can become tickets.\n',
-                "",
-            ),
         )
         for local, upstream in adaptations:
             with self.subTest(adaptation=local):
                 self.assertEqual(text.count(local), 1)
                 text = text.replace(local, upstream, 1)
         text = re.sub(r"^(model|effort|context):[^\n]*\n", "", text, flags=re.M)
+        text = text.rstrip("\n") + "\n"
         # bradcstevens/mattpocock-skills@49dd158d1076134a641b33efb035946536778336.
         self.assertEqual(
             hashlib.sha256(text.encode()).hexdigest(),
@@ -108,6 +102,11 @@ class RetroTests(unittest.TestCase):
         self.assertNotIn("disable-model-invocation: true", writing)
         policy = (ROOT / "skills/writing-for-agents/agents/openai.yaml").read_text(encoding="utf-8")
         self.assertNotIn("allow_implicit_invocation: false", policy)
+
+    def test_retrospective_ends_with_candidates_without_routing(self):
+        text = (ROOT / "skills/retro/SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("Present these candidates to the user, in order of severity.", text)
+        self.assertNotIn('Skill tool with "next"', text)
 
 
 if __name__ == "__main__":

@@ -1,8 +1,8 @@
 ---
 name: microsoft-docs
 description: Run the /microsoft-docs skill.
-model: gpt-6.1-sol
-reasoning-effort: medium
+model: gpt-6.1-terra
+reasoning-effort: low
 metadata:
   scorecard-context: "922K"
   scorecard-context-tier: "long_context"
@@ -15,7 +15,7 @@ If the skill is not installed, read and follow [SKILL.md](../../skills/microsoft
 For the recorded context, launch from the repository root with:
 
 ```bash
-copilot --agent microsoft-docs --model gpt-6.1-sol --reasoning-effort medium --context long_context -i 'Invoke the /microsoft-docs skill.'
+copilot --agent microsoft-docs --model gpt-6.1-terra --reasoning-effort low --context long_context -i 'Invoke the /microsoft-docs skill.'
 ```
 
 Context metadata is advisory; selecting this agent alone does not set the context tier.

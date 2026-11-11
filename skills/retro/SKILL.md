@@ -1,9 +1,9 @@
 ---
 name: retro
 description: "Conduct a retrospective on a coding session."
-model: gpt-6-astra
-effort: medium
-context: 1050K
+model: claude-opus-5.5
+effort: xhigh
+context: 1M
 disable-model-invocation: true
 ---
 
@@ -45,5 +45,3 @@ Inspect these files where they exist; steering and standards files are user-crea
 - `CODING_STANDARDS.md`: this file is read during review, not implementation. Add **navigation pointers** to docs folders if the standards file gets more than 1,000 lines long.
 - Docs: use docs as references files, pointed to by other files. Look for existing docs before writing new ones.
 - Skills: use skills for docs (since their description goes into the agent's context window), or for user-invoked commands. Follow the advice in the `writing-for-agents` skill.
-
-After presenting the candidates, ask which the user accepts. Propose only; do not edit files or install checks. Then call the Skill tool with "next", passing the accepted candidates (or none) so they can become tickets.
