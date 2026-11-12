@@ -4,7 +4,7 @@ description: "Implement a piece of work based on a spec or set of tickets."
 model: gpt-6.1-terra
 effort: low
 context: 272K
-disable-model-invocation: true
+disable-model-invocation: false
 ---
 
 Implement the work described by the user in the spec or tickets.

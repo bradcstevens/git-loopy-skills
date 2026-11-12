@@ -1,6 +1,9 @@
 ---
 name: chief-of-staff
 description: Pursue a long-running goal in a single session by co-ordinating subagents.
+model: claude-opus-5.5
+effort: high
+context: 1M
 disable-model-invocation: true
 ---
 
