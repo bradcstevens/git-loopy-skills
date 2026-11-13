@@ -15,6 +15,9 @@ from sessions import repository_root
 MARKER = ".git-loopy/worktree-owner"
 LSOF_ESCAPES = {0x08: b"\\b", 0x09: b"\\t", 0x0a: b"\\n", 0x0c: b"\\f", 0x0d: b"\\r",
                 0x5c: b"\\\\"}
+# lsof leads other control bytes, and 0xff where char is unsigned, with a caret, so a
+# caret is the only token in its spelling that a literal character can also produce.
+LSOF_AMBIGUOUS = b"^"
 
 
 def git(repo, *args):
@@ -98,20 +101,22 @@ def worktrees_named(name, spellings):
     matches = [(path, spelling) for spelling, paths in spellings.items()
                if name == spelling or name.startswith(spelling + b"/")
                for path in paths]
-    # `^` is the only ambiguous spelling: a literal caret or a control byte. A nested
-    # worktree outranks its parent only when no caret lies between their spellings.
+    # A nested worktree outranks its parent only when nothing ambiguous lies between
+    # their spellings, so the name cannot be read as some other directory there.
     return {path for path, spelling in matches
             if not any(inner.startswith(path + os.sep)
-                       and b"^" not in inner_spelling[len(spelling):]
+                       and LSOF_AMBIGUOUS not in inner_spelling[len(spelling):]
                        for inner, inner_spelling in matches)}
 
 
-def holders(rows):
+def holders(rows, kernel_paths):
     stdout, lsof_pid = lsof_listing()
     spellings = {}
     for row in rows:
-        for spelling in lsof_spellings(row["path"]):
-            spellings.setdefault(spelling, []).append(row["path"])
+        # A case-insensitive file system lets git record a spelling the kernel never prints.
+        for name in {row["path"], kernel_paths.get(row["path"])} - {None}:
+            for spelling in lsof_spellings(name):
+                spellings.setdefault(spelling, []).append(row["path"])
     found = {row["path"]: set() for row in rows}
     pid = None
     excluded = False
@@ -172,10 +177,29 @@ def error_message(error):
     return str(error)
 
 
-def inspect_worktree(row, pids, ledger_rows):
+def inspect_checkout(row):
+    """Record a worktree's directory state, returning its top level as the kernel spells it."""
     path = row["path"]
-    row.update(ledger_rows=ledger_rows, holder_pids=sorted(pids), errors=[],
-               exists=os.path.isdir(path), dirty=None, owner_alive=None)
+    row.update(errors=[], exists=os.path.isdir(path), dirty=None)
+    if not row["exists"]:
+        return None
+    try:
+        top = rev_parse_path(path, "--show-toplevel")
+        if top != path and not os.path.samefile(top, path):
+            raise RuntimeError("directory no longer resolves to the registered worktree")
+        row["dirty"] = bool(git(
+            path, "status", "--porcelain=v1", "-z", "--untracked-files=all",
+            "--ignore-submodules=none", "--", ".", f":(exclude){MARKER}",
+        ))
+        return top
+    except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+        row["errors"].append(error_message(error))
+        return None
+
+
+def classify(row, pids, ledger_rows):
+    path = row["path"]
+    row.update(ledger_rows=ledger_rows, holder_pids=sorted(pids), owner_alive=None)
     marked = os.path.lexists(os.path.join(path, MARKER))
     row["classification"] = "held" if pids else "marked" if marked else "unvouched"
     if marked:
@@ -188,16 +212,6 @@ def inspect_worktree(row, pids, ledger_rows):
             else:
                 row["owner_alive"] = owner["alive"]
         except (OSError, ValueError, subprocess.SubprocessError) as error:
-            row["errors"].append(error_message(error))
-    if row["exists"]:
-        try:
-            if rev_parse_path(path, "--show-toplevel") != path:
-                raise RuntimeError("directory no longer resolves to the registered worktree")
-            row["dirty"] = bool(git(
-                path, "status", "--porcelain=v1", "-z", "--untracked-files=all",
-                "--ignore-submodules=none", "--", ".", f":(exclude){MARKER}",
-            ))
-        except (OSError, RuntimeError, subprocess.SubprocessError) as error:
             row["errors"].append(error_message(error))
 
 
@@ -214,10 +228,10 @@ def main():
         ledger = os.path.abspath(args.ledger or os.path.join(root, ".git-loopy", "subagents.jsonl"))
         rows = [row for row in rows if not row.pop("bare")]
         ledger_row_counts = ledger_counts(ledger)
-        pids_by_worktree = holders(rows) if rows else {}
+        kernel_paths = {row["path"]: inspect_checkout(row) for row in rows}
+        pids_by_worktree = holders(rows, kernel_paths) if rows else {}
         for row in rows:
-            inspect_worktree(row, pids_by_worktree[row["path"]],
-                             ledger_row_counts.get(row["path"], 0))
+            classify(row, pids_by_worktree[row["path"]], ledger_row_counts.get(row["path"], 0))
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         print(f"error: {error_message(error)}", file=sys.stderr)
         return 1

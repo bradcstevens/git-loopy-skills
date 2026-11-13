@@ -160,7 +160,7 @@ class SweepCLI(unittest.TestCase):
         self.assertEqual(holder.stdout.readline().strip(), "ready")
         return holder
 
-    def test_caret_escaped_names_are_still_held(self):
+    def test_escaped_names_are_still_held(self):
         for name in ("bell\atree", "escape\x1btree", "delete\x7ftree", "caret^Gtree"):
             with self.subTest(name=name):
                 linked = self.root / name
@@ -222,6 +222,18 @@ class SweepCLI(unittest.TestCase):
         row = next(row for row in self.sweep()["worktrees"] if row["path"] == str(linked))
         self.assertEqual(row["classification"], "held")
         self.assertIn(holder.pid, row["holder_pids"])
+
+    def test_registered_spelling_the_kernel_never_prints_is_still_held(self):
+        (self.root / "casebase").mkdir()
+        if not (self.root / "CASEBASE").exists():
+            self.skipTest("this file system is case-sensitive")
+        linked = self.root / "CASEBASE" / "linked"
+        self.git("worktree", "add", "--quiet", "--detach", str(linked))
+        holder = self.hold(linked)
+        row = next(row for row in self.sweep()["worktrees"] if row["path"] == str(linked))
+        self.assertEqual(row["classification"], "held")
+        self.assertIn(holder.pid, row["holder_pids"])
+        self.assertEqual(row["errors"], [])
 
     def test_empty_bare_repository_is_not_an_all_unvouched_report(self):
         bare = self.root / "bare.git"
@@ -286,27 +298,21 @@ class SweepCLI(unittest.TestCase):
         self.assertIn("requires Python 3.9 or newer", result.stderr)
 
     def test_inspection_and_ledger_failures_are_not_empty_successes(self):
-        fake_bin = self.root / "bin"
-        fake_bin.mkdir()
-        fake_lsof = fake_bin / "lsof"
-        fake_lsof.write_text("#!/bin/sh\necho 'inspection denied' >&2\nexit 1\n")
-        fake_lsof.chmod(0o755)
-        env = {**os.environ, "PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}
-        silent_bin = self.root / "silent-bin"
-        silent_bin.mkdir()
-        (silent_bin / "lsof").write_text("#!/bin/sh\nexit 1\n")
-        (silent_bin / "lsof").chmod(0o755)
-        silent = {**os.environ, "PATH": str(silent_bin) + os.pathsep + os.environ["PATH"]}
-        empty_bin = self.root / "empty-bin"
-        empty_bin.mkdir()
-        (empty_bin / "lsof").write_text("#!/bin/sh\nexit 0\n")
-        (empty_bin / "lsof").chmod(0o755)
-        empty = {**os.environ, "PATH": str(empty_bin) + os.pathsep + os.environ["PATH"]}
+        def lsof_that(label, body):
+            directory = self.root / f"{label}-bin"
+            directory.mkdir()
+            (directory / "lsof").write_text(f"#!/bin/sh\n{body}\n")
+            (directory / "lsof").chmod(0o755)
+            return {**os.environ, "PATH": str(directory) + os.pathsep + os.environ["PATH"]}
         ledger = self.root / "malformed.jsonl"
         ledger.write_text("not json\n")
-        for args, environment in [((), env), ((), silent), ((), empty),
-                                  (("--ledger", str(ledger)), os.environ)]:
-            with self.subTest(args=args):
+        for label, args, environment in [
+            ("denied", (), lsof_that("denied", "echo 'inspection denied' >&2\nexit 1")),
+            ("silent", (), lsof_that("silent", "exit 1")),
+            ("empty", (), lsof_that("empty", "exit 0")),
+            ("ledger", ("--ledger", str(ledger)), os.environ),
+        ]:
+            with self.subTest(label):
                 result = subprocess.run(
                     ["bash", os.environ["SWEEP"], "--repo", str(self.repo), *args],
                     cwd=self.root, capture_output=True, text=True, env=environment,
