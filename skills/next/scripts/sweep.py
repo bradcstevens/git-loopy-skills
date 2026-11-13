@@ -5,6 +5,8 @@ import argparse
 import json
 import os
 from pathlib import Path
+import shutil
+import stat
 import subprocess
 import sys
 
@@ -47,12 +49,13 @@ def worktrees(repo):
     return rows
 
 
-def kernel_spelling(path):
-    """Return a directory's path as the kernel, and so lsof, spells it, or None."""
+def kernel_spelling(pwd, row):
+    """Return a worktree's path as the kernel, and so lsof, spells it, recording any failure."""
     # git's record can differ in case or Unicode normalization on macOS file systems.
     try:
-        result = subprocess.run(["pwd", "-P"], cwd=path, check=True, capture_output=True)
-    except (OSError, subprocess.SubprocessError):
+        result = subprocess.run([pwd, "-P"], cwd=row["path"], check=True, capture_output=True)
+    except (OSError, subprocess.SubprocessError) as error:
+        row["errors"].append(f"cannot read the kernel's spelling: {error_message(error)}")
         return None
     return os.fsdecode(result.stdout).removesuffix("\n")
 
@@ -190,7 +193,14 @@ def error_message(error):
 def inspect_checkout(row):
     """Record whether a worktree's directory exists and holds uncommitted changes."""
     path = row["path"]
-    row.update(exists=os.path.isdir(path), dirty=None)
+    row["dirty"] = None
+    try:
+        row["exists"] = stat.S_ISDIR(os.stat(path).st_mode)
+    except FileNotFoundError:
+        row["exists"] = False
+    except OSError as error:
+        row["exists"] = None
+        row["errors"].append(error_message(error))
     if not row["exists"]:
         return
     try:
@@ -236,9 +246,16 @@ def main():
         ledger = os.path.abspath(args.ledger or os.path.join(root, ".git-loopy", "subagents.jsonl"))
         rows = [row for row in rows if not row.pop("bare")]
         ledger_row_counts = ledger_counts(ledger)
+        # Resolve pwd before entering any worktree, where a relative PATH entry could find another.
+        pwd = shutil.which("pwd")
+        if pwd is None:
+            raise RuntimeError("pwd not found on PATH")
+        pwd = os.path.abspath(pwd)
+        kernel_paths = {}
         for row in rows:
             inspect_checkout(row)
-        kernel_paths = {row["path"]: kernel_spelling(row["path"]) for row in rows}
+            if row["exists"]:
+                kernel_paths[row["path"]] = kernel_spelling(pwd, row)
         pids_by_worktree = holders(rows, kernel_paths) if rows else {}
         for row in rows:
             classify(row, pids_by_worktree[row["path"]], ledger_row_counts.get(row["path"], 0))

@@ -125,7 +125,7 @@ Each run appends its scan to the **session log**, `.git-loopy/next/sessions.json
 bash skills/next/scripts/sweep.sh --repo /path/to/repository
 ```
 
-It requires Git, Python 3.9 or newer and `lsof` on `PATH`, and makes no network requests. `CHAIN_PYTHON` selects the interpreter, as it does for `chain.sh`. It prints one JSON object with `worktrees`, `counts` (held, marked and unvouched), and the resolved spawn `ledger` path. A bare repository entry is not a working tree and is excluded; with no working trees the array is empty and every count is zero. An all-unvouched result instead has entries and a positive unvouched count.
+It requires Git, Python 3.9 or newer, `lsof` and `pwd` on `PATH`, and makes no network requests. `CHAIN_PYTHON` selects the interpreter, as it does for `chain.sh`. It prints one JSON object with `worktrees`, `counts` (held, marked and unvouched), and the resolved spawn `ledger` path. A bare repository entry is not a working tree and is excluded; with no working trees the array is empty and every count is zero. An all-unvouched result instead has entries and a positive unvouched count.
 
 Each entry includes `path`, `branch` (a full ref, or null when detached), `classification`, `holder_pids`, `owner_alive`, `ledger_rows`, `exists`, `dirty` and `errors`. Classification follows this precedence:
 
@@ -135,7 +135,7 @@ Each entry includes `path`, `branch` (a full ref, or null when detached), `class
 
 The default ledger is the main repository's `.git-loopy/subagents.jsonl`, including when invoked from a linked checkout. `--ledger PATH` overrides `CHAIN_LEDGER` and the default. A separate-git-dir checkout uses the chain's existing root anchor; without that anchor, invoke the sweep from the main checkout so its location is known. The sweep never creates an anchor.
 
-`dirty` includes staged, unstaged, untracked and submodule changes, excluding only `.git-loopy/worktree-owner`. A vanished directory still gets an entry with `exists: false` and `dirty: null`; it is not pruned. An unreadable or invalid marker leaves `owner_alive: null` and an error rather than claiming its owner is dead. An uninspectable checkout similarly leaves `dirty: null`; other worktrees are still reported.
+`dirty` includes staged, unstaged, untracked and submodule changes, excluding only `.git-loopy/worktree-owner`. A vanished directory still gets an entry with `exists: false` and `dirty: null`; it is not pruned. A directory the sweep cannot inspect gets `exists: null` and an error instead, so it is never mistaken for a vanished one. An unreadable or invalid marker leaves `owner_alive: null` and an error rather than claiming its owner is dead. An uninspectable checkout similarly leaves `dirty: null`; other worktrees are still reported. A row with errors is unverified: its classification can be wrong, for example when the kernel's spelling of its directory cannot be read, so nothing should act on it.
 
 Exit status is **0** for a complete report (including missing directories), **1** for inspection errors and **2** for invalid arguments or a missing interpreter or one older than Python 3.9. Per-worktree errors appear in the JSON entry; repository, ledger and process-enumeration failures emit an `error:` diagnostic on stderr and no success-shaped report. Any `lsof` diagnostic, non-zero exit or empty listing is such a failure, since `lsof` always lists at least itself. `lsof` visibility is limited to what the invoking account can inspect, and the report is a point-in-time observation, never proof that removal is safe.
 

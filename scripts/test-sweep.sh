@@ -9,6 +9,7 @@ import json
 import hashlib
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 import sys
@@ -306,6 +307,36 @@ class SweepCLI(unittest.TestCase):
                                 cwd=self.repo, capture_output=True, text=True)
         self.assertEqual(result.returncode, 2)
         self.assertEqual(result.stdout, "")
+
+    def test_missing_pwd_fails_the_sweep(self):
+        tools = self.root / "tools"
+        tools.mkdir()
+        for tool in ("git", "lsof", "bash", "dirname"):
+            (tools / tool).symlink_to(shutil.which(tool))
+        result = subprocess.run(
+            ["bash", os.environ["SWEEP"], "--repo", str(self.repo)], cwd=self.root,
+            capture_output=True, text=True,
+            env={**os.environ, "PATH": str(tools), "CHAIN_PYTHON": sys.executable},
+        )
+        self.assertEqual(result.returncode, 1)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("pwd not found", result.stderr)
+
+    def test_uninspectable_directories_are_flagged_not_misread(self):
+        if os.geteuid() == 0:
+            self.skipTest("permission checks do not bind root")
+        leaf = self.root / "locked-leaf"
+        parent = self.root / "locked-parent"
+        nested = parent / "linked"
+        for path in (leaf, nested):
+            self.git("worktree", "add", "--quiet", "--detach", str(path))
+        for path in (leaf, parent):
+            path.chmod(0)
+            self.addCleanup(path.chmod, 0o755)
+        rows = {row["path"]: row for row in self.sweep(expected=1)["worktrees"]}
+        self.assertTrue(any("kernel's spelling" in error for error in rows[str(leaf)]["errors"]))
+        self.assertIsNone(rows[str(nested)]["exists"])
+        self.assertTrue(rows[str(nested)]["errors"])
 
     def test_missing_or_old_interpreter_exits_two_without_a_report(self):
         old = self.root / "old-python"
