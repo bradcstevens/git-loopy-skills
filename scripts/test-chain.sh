@@ -4133,6 +4133,25 @@ if ! grep -qxF "worktree $vanished_bystander" <<< "$vanished_registrations"; the
 fi
 git -C "$tmp_dir" worktree remove "$vanished_bystander"
 
+# A locked registration whose directory vanished stays, as `git worktree prune` always left it, so
+# rolling back an interrupted reservation still clears its pending record.
+locked_ledger="$tmp_dir/.git-loopy/locked-pending-subagents.jsonl"
+locked_worktree="$tmp_dir/worktree-locked-pending"
+git -C "$tmp_dir" worktree add --quiet -b locked-pending "$locked_worktree"
+git -C "$tmp_dir" worktree lock --reason initializing "$locked_worktree"
+rm -rf "$locked_worktree"
+printf '{"worktree":"%s","branch":"locked-pending","commit":"row","reservation_id":"locked"}\n' \
+  "$locked_worktree" > "$locked_ledger.pending"
+locked_output="$("$CHAIN" recover --ledger "$locked_ledger" --stale-after-seconds 300)"
+assert_plan "rollback leaves a locked vanished registration" "$locked_output" \
+  '{"recovered":0,"targets":[]}'
+if [ -e "$locked_ledger.pending" ]; then
+  err "rolling back a locked vanished reservation kept its pending record"
+fi
+git -C "$tmp_dir" worktree unlock "$locked_worktree"
+git -C "$tmp_dir" worktree remove "$locked_worktree"
+git -C "$tmp_dir" branch -D locked-pending >/dev/null
+
 # Recovery keeps a reclaimed worktree whose clean status hides work found nowhere else: here a
 # commit on a detached HEAD that no ref contains, which removal would leave unreachable.
 unique_ledger="$tmp_dir/.git-loopy/unique-work-subagents.jsonl"

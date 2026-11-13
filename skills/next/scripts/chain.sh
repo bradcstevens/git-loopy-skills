@@ -345,18 +345,20 @@ remove_worktree() {
   else
     # Prune only this worktree's registration. `git worktree prune` would also drop every
     # other vanished worktree's record, which can hold the only copy of its work.
+    # A locked registration stays, as `git worktree prune` always left it.
     local registered=0
     worktree_registered "$ledger_root" "$worktree" || registered=$?
     case "$registered" in
       0) git -C "$ledger_root" worktree remove "$worktree" || return 1 ;;
-      1) ;;
+      1|3) ;;
       *) return 1 ;;
     esac
   fi
 }
 
-# Exit 0 when git registers a worktree at the path, 1 when it does not, and 2 when the
-# listing cannot be read, so a failed lookup is never mistaken for an absent registration.
+# Exit 0 when git registers an unlocked worktree at the path, 3 when that registration is
+# locked, 1 when there is none, and 2 when the listing cannot be read, so a failed lookup is
+# never mistaken for an absent registration.
 worktree_registered() {
   python3 - "$1" "$2" <<'PY'
 import os
@@ -372,10 +374,11 @@ listing = subprocess.run(
 if listing.returncode != 0:
     sys.stderr.write(os.fsdecode(listing.stderr))
     raise SystemExit(2)
-for field in listing.stdout.split(b"\0"):
-    if field.startswith(b"worktree ") and os.path.realpath(
-            os.fsdecode(field[len(b"worktree "):])) == path:
-        raise SystemExit(0)
+for record in listing.stdout.split(b"\0\0"):
+    fields = record.split(b"\0")
+    if fields[0].startswith(b"worktree ") and os.path.realpath(
+            os.fsdecode(fields[0][len(b"worktree "):])) == path:
+        raise SystemExit(3 if any(field.split(b" ")[0] == b"locked" for field in fields) else 0)
 raise SystemExit(1)
 PY
 }
@@ -570,15 +573,15 @@ rollback_pending_worktree() {
 # rebase, a submodule's repository or a vanished worktree's staged index live elsewhere. The
 # sweeper owns that judgement, so recovery asks it rather than keep a second copy, and any
 # failure to judge keeps the worktree.
-worktree_holds_nothing_unique() {
-  local worktree="$1" refusals
+worktree_contains_nothing_unique() {
+  local worktree="$1" unique_work
 
-  refusals="$(bash "$script_dir/sweep.sh" --repo "$(repository_root)" --judge "$worktree")" || {
-    echo "warning: could not judge whether the worktree holds unique work; retaining it: $worktree" >&2
+  unique_work="$(bash "$script_dir/sweep.sh" --repo "$(repository_root)" --judge "$worktree")" || {
+    echo "warning: could not judge whether the worktree contains unique work; retaining it: $worktree" >&2
     return 1
   }
-  [ "$refusals" = "[]" ] && return 0
-  echo "warning: worktree holds work that exists nowhere else ($refusals) and was retained: $worktree" >&2
+  [ "$unique_work" = "[]" ] && return 0
+  echo "warning: worktree contains work that exists nowhere else ($unique_work) and was retained: $worktree" >&2
   return 1
 }
 
@@ -2128,7 +2131,7 @@ print(json.dumps({
   local worktree
   local -a retained_worktrees=()
   while IFS= read -r worktree; do
-    if worktree_can_be_removed "$worktree" && worktree_holds_nothing_unique "$worktree"; then
+    if worktree_can_be_removed "$worktree" && worktree_contains_nothing_unique "$worktree"; then
       if ! remove_worktree "$worktree"; then
         echo "warning: could not remove clean worktree; retaining it: $worktree" >&2
         retained_worktrees+=("$worktree")

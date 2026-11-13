@@ -53,6 +53,15 @@ class SweepCLI(unittest.TestCase):
         return subprocess.run(["git", "-C", str(cwd or self.repo), *args],
                               check=True, capture_output=True).stdout
 
+    def sweep_result(self, *args, env=None):
+        return subprocess.run(["bash", os.environ["SWEEP"], "--repo", str(self.repo), *args],
+                              cwd=self.root, capture_output=True, text=True, env=env)
+
+    def write_ledger(self, *rows):
+        ledger = self.root / "subagents.jsonl"
+        ledger.write_text("".join(json.dumps(row) + "\n" for row in rows))
+        return ledger
+
     def sweep(self, *args, expected=0, env=None):
         result = subprocess.run(["bash", os.environ["SWEEP"], "--repo",
                                  str(self.repo), *args], cwd=self.root,
@@ -1205,8 +1214,7 @@ class SweepCLI(unittest.TestCase):
 
     def test_remove_hands_orphaned_reservations_to_chain_recover(self):
         orphan, row = self.reservation("orphan", *self.ended_process())
-        ledger = self.root / "subagents.jsonl"
-        ledger.write_text(json.dumps(row) + "\n")
+        ledger = self.write_ledger(row)
         chain = Path(os.environ["SWEEP"]).with_name("chain.sh")
         recover = f"{chain} recover --ledger {ledger} --stale-after-seconds 300"
         # A report recovers nothing.
@@ -1214,8 +1222,9 @@ class SweepCLI(unittest.TestCase):
         self.assertNotIn(recover, self.bash_log.read_text().splitlines())
         self.assertNotIn("recovered", report)
         self.assertEqual(json.loads(ledger.read_text()), row)
-        report = self.sweep("--remove", "--ledger", str(ledger),
-                            env={**self.stub_github(), **self.trace_bash()})
+        env = {**self.stub_github(), **self.trace_bash()}
+        env.pop("CHAIN_RESERVATION_STALE_SECONDS", None)
+        report = self.sweep("--remove", "--ledger", str(ledger), env=env)
         self.assertEqual(self.bash_log.read_text().splitlines().count(recover), 1)
         reclaimed = json.loads(ledger.read_text())
         self.assertEqual(reclaimed["outcome"], "reclaimed")
@@ -1228,8 +1237,7 @@ class SweepCLI(unittest.TestCase):
     def test_a_dirty_orphaned_reservation_is_retained_by_recover_then_refused(self):
         orphan, row = self.reservation("orphan", *self.ended_process())
         (orphan / "notes").write_text("work\n")
-        ledger = self.root / "subagents.jsonl"
-        ledger.write_text(json.dumps(row) + "\n")
+        ledger = self.write_ledger(row)
         report = self.sweep("--remove", "--ledger", str(ledger), env=self.stub_github())
         self.assertEqual(report["recovered"]["retained_worktrees"], [str(orphan)])
         self.assertEqual(json.loads(ledger.read_text())["outcome"], "reclaimed")
@@ -1238,7 +1246,7 @@ class SweepCLI(unittest.TestCase):
                          ("declined", ["uncommitted-changes"]))
         self.assertEqual((orphan / "notes").read_text(), "work\n")
 
-    def test_recover_keeps_reclaimed_worktrees_holding_unique_work(self):
+    def test_recover_keeps_reclaimed_worktrees_containing_unique_work(self):
         detached, detached_row = self.reservation("detached", *self.ended_process())
         self.git("checkout", "--quiet", "--detach", cwd=detached)
         self.commit("only copy", cwd=detached)
@@ -1247,17 +1255,14 @@ class SweepCLI(unittest.TestCase):
         (vanished / "notes").write_text("staged\n")
         self.git("add", "notes", cwd=vanished)
         shutil.rmtree(vanished)
-        ledger = self.root / "subagents.jsonl"
-        ledger.write_text(json.dumps(detached_row) + "\n" + json.dumps(vanished_row) + "\n")
-        result = subprocess.run(["bash", os.environ["SWEEP"], "--repo", str(self.repo), "--remove",
-                                 "--ledger", str(ledger)], cwd=self.root, capture_output=True,
-                                text=True, env=self.stub_github())
+        ledger = self.write_ledger(detached_row, vanished_row)
+        result = self.sweep_result("--remove", "--ledger", str(ledger), env=self.stub_github())
         self.assertEqual(result.returncode, 0, result.stderr)
         report = json.loads(result.stdout)
         self.assertEqual(report["recovered"]["recovered"], 2)
         self.assertEqual(sorted(report["recovered"]["retained_worktrees"]),
                          sorted([str(detached), str(vanished)]))
-        self.assertIn("holds work that exists nowhere else", result.stderr)
+        self.assertIn("contains work that exists nowhere else", result.stderr)
         self.assertEqual(self.row(report, detached)["reasons"], ["unreferenced-head"])
         self.assertEqual(self.row(report, vanished)["reasons"], ["uncommitted-changes"])
         self.assertEqual(os.fsdecode(self.git("rev-parse", "HEAD", cwd=detached)).strip(), head)
@@ -1277,14 +1282,12 @@ class SweepCLI(unittest.TestCase):
         self.assertTrue(dirty.is_dir())
         # An existing directory it cannot place, or cannot inspect, is never judged harmless.
         (self.root / "unregistered").mkdir()
-        result = subprocess.run(["bash", os.environ["SWEEP"], "--repo", str(self.repo), "--judge",
-                                 str(self.root / "unregistered")], capture_output=True, text=True)
+        result = self.sweep_result("--judge", str(self.root / "unregistered"))
         self.assertEqual((result.returncode, result.stdout), (1, ""))
         self.assertIn("not a registered worktree", result.stderr)
         for args in (("--judge", str(clean), "--remove"), ("--judge", "")):
             with self.subTest(args):
-                result = subprocess.run(["bash", os.environ["SWEEP"], "--repo", str(self.repo), *args],
-                                        capture_output=True, text=True)
+                result = self.sweep_result(*args)
                 self.assertEqual((result.returncode, result.stdout), (2, ""))
 
     def test_judge_finds_a_worktree_named_in_another_spelling(self):
@@ -1298,20 +1301,17 @@ class SweepCLI(unittest.TestCase):
 
     def test_a_failed_sweep_still_says_what_recover_did(self):
         orphan, row = self.reservation("orphan", *self.ended_process())
-        ledger = self.root / "subagents.jsonl"
-        ledger.write_text(json.dumps(row) + "\n")
+        ledger = self.write_ledger(row)
         lsof = self.before_look(1, "echo 'lsof: cannot inspect' >&2")
-        result = subprocess.run(["bash", os.environ["SWEEP"], "--repo", str(self.repo), "--remove",
-                                 "--ledger", str(ledger)], cwd=self.root, capture_output=True,
-                                text=True, env=self.stub_github(path=[lsof]))
+        result = self.sweep_result("--remove", "--ledger", str(ledger),
+                                   env=self.stub_github(path=[lsof]))
         self.assertEqual((result.returncode, result.stdout), (1, ""))
         self.assertIn("chain.sh recover had already run", result.stderr)
         self.assertIn("issue-orphan", result.stderr)
 
-    def test_a_sweep_named_from_a_checkout_recovery_removes_still_finishes(self):
+    def test_a_sweep_still_finishes_when_recovery_removes_the_checkout_it_named(self):
         orphan, row = self.reservation("orphan", *self.ended_process())
-        ledger = self.root / "subagents.jsonl"
-        ledger.write_text(json.dumps(row) + "\n")
+        ledger = self.write_ledger(row)
         result = subprocess.run(["bash", os.environ["SWEEP"], "--repo", str(orphan), "--remove",
                                  "--ledger", str(ledger)], cwd=self.root, capture_output=True,
                                 text=True, env=self.stub_github())
@@ -1329,13 +1329,26 @@ class SweepCLI(unittest.TestCase):
                                      bound=True)
         # Even a marker that would vouch for the directory yields to the open row.
         self.dead_owner(live)
-        ledger = self.root / "subagents.jsonl"
-        ledger.write_text(json.dumps(row) + "\n")
+        ledger = self.write_ledger(row)
         report = self.sweep("--remove", "--ledger", str(ledger), env=self.stub_github())
         self.assertEqual(report["recovered"], {"recovered": 0, "targets": []})
         listed = self.row(report, live)
         self.assertEqual((listed["outcome"], listed["reasons"]), ("declined", ["ledger-owned"]))
         self.assertEqual(json.loads(ledger.read_text()), row)
+        self.assertTrue(live.is_dir())
+
+    def test_a_ledger_spelling_another_normalization_still_owns_its_worktree(self):
+        live, row = self.reservation("caf\u00e9", os.getpid(), self.process_start(os.getpid()),
+                                     bound=True)
+        decomposed = self.root / "cafe\u0301"
+        if not decomposed.exists():
+            self.skipTest("this file system tells the two Unicode spellings apart")
+        self.dead_owner(live)
+        row["worktree"] = str(decomposed)
+        ledger = self.write_ledger(row)
+        listed = self.row(self.sweep("--remove", "--ledger", str(ledger), env=self.stub_github()), live)
+        self.assertEqual((listed["outcome"], listed["reasons"]), ("declined", ["ledger-owned"]))
+        self.assertEqual(listed["ledger_rows"], 1)
         self.assertTrue(live.is_dir())
 
     def test_a_repository_without_a_ledger_still_sweeps(self):
@@ -1353,8 +1366,7 @@ class SweepCLI(unittest.TestCase):
         self.git("add", "notes", cwd=kept)
         for path in (orphan, kept):
             shutil.rmtree(path)
-        ledger = self.root / "subagents.jsonl"
-        ledger.write_text(json.dumps(row) + "\n")
+        ledger = self.write_ledger(row)
         report = self.sweep("--remove", "--ledger", str(ledger), env=self.stub_github())
         self.assertEqual(report["recovered"]["recovered"], 1)
         self.assertNotIn(str(orphan), self.registered())
