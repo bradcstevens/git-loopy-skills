@@ -117,6 +117,30 @@ Before ranking anything, `next` runs `scripts/sessions.py scan` to see which Git
 
 Each run appends its scan to the **session log**, `.git-loopy/next/sessions.jsonl` at the repository root. The `.git-loopy/` runtime directory is gitignored and shared by every worktree. Each line records when the scan ran, which session invoked `/next`, and the sessions it saw. The next scan compares against that line, so it reports each session as `new` or `continuing` and lists the ones that have `ended` since. Pass `--no-record` to look without logging.
 
+## Read-only worktree sweep
+
+`skills/next/scripts/sweep.sh` reports every registered working tree without writing markers, taking ledger locks, recovering reservations, pruning Git metadata, or removing anything. Run it from any checkout, or specify a repository:
+
+```bash
+bash skills/next/scripts/sweep.sh --repo /path/to/repository
+```
+
+It requires Git, Python 3.9 or newer, `lsof` and `pwd` on `PATH`, and makes no network requests. `CHAIN_PYTHON` selects the interpreter, as it does for `chain.sh`. It prints one JSON object with `worktrees`, `counts` (held, marked and unvouched), and the resolved spawn `ledger` path. A bare repository entry is not a working tree and is excluded; with no working trees the array is empty and every count is zero. An all-unvouched result instead has entries and a positive unvouched count.
+
+Each entry includes `path`, `branch` (a full ref, or null when detached), `classification`, `holder_pids`, `owner_alive`, `ledger_rows`, `exists`, `dirty` and `errors`. Classification follows this precedence:
+
+- **Held:** `lsof` observes a process with its current directory or an open file in the worktree. The sweep, its `lsof` child and the helpers that `lsof` forks on Linux do not count. Nested paths belong to the innermost registered worktree. Paths are compared as `lsof` spells them under `LC_ALL=C`, where a control byte such as BEL prints as `^G` and byte 0xff prints as `\xff` or `^?` depending on the platform. A literal `^G` shares that spelling, so a name that could mean several worktrees holds all of them. Each worktree is also matched by the kernel's own spelling of its directory (`pwd -P`), which can differ from git's record in case or Unicode normalization. `lsof` may follow a name with an annotation such as ` (deleted)` or an NFS ` (host:/export)`, which is read as the end of the path. A nested worktree outranks its parent only when its directory exists, inspects cleanly and belongs to this repository, and the name continues its path with no caret or annotation in between; otherwise the outer worktree is held as well as the inner one. A vanished directory is spelled through its nearest surviving ancestor, and its holders are also matched ignoring ASCII case.
+- **Marked:** a `.git-loopy/worktree-owner` marker exists. `chain.sh owner` supplies owner liveness, including its PID-reuse protection and conservative treatment of an unparseable start time. A live marker owner alone does not mean the directory is currently held.
+- **Unvouched:** neither of those signals exists. A ledger-only worktree remains unvouched: `ledger_rows` separately counts all matching spawn-ledger rows, including closed ones; the sweep never manufactures a marker from a row.
+
+The default ledger is the main repository's `.git-loopy/subagents.jsonl`, including when invoked from a linked checkout. `--ledger PATH` overrides `CHAIN_LEDGER` and the default. A separate-git-dir checkout uses the chain's existing root anchor; without that anchor, invoke the sweep from the main checkout so its location is known. The sweep never creates an anchor.
+
+`dirty` includes staged, unstaged, untracked and submodule changes, excluding only `.git-loopy/worktree-owner`. A vanished directory still gets an entry with `exists: false` and `dirty: null`; it is not pruned. A directory the sweep cannot inspect gets `exists: null` and an error instead, so it is never mistaken for a vanished one. An unreadable or invalid marker leaves `owner_alive: null` and an error rather than claiming its owner is dead. An uninspectable checkout similarly leaves `dirty: null`; other worktrees are still reported. A row with errors is unreliable: its classification can be wrong, for example when the kernel's spelling of its directory or a marker behind an unsearchable directory cannot be read, so nothing should act on it. A warning from `git status`, such as an unreadable untracked directory, is such an error and leaves `dirty: null`.
+
+Exit status is **0** for a complete report (including missing directories), **1** for inspection errors and **2** for invalid arguments or a missing interpreter or one older than Python 3.9. Per-worktree errors appear in the JSON entry; repository, ledger and process-enumeration failures emit an `error:` diagnostic on stderr and no success-shaped report. Any `lsof` diagnostic, non-zero exit or empty listing is such a failure, since `lsof` always lists at least itself. `lsof` visibility is limited to what the invoking account can inspect, and the report is a point-in-time observation, never proof that removal is safe. Two holders still escape it without an error: macOS `lsof` prints only the tail of a name longer than about 1 KB, and a process inside a deleted directory whose own name, as git recorded it, differs from the deleted name other than in ASCII case. Removal must not rest on `held` alone.
+
+The offline CLI suite is `bash scripts/test-sweep.sh`, also run by `scripts/validate-skills.sh`. It uses temporary repositories and real holders, not the repository's own worktree registry.
+
 ## The runtime it names
 
 A recommendation also names the **runtime** to run it on, and `next` reads that runtime rather than sizing one. A skill's `SKILL.md` header sets the GitHub Copilot `model`, reasoning `effort`, and `context` window to choose in `/model` before running it. `next` reads the header of the skill it routes to with `scripts/runtime.py`, so a route to a skill whose header sets `gpt-6.1-sol`, `medium`, and `272K` comes back as:
