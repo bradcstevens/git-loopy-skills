@@ -1135,10 +1135,11 @@ class SweepCLI(unittest.TestCase):
         self.assertEqual(marker.read_text(), "claimed")
 
     def test_an_unfinished_notes_merge_refuses_removal(self):
-        self.git("notes", "add", "-m", "ours")
-        self.git("notes", "--ref", "other", "add", "-m", "theirs")
+        identity = ("-c", "user.name=test", "-c", "user.email=test@example.com")
+        self.git(*identity, "notes", "add", "-m", "ours")
+        self.git(*identity, "notes", "--ref", "other", "add", "-m", "theirs")
         noting = self.linked("noting")
-        merge = subprocess.run(["git", "-C", str(noting), "notes", "merge", "other"],
+        merge = subprocess.run(["git", "-C", str(noting), *identity, "notes", "merge", "other"],
                                capture_output=True)
         self.assertNotEqual(merge.returncode, 0, "the notes merge should stop on its conflict")
         self.dead_owner(noting)

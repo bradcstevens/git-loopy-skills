@@ -519,7 +519,8 @@ def git_worktree_remove(root, row):
 
 def remove_worktree(root, row):
     """Remove a vouched worktree, restoring its marker if the worktree stays on disk."""
-    # Mirrors chain.sh's remove_worktree, which handles the marker the same way.
+    # Like chain.sh's remove_worktree, it sets the marker aside, but it never restores one over a
+    # newer claim and never prunes other registrations.
     marker = os.path.join(row["path"], MARKER)
     if read_marker(row["path"]) != row["_marker"]:
         row["reasons"].append("marker-changed")
@@ -610,7 +611,7 @@ def reclaim_branch(root, row, rows, common):
         """Name why another worktree's claim keeps the branch, or None when nothing claims it."""
         try:
             return "in-another-worktree" if in_another_worktree(root, common, branch) else None
-        except (RuntimeError, subprocess.CalledProcessError) as error:
+        except (OSError, RuntimeError, subprocess.CalledProcessError) as error:
             row["errors"].append(error_message(error))
             return "branch-check-failed"
 
@@ -714,6 +715,8 @@ def reclaim(root, rows, kernel_paths, main_path, common, ledger):
             reclaim_branch(root, row, rows, common)
         except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
             row["errors"].append(error_message(error))
+            if row["branch_outcome"] == "kept" and not row["branch_reasons"]:
+                row["branch_reasons"].append("branch-check-failed")
         if row["branch"]:
             # Worktrees forced onto one branch share its single decision.
             decided[row["branch"]] = (row["branch_outcome"], list(row["branch_reasons"]),
