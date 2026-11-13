@@ -379,6 +379,30 @@ class SweepCLI(unittest.TestCase):
         self.assertEqual(rows[str(outer)]["classification"], "held")
         self.assertIn(holder.pid, rows[str(outer)]["holder_pids"])
 
+    def test_lsof_annotation_after_a_worktree_root_still_holds_it(self):
+        linked = self.root / "annotated"
+        self.git("worktree", "add", "--quiet", "--detach", str(linked))
+        stub = self.root / "stub-bin"
+        stub.mkdir()
+        (stub / "lsof").write_text(f"#!/bin/sh\nprintf 'p1\\0R0\\0n%s (deleted)\\0' '{linked}'\n")
+        (stub / "lsof").chmod(0o755)
+        report = self.sweep(env={**os.environ, "PATH": str(stub) + os.pathsep + os.environ["PATH"]})
+        rows = {row["path"]: row for row in report["worktrees"]}
+        self.assertEqual(rows[str(linked)]["holder_pids"], [1])
+        self.assertEqual(rows[str(self.repo)]["holder_pids"], [])
+
+    def test_vanished_worktree_under_a_differently_spelled_ancestor_is_still_held(self):
+        (self.root / "\u00e9base").mkdir()
+        if not (self.root / "\u00c9BASE").exists():
+            self.skipTest("this file system is case-sensitive")
+        linked = self.root / "\u00c9BASE" / "linked"
+        self.git("worktree", "add", "--quiet", "--detach", str(linked))
+        holder = self.hold(linked)
+        shutil.rmtree(linked)
+        row = next(row for row in self.sweep()["worktrees"] if row["path"] == str(linked))
+        self.assertEqual(row["classification"], "held")
+        self.assertIn(holder.pid, row["holder_pids"])
+
     def test_vanished_case_differing_worktree_is_still_held(self):
         (self.root / "gonebase").mkdir()
         if not (self.root / "GONEBASE").exists():

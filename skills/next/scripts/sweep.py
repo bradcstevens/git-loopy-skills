@@ -22,11 +22,15 @@ LSOF_ESCAPES = {0x08: b"\\b", 0x09: b"\\t", 0x0a: b"\\n", 0x0c: b"\\f", 0x0d: b"
 LSOF_AMBIGUOUS = b"^"
 
 
-def git(repo, *args):
+def git_run(repo, *args):
     return subprocess.run(
         ["git", "--no-optional-locks", "-C", repo, *args],
         check=True, capture_output=True,
-    ).stdout
+    )
+
+
+def git(repo, *args):
+    return git_run(repo, *args).stdout
 
 
 def rev_parse_path(repo, option):
@@ -51,13 +55,19 @@ def worktrees(repo):
 
 def kernel_spelling(pwd, row):
     """Return a worktree's path as the kernel, and so lsof, spells it, recording any failure."""
-    # git's record can differ in case or Unicode normalization on macOS file systems.
+    # git's record can differ in case, Unicode normalization or a firmlinked prefix.
+    path, tail = row["path"], []
+    if row["exists"] is False:
+        # A vanished directory's nearest surviving ancestor still has a kernel spelling.
+        while not os.path.isdir(path) and path != os.path.dirname(path):
+            path, leaf = os.path.split(path)
+            tail.insert(0, leaf)
     try:
-        result = subprocess.run([pwd, "-P"], cwd=row["path"], check=True, capture_output=True)
+        result = subprocess.run([pwd, "-P"], cwd=path, check=True, capture_output=True)
     except (OSError, subprocess.SubprocessError) as error:
         row["errors"].append(f"cannot read the kernel's spelling: {error_message(error)}")
         return None
-    return os.fsdecode(result.stdout).removesuffix("\n")
+    return os.path.join(os.fsdecode(result.stdout).removesuffix("\n"), *tail)
 
 
 def marker_owner(path):
@@ -110,10 +120,16 @@ def lsof_listing():
     return stdout, process.pid
 
 
+def lies_in(name, spelling):
+    """Report whether an lsof name is a spelled path or lies beneath it."""
+    # lsof can follow a name with an annotation such as " (deleted)" or " (host:/export)".
+    return name == spelling or name.startswith(spelling + b"/") or name.startswith(spelling + b" (")
+
+
 def worktrees_named(name, spellings, unreliable):
     """Return every worktree an lsof name may lie in, innermost wherever that is certain."""
     matches = [(path, spelling) for spelling, paths in spellings.items()
-               if name == spelling or name.startswith(spelling + b"/")
+               if lies_in(name, spelling)
                for path in paths]
     # A nested worktree outranks its parent only when its own row is reliable and nothing
     # ambiguous lies between their spellings, so the name cannot mean another directory.
@@ -133,7 +149,7 @@ def holders(rows, kernel_paths):
             for spelling in lsof_spellings(name):
                 spellings.setdefault(spelling, []).append(row["path"])
                 if row["exists"] is False:
-                    # A vanished directory has no kernel spelling to read, so fold its case.
+                    # A deleted name keeps git's spelling, so also match it ignoring ASCII case.
                     folded.setdefault(spelling.lower(), []).append(row["path"])
     unreliable = {row["path"] for row in rows if row["errors"]}
     found = {row["path"]: set() for row in rows}
@@ -153,7 +169,7 @@ def holders(rows, kernel_paths):
                 found[path].add(pid)
             lowered = name.lower()
             for spelling, paths in folded.items():
-                if lowered == spelling or lowered.startswith(spelling + b"/"):
+                if lies_in(lowered, spelling):
                     for path in paths:
                         found[path].add(pid)
     return found
@@ -219,12 +235,8 @@ def inspect_checkout(row):
         top = rev_parse_path(path, "--show-toplevel")
         if top != path and not os.path.samefile(top, path):
             raise RuntimeError("directory no longer resolves to the registered worktree")
-        status = subprocess.run(
-            ["git", "--no-optional-locks", "-C", path, "status", "--porcelain=v1", "-z",
-             "--untracked-files=all", "--ignore-submodules=none", "--", ".",
-             f":(exclude){MARKER}"],
-            check=True, capture_output=True,
-        )
+        status = git_run(path, "status", "--porcelain=v1", "-z", "--untracked-files=all",
+                         "--ignore-submodules=none", "--", ".", f":(exclude){MARKER}")
         # git warns about a directory it cannot read and still exits 0.
         if status.stderr:
             raise RuntimeError(os.fsdecode(status.stderr).strip())
@@ -284,7 +296,7 @@ def main():
         kernel_paths = {}
         for row in rows:
             inspect_checkout(row)
-            if row["exists"]:
+            if row["exists"] is not None:
                 kernel_paths[row["path"]] = kernel_spelling(pwd, row)
         pids_by_worktree = holders(rows, kernel_paths) if rows else {}
         for row in rows:
