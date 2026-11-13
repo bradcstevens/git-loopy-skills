@@ -117,17 +117,18 @@ Before ranking anything, `next` runs `scripts/sessions.py scan` to see which Git
 
 Each run appends its scan to the **session log**, `.git-loopy/next/sessions.jsonl` at the repository root. The `.git-loopy/` runtime directory is gitignored and shared by every worktree. Each line records when the scan ran, which session invoked `/next`, and the sessions it saw. The next scan compares against that line, so it reports each session as `new` or `continuing` and lists the ones that have `ended` since. Pass `--no-record` to look without logging.
 
-## Read-only worktree sweep
+## Worktree sweep
 
-`skills/next/scripts/sweep.sh` reports every registered working tree without writing markers, taking ledger locks, recovering reservations, pruning Git metadata, or removing anything. Run it from any checkout, or specify a repository:
+`skills/next/scripts/sweep.sh` reports every registered working tree. Without `--remove` it is read-only: it writes no markers, takes no ledger locks, recovers no reservations, prunes no Git metadata and removes nothing. Run it from any checkout, or specify a repository:
 
 ```bash
 bash skills/next/scripts/sweep.sh --repo /path/to/repository
+bash skills/next/scripts/sweep.sh --repo /path/to/repository --remove
 ```
 
-It requires Git, Python 3.9 or newer, `lsof` and `pwd` on `PATH`, and makes no network requests. `CHAIN_PYTHON` selects the interpreter, as it does for `chain.sh`. It prints one JSON object with `worktrees`, `counts` (held, marked and unvouched), and the resolved spawn `ledger` path. A bare repository entry is not a working tree and is excluded; with no working trees the array is empty and every count is zero. An all-unvouched result instead has entries and a positive unvouched count.
+It requires Git, Python 3.9 or newer, `lsof` and `pwd` on `PATH`. It makes no network requests unless `--remove` frees a branch, which needs `gh`. `CHAIN_PYTHON` selects the interpreter, as it does for `chain.sh`. It prints one JSON object with `worktrees`, `counts` (held, marked and unvouched), and the resolved spawn `ledger` path. A bare repository entry is not a working tree and is excluded; with no working trees the array is empty and every count is zero. An all-unvouched result instead has entries and a positive unvouched count.
 
-Each entry includes `path`, `branch` (a full ref, or null when detached), `classification`, `holder_pids`, `owner_alive`, `ledger_rows`, `exists`, `dirty` and `errors`. Classification follows this precedence:
+Each entry includes `path`, `branch` (a full ref, or null when detached), `locked`, `classification`, `holder_pids`, `owner_alive`, `ledger_rows`, `exists`, `dirty` and `errors`. Classification follows this precedence:
 
 - **Held:** `lsof` observes a process with its current directory or an open file in the worktree. The sweep, its `lsof` child and the helpers that `lsof` forks on Linux do not count. Nested paths belong to the innermost registered worktree. Paths are compared as `lsof` spells them under `LC_ALL=C`, where a control byte such as BEL prints as `^G` and byte 0xff prints as `\xff` or `^?` depending on the platform. A literal `^G` shares that spelling, so a name that could mean several worktrees holds all of them. Each worktree is also matched by the kernel's own spelling of its directory (`pwd -P`), which can differ from git's record in case or Unicode normalization. `lsof` may follow a name with an annotation such as ` (deleted)` or an NFS ` (host:/export)`, which is read as the end of the path. A nested worktree outranks its parent only when its directory exists, inspects cleanly and belongs to this repository, and the name continues its path with no caret or annotation in between; otherwise the outer worktree is held as well as the inner one. A vanished directory is spelled through its nearest surviving ancestor, and its holders are also matched ignoring ASCII case.
 - **Marked:** a `.git-loopy/worktree-owner` marker exists. `chain.sh owner` supplies owner liveness, including its PID-reuse protection and conservative treatment of an unparseable start time. A live marker owner alone does not mean the directory is currently held.
@@ -135,11 +136,34 @@ Each entry includes `path`, `branch` (a full ref, or null when detached), `class
 
 The default ledger is the main repository's `.git-loopy/subagents.jsonl`, including when invoked from a linked checkout. `--ledger PATH` overrides `CHAIN_LEDGER` and the default. A separate-git-dir checkout uses the chain's existing root anchor; without that anchor, invoke the sweep from the main checkout so its location is known. The sweep never creates an anchor.
 
-`dirty` includes staged, unstaged, untracked and submodule changes, excluding only `.git-loopy/worktree-owner`. A vanished directory still gets an entry with `exists: false` and `dirty: null`; it is not pruned. A directory the sweep cannot inspect gets `exists: null` and an error instead, so it is never mistaken for a vanished one. An unreadable or invalid marker leaves `owner_alive: null` and an error rather than claiming its owner is dead. An uninspectable checkout similarly leaves `dirty: null`; other worktrees are still reported. A row with errors is unreliable: its classification can be wrong, for example when the kernel's spelling of its directory or a marker behind an unsearchable directory cannot be read, so nothing should act on it. A warning from `git status`, such as an unreadable untracked directory, is such an error and leaves `dirty: null`.
+`dirty` includes staged, unstaged, untracked and submodule changes, excluding only `.git-loopy/worktree-owner`. A vanished directory still gets an entry with `exists: false` and `dirty: null`; only `--remove` prunes it. A directory the sweep cannot inspect gets `exists: null` and an error instead, so it is never mistaken for a vanished one. An unreadable or invalid marker leaves `owner_alive: null` and an error rather than claiming its owner is dead. An uninspectable checkout similarly leaves `dirty: null`; other worktrees are still reported. A row with errors is unreliable: its classification can be wrong, for example when the kernel's spelling of its directory or a marker behind an unsearchable directory cannot be read, so nothing should act on it. A warning from `git status`, such as an unreadable untracked directory, is such an error and leaves `dirty: null`.
 
 Exit status is **0** for a complete report (including missing directories), **1** for inspection errors and **2** for invalid arguments or a missing interpreter or one older than Python 3.9. Per-worktree errors appear in the JSON entry; repository, ledger and process-enumeration failures emit an `error:` diagnostic on stderr and no success-shaped report. Any `lsof` diagnostic, non-zero exit or empty listing is such a failure, since `lsof` always lists at least itself. `lsof` visibility is limited to what the invoking account can inspect, and the report is a point-in-time observation, never proof that removal is safe. Two holders still escape it without an error: macOS `lsof` prints only the tail of a name longer than about 1 KB, and a process inside a deleted directory whose own name, as git recorded it, differs from the deleted name other than in ASCII case. Removal must not rest on `held` alone.
 
-The offline CLI suite is `bash scripts/test-sweep.sh`, also run by `scripts/validate-skills.sh`. It uses temporary repositories and real holders, not the repository's own worktree registry.
+### Removal
+
+With `--remove`, the sweep acts on what it classified. It removes a worktree only when the worktree is marked, its owner is proven gone (`owner_alive: false`), it is clean, and no other reason refuses it. Every entry gains `outcome` (`removed`, `pruned` or `declined`), `reasons`, `branch_outcome` and `branch_reasons`, and `counts` gains `removed`, `pruned` and `declined`. A declined entry lists every reason that applies:
+
+- `main-worktree`: the main checkout is never removed.
+- `inspection-errors`: the entry has errors, so its classification is unreliable.
+- `held`: a process holds it, either in the classifying look or in a second `lsof` look taken just before anything is removed.
+- `locked`: `git worktree lock` protects it.
+- `contains-worktree`: another registered worktree lies inside it, and removing it would delete that worktree's files too.
+- `uncommitted-changes`: it is dirty. This refuses removal whatever else is true, because that work exists nowhere else.
+- `unvouched`: it has no marker, so it is reported and never removed.
+- `owner-alive` or `owner-liveness-unknown`: the marker's owner is alive, or its liveness could not be read.
+- `not-prunable`: its directory vanished, but git does not report the registration as prunable.
+- `marker-changed`: the marker's bytes changed after the worktree was judged, so someone may have claimed it.
+- `reappeared`: a vanished directory exists again.
+- `removal-failed`: git refused or failed the removal, and the error is in `errors`.
+
+The sweep sets the marker aside and runs `git worktree remove` without `--force`, so git itself refuses work that appeared after the worktree was judged clean. If the worktree stays on disk, its marker is restored byte for byte. Ignored files are deleted with the worktree, as they are when `chain.sh complete` removes one. A vanished worktree is `pruned`: only its own registration is removed, never through `git worktree prune`, so no other worktree is touched. Its branch is left alone, because nothing vouches for a directory that is gone.
+
+A branch is decided only after its worktree is removed, so a worktree that stays keeps its branch untouched. A detached worktree has no branch, and its `branch_outcome` is null. Otherwise the branch is `deleted` only when `gh pr list --head <branch> --state merged`, run from the repository root, shows a merged pull request from this repository whose head commit is the branch's local tip, and the tip has not moved since. Merge status comes from GitHub and never from local ancestry, because a squash merge leaves a merged branch outside the default branch's ancestry. Any other branch is `kept` with one reason: `checked-out-elsewhere`, `not-merged`, `merged-at-another-commit`, `branch-moved`, `merge-status-unknown` (the lookup failed, and the error is in `errors`) or `deletion-failed`. A removal or branch failure is an error, so the sweep exits **1** after reporting it.
+
+The sweep does not yet consult the spawn ledger before removing, so a marked reservation whose owner died is removed like any other marked worktree.
+
+The offline CLI suite is `bash scripts/test-sweep.sh`, also run by `scripts/validate-skills.sh`. It uses temporary repositories, real holders and a stubbed `gh`, never the repository's own worktree registry or the network.
 
 ## The runtime it names
 

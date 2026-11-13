@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Report worktree ownership without changing the repository."""
+"""Report worktree ownership and, with --remove, reclaim the worktrees something vouches for."""
 
 import argparse
 import json
@@ -12,6 +12,7 @@ import sys
 
 sys.dont_write_bytecode = True
 from sessions import repository_root
+from tracker_failure import run_tracker
 
 
 MARKER = ".git-loopy/worktree-owner"
@@ -29,6 +30,17 @@ def git_run(repo, *args):
         ["git", "--no-optional-locks", "-C", repo, *args],
         check=True, capture_output=True,
     )
+
+
+def leave_caller_repository():
+    """Drop the repository a caller such as a git hook exports, as git does entering another one."""
+    # Otherwise every git and gh call would read the caller's repository, and staged work there
+    # would make a worktree's own status read clean.
+    names = os.fsdecode(subprocess.run(["git", "rev-parse", "--local-env-vars"], check=True,
+                                       capture_output=True).stdout).split()
+    for name in names:
+        if name not in ("GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT"):
+            os.environ.pop(name, None)
 
 
 def git(repo, *args):
@@ -49,8 +61,11 @@ def worktrees(repo):
                 "path": os.path.realpath(os.fsdecode(fields[b"worktree"])),
                 "branch": os.fsdecode(fields.get(b"branch", b"")) or None,
                 "bare": b"bare" in fields,
+                "locked": b"locked" in fields,
                 "classification": "unvouched",
                 "errors": [],
+                "_registered": os.fsdecode(fields[b"worktree"]),
+                "_prunable": b"prunable" in fields,
             })
     return rows
 
@@ -267,11 +282,22 @@ def marker_present(row):
         return False
 
 
+def read_marker(path):
+    """Return a worktree's marker bytes, or None when they cannot be read."""
+    try:
+        with open(os.path.join(path, MARKER), "rb") as marker:
+            return marker.read()
+    except OSError:
+        return None
+
+
 def classify(row, pids, ledger_rows):
     path = row["path"]
     row.update(ledger_rows=ledger_rows, holder_pids=sorted(pids), owner_alive=None)
     marked = marker_present(row)
     row["classification"] = "held" if pids else "marked" if marked else "unvouched"
+    # Kept to prove at removal time that nobody re-marked the worktree since it was judged.
+    row["_marked"], row["_marker"] = marked, read_marker(path) if marked else None
     if marked:
         try:
             owner = marker_owner(path)
@@ -285,16 +311,159 @@ def classify(row, pids, ledger_rows):
             row["errors"].append(error_message(error))
 
 
+def refusals(row, rows, main_path):
+    """Name every reason a sweep may not remove a worktree."""
+    reasons = []
+    if row["path"] == main_path:
+        reasons.append("main-worktree")
+    if row["errors"]:
+        reasons.append("inspection-errors")
+    if row["holder_pids"]:
+        reasons.append("held")
+    if row["locked"]:
+        reasons.append("locked")
+    if row["exists"] is False:
+        # Only the registration is left to reconcile, and git must agree that it is stale.
+        if not row["_prunable"]:
+            reasons.append("not-prunable")
+        return reasons
+    # git worktree remove deletes nested repositories, a nested worktree's unsaved work included.
+    if any(other["path"].startswith(row["path"] + os.sep) for other in rows):
+        reasons.append("contains-worktree")
+    if row["dirty"]:
+        reasons.append("uncommitted-changes")
+    if not row["_marked"]:
+        reasons.append("unvouched")
+    elif row["owner_alive"]:
+        reasons.append("owner-alive")
+    elif row["owner_alive"] is None:
+        reasons.append("owner-liveness-unknown")
+    return reasons
+
+
+def remove_worktree(root, row):
+    """Remove a vouched worktree, restoring its marker if the worktree stays on disk."""
+    marker = os.path.join(row["path"], MARKER)
+    if read_marker(row["path"]) != row["_marker"]:
+        row["reasons"].append("marker-changed")
+        return False
+    # Removal stays unforced so git refuses work that appeared after the worktree was judged
+    # clean, which means the marker must go first: git counts an unignored marker as untracked.
+    os.unlink(marker)
+    try:
+        os.rmdir(os.path.dirname(marker))
+    except OSError:
+        pass
+    try:
+        git_run(root, "worktree", "remove", row["_registered"])
+    except subprocess.CalledProcessError as error:
+        row["reasons"].append("removal-failed")
+        row["errors"].append(error_message(error))
+        if os.path.isdir(row["path"]):
+            os.makedirs(os.path.dirname(marker), exist_ok=True)
+            with open(marker, "wb") as restored:
+                restored.write(row["_marker"])
+        return False
+    return True
+
+
+def merge_status(root, name, tip):
+    """Ask GitHub whether a pull request from this repository's branch merged at its local tip."""
+    # A squash merge leaves a merged branch outside the default branch's ancestry.
+    stdout, error, _, _ = run_tracker(
+        ["gh", "pr", "list", "--head", name, "--state", "merged",
+         "--json", "headRefOid,isCrossRepository", "--limit", "100"], root)
+    if error is not None:
+        raise RuntimeError(f"cannot ask GitHub whether {name} merged: {error}")
+    pulls = json.loads(stdout)
+    if not isinstance(pulls, list) or not all(isinstance(pull, dict) for pull in pulls):
+        raise ValueError(f"unexpected pull request listing for {name}")
+    ours = [pull for pull in pulls if pull.get("isCrossRepository") is False]
+    if any(pull.get("headRefOid") == tip for pull in ours):
+        return "merged"
+    return "merged-at-another-commit" if ours else "not-merged"
+
+
+def reclaim_branch(root, row, rows):
+    """Delete the branch a removed worktree freed, once GitHub shows it merged at its tip."""
+    branch = row["branch"]
+    if not branch or not branch.startswith("refs/heads/"):
+        return
+    row["branch_outcome"] = "kept"
+
+    def keep(reason, error=None):
+        row["branch_reasons"].append(reason)
+        if error is not None:
+            row["errors"].append(error_message(error))
+
+    if any(other is not row and other["branch"] == branch for other in rows):
+        return keep("checked-out-elsewhere")
+    name = branch[len("refs/heads/"):]
+    try:
+        tip = os.fsdecode(git(root, "rev-parse", "--verify", branch)).strip()
+    except subprocess.CalledProcessError as error:
+        return keep("branch-unreadable", error)
+    try:
+        verdict = merge_status(root, name, tip)
+    except (RuntimeError, ValueError) as error:
+        return keep("merge-status-unknown", error)
+    if verdict != "merged":
+        return keep(verdict)
+    try:
+        if os.fsdecode(git(root, "rev-parse", "--verify", branch)).strip() != tip:
+            return keep("branch-moved")
+        git_run(root, "branch", "-D", "--", name)
+    except subprocess.CalledProcessError as error:
+        return keep("deletion-failed", error)
+    row["branch_outcome"] = "deleted"
+
+
+def act(root, rows, kernel_paths, main_path):
+    """Remove every vouched worktree and prune every vanished one, then reclaim freed branches."""
+    for row in rows:
+        row.update(outcome="declined", reasons=refusals(row, rows, main_path),
+                   branch_outcome=None, branch_reasons=[])
+    candidates = [row for row in rows if not row["reasons"]]
+    if not candidates:
+        return
+    # A second look narrows the window in which a process can enter a worktree before it goes.
+    again = holders(rows, kernel_paths)
+    for row in candidates:
+        if again[row["path"]]:
+            row["holder_pids"] = sorted(set(row["holder_pids"]) | again[row["path"]])
+            row["classification"] = "held"
+            row["reasons"].append("held")
+            continue
+        try:
+            if row["exists"] is False:
+                if os.path.lexists(row["path"]):
+                    row["reasons"].append("reappeared")
+                else:
+                    git_run(root, "worktree", "remove", row["_registered"])
+                    row["outcome"] = "pruned"
+            elif remove_worktree(root, row):
+                row["outcome"] = "removed"
+                reclaim_branch(root, row, rows)
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
+            row["errors"].append(error_message(error))
+            if row["outcome"] == "declined" and "removal-failed" not in row["reasons"]:
+                row["reasons"].append("removal-failed")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--repo", help="path inside the repository (default: current directory)")
     parser.add_argument("--ledger", default=os.environ.get("CHAIN_LEDGER"),
                         help="spawn ledger (default: repository .git-loopy/subagents.jsonl)")
+    parser.add_argument("--remove", action="store_true",
+                        help="remove vouched worktrees and the merged branches they free")
     args = parser.parse_args()
     try:
+        leave_caller_repository()
         repo = args.repo or os.getcwd()
         rows = worktrees(repo)
         root = resolve_root(repo, rows)
+        main_path = rows[0]["path"] if rows and not rows[0]["bare"] else None
         ledger = os.path.abspath(args.ledger or os.path.join(root, ".git-loopy", "subagents.jsonl"))
         rows = [row for row in rows if not row.pop("bare")]
         ledger_row_counts = ledger_counts(ledger)
@@ -312,11 +481,19 @@ def main():
         pids_by_worktree = holders(rows, kernel_paths) if rows else {}
         for row in rows:
             classify(row, pids_by_worktree[row["path"]], ledger_row_counts.get(row["path"], 0))
+        if args.remove and rows:
+            act(root, rows, kernel_paths, main_path)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         print(f"error: {error_message(error)}", file=sys.stderr)
         return 1
+    for row in rows:
+        for key in [key for key in row if key.startswith("_")]:
+            del row[key]
     counts = {name: sum(row["classification"] == name for row in rows)
               for name in ("held", "marked", "unvouched")}
+    if args.remove:
+        counts.update({name: sum(row["outcome"] == name for row in rows)
+                       for name in ("removed", "pruned", "declined")})
     print(json.dumps({"worktrees": rows, "counts": counts, "ledger": ledger}))
     return int(any(row["errors"] for row in rows))
 
