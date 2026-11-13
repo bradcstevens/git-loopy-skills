@@ -195,6 +195,20 @@ class SweepCLI(unittest.TestCase):
             self.assertEqual(rows[str(path)]["classification"], "held")
             self.assertIn(holder.pid, rows[str(path)]["holder_pids"])
 
+    def test_ambiguous_nested_worktree_never_hides_its_parent(self):
+        for outer_name, nested_name, held_name in (("outer-caret", "b^G", "b\a"),
+                                                   ("outer-control", "y\a", "y^G")):
+            with self.subTest(nested=nested_name):
+                outer = self.root / outer_name
+                nested = outer / nested_name
+                for path in (outer, nested):
+                    self.git("worktree", "add", "--quiet", "--detach", str(path))
+                (outer / held_name).mkdir()
+                holder = self.hold(outer / held_name)
+                row = next(row for row in self.sweep()["worktrees"] if row["path"] == str(outer))
+                self.assertEqual(row["classification"], "held")
+                self.assertIn(holder.pid, row["holder_pids"])
+
     def test_byte_ff_is_held_whichever_way_lsof_spells_it(self):
         linked = self.root / os.fsdecode(b"byte\xfftree")
         try:
@@ -260,6 +274,17 @@ class SweepCLI(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertEqual(result.stdout, "")
 
+    def test_interpreter_older_than_three_nine_exits_two_without_a_report(self):
+        old = self.root / "old-python"
+        old.write_text("#!/bin/sh\nexit 1\n")
+        old.chmod(0o755)
+        result = subprocess.run(["bash", os.environ["SWEEP"]], cwd=self.repo,
+                                capture_output=True, text=True,
+                                env={**os.environ, "CHAIN_PYTHON": str(old)})
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, "")
+        self.assertIn("requires Python 3.9 or newer", result.stderr)
+
     def test_inspection_and_ledger_failures_are_not_empty_successes(self):
         fake_bin = self.root / "bin"
         fake_bin.mkdir()
@@ -272,9 +297,14 @@ class SweepCLI(unittest.TestCase):
         (silent_bin / "lsof").write_text("#!/bin/sh\nexit 1\n")
         (silent_bin / "lsof").chmod(0o755)
         silent = {**os.environ, "PATH": str(silent_bin) + os.pathsep + os.environ["PATH"]}
+        empty_bin = self.root / "empty-bin"
+        empty_bin.mkdir()
+        (empty_bin / "lsof").write_text("#!/bin/sh\nexit 0\n")
+        (empty_bin / "lsof").chmod(0o755)
+        empty = {**os.environ, "PATH": str(empty_bin) + os.pathsep + os.environ["PATH"]}
         ledger = self.root / "malformed.jsonl"
         ledger.write_text("not json\n")
-        for args, environment in [((), env), ((), silent),
+        for args, environment in [((), env), ((), silent), ((), empty),
                                   (("--ledger", str(ledger)), os.environ)]:
             with self.subTest(args=args):
                 result = subprocess.run(

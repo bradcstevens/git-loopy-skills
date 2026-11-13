@@ -8,10 +8,6 @@ from pathlib import Path
 import subprocess
 import sys
 
-if sys.version_info < (3, 9):
-    print("error: sweep.sh requires Python 3.9 or newer", file=sys.stderr)
-    sys.exit(2)
-
 sys.dont_write_bytecode = True
 from sessions import repository_root
 
@@ -77,7 +73,8 @@ def lsof_spellings(path):
     return {signed, unsigned}
 
 
-def holders(rows):
+def lsof_listing():
+    """Return lsof's NUL-separated listing of every process and its open names."""
     with subprocess.Popen(
         ["lsof", "-nP", "-F0pRn"], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         env={**os.environ, "LC_ALL": "C"},
@@ -93,6 +90,24 @@ def holders(rows):
         detail = os.fsdecode(stderr).strip() or (
             f"exit status {process.returncode} with {'partial' if stdout else 'no'} output")
         raise RuntimeError(f"lsof inspection failed: {detail}")
+    return stdout, process.pid
+
+
+def worktrees_named(name, spellings):
+    """Return every worktree an lsof name may lie in, innermost wherever that is certain."""
+    matches = [(path, spelling) for spelling, paths in spellings.items()
+               if name == spelling or name.startswith(spelling + b"/")
+               for path in paths]
+    # `^` is the only ambiguous spelling: a literal caret or a control byte. A nested
+    # worktree outranks its parent only when no caret lies between their spellings.
+    return {path for path, spelling in matches
+            if not any(inner.startswith(path + os.sep)
+                       and b"^" not in inner_spelling[len(spelling):]
+                       for inner, inner_spelling in matches)}
+
+
+def holders(rows):
+    stdout, lsof_pid = lsof_listing()
     spellings = {}
     for row in rows:
         for spelling in lsof_spellings(row["path"]):
@@ -104,20 +119,13 @@ def holders(rows):
         field = field.lstrip(b"\n")
         if field.startswith(b"p"):
             pid = int(field[1:])
-            excluded = pid in (os.getpid(), process.pid)
+            excluded = pid in (os.getpid(), lsof_pid)
         elif field.startswith(b"R"):
             # Linux lsof forks helpers that inherit its working directory.
-            excluded = excluded or int(field[1:]) == process.pid
+            excluded = excluded or int(field[1:]) == lsof_pid
         elif field.startswith(b"n/") and pid is not None and not excluded:
-            name = field[1:]
-            matches = {path for spelling, paths in spellings.items()
-                       if name == spelling or name.startswith(spelling + b"/")
-                       for path in paths}
-            # A literal caret and a control byte can share a spelling, so the name may
-            # mean several worktrees; only a truly nested one outranks its parent.
-            for path in matches:
-                if not any(other.startswith(path + os.sep) for other in matches):
-                    found[path].add(pid)
+            for path in worktrees_named(field[1:], spellings):
+                found[path].add(pid)
     return found
 
 
