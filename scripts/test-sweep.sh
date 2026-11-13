@@ -391,6 +391,17 @@ class SweepCLI(unittest.TestCase):
         self.assertEqual(rows[str(linked)]["holder_pids"], [1])
         self.assertEqual(rows[str(self.repo)]["holder_pids"], [])
 
+    def test_annotated_sibling_name_never_lets_a_nested_worktree_hide_its_parent(self):
+        outer = self.root / "outer-annotated"
+        nested = outer / "sub"
+        for path in (outer, nested):
+            self.git("worktree", "add", "--quiet", "--detach", str(path))
+        (outer / "sub (2)").mkdir()
+        holder = self.hold(outer / "sub (2)")
+        row = next(row for row in self.sweep()["worktrees"] if row["path"] == str(outer))
+        self.assertEqual(row["classification"], "held")
+        self.assertIn(holder.pid, row["holder_pids"])
+
     def test_vanished_worktree_under_a_differently_spelled_ancestor_is_still_held(self):
         (self.root / "\u00e9base").mkdir()
         if not (self.root / "\u00c9BASE").exists():

@@ -54,7 +54,10 @@ def worktrees(repo):
 
 
 def kernel_spelling(pwd, row):
-    """Return a worktree's path as the kernel, and so lsof, spells it, recording any failure."""
+    """Return a worktree's path as the kernel, and so lsof, spells it, recording any failure.
+
+    A vanished worktree keeps git's spelling for the part of its path that no longer exists.
+    """
     # git's record can differ in case, Unicode normalization or a firmlinked prefix.
     path, tail = row["path"], []
     if row["exists"] is False:
@@ -131,11 +134,13 @@ def worktrees_named(name, spellings, unreliable):
     matches = [(path, spelling) for spelling, paths in spellings.items()
                if lies_in(name, spelling)
                for path in paths]
-    # A nested worktree outranks its parent only when its own row is reliable and nothing
-    # ambiguous lies between their spellings, so the name cannot mean another directory.
+    # A nested worktree outranks its parent only when its own row is reliable, the name
+    # continues its path itself rather than through an annotation, and nothing ambiguous
+    # lies between their spellings, so the name cannot mean another directory.
     return {path for path, spelling in matches
             if not any(inner.startswith(path + os.sep)
                        and inner not in unreliable
+                       and (name == inner_spelling or name.startswith(inner_spelling + b"/"))
                        and LSOF_AMBIGUOUS not in inner_spelling[len(spelling):]
                        for inner, inner_spelling in matches)}
 
