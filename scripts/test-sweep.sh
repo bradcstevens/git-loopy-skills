@@ -527,7 +527,9 @@ class SweepCLI(unittest.TestCase):
                 self.assertEqual(result.returncode, 1)
                 self.assertEqual(result.stdout, "")
                 self.assertIn("error:", result.stderr)
-        self.assertEqual(self.sweep("--ledger", str(pending))["counts"]["unvouched"], 1)
+        # Only removal reads the pending record, so a report never fails over it.
+        for ledger_path in (pending, unreadable):
+            self.assertEqual(self.sweep("--ledger", str(ledger_path))["counts"]["unvouched"], 1)
 
     def test_live_pid_with_reused_start_is_dead_but_unknown_start_is_conservative(self):
         self.mark(self.repo, os.getpid(), "Mon Jan 1 00:00:00 2001")
@@ -867,7 +869,8 @@ class SweepCLI(unittest.TestCase):
         self.dead_owner(late)
         git = self.during_worktree_remove(f"echo unsaved > '{late}/notes'")
         row = self.row(self.sweep("--remove", expected=1, env=self.stub_github(path=[git])), late)
-        self.assertEqual((row["outcome"], row["reasons"]), ("declined", ["removal-failed"]))
+        self.assertEqual((row["outcome"], row["reasons"]),
+                         ("declined", ["removal-failed", "uncommitted-changes"]))
         self.assertTrue(row["errors"])
         self.assertEqual((late / "notes").read_text(), "unsaved\n")
         self.assertIn(str(late), self.registered())
@@ -1209,6 +1212,28 @@ class SweepCLI(unittest.TestCase):
                              ("removed", "deleted", []))
         self.assertFalse(self.has_branch("shared"))
         self.assertEqual(self.asked_github_about(), ["shared"])
+
+    def test_a_branch_stays_while_a_twin_on_it_stays(self):
+        pulls = {}
+        for branch, keep_twin in (("pruned-twin", lambda twin: shutil.rmtree(twin)),
+                                  ("dirty-twin", lambda twin: (twin / "notes").write_text("work\n"))):
+            removed = self.linked(f"{branch}-removed", branch=branch)
+            twin = self.root / f"{branch}-twin"
+            self.git("worktree", "add", "--quiet", "--force", str(twin), branch)
+            for path in (removed, twin):
+                self.dead_owner(path)
+            keep_twin(twin)
+            pulls[branch] = [{"headRefOid": self.tip(branch), "isCrossRepository": False}]
+        report = self.sweep("--remove", env=self.stub_github(pulls))
+        for branch, twin_outcome in (("pruned-twin", "pruned"), ("dirty-twin", "declined")):
+            with self.subTest(branch):
+                row = self.row(report, self.root / f"{branch}-removed")
+                self.assertEqual((row["outcome"], row["branch_outcome"], row["branch_reasons"]),
+                                 ("removed", "kept", ["in-another-worktree"]))
+                twin = self.row(report, self.root / f"{branch}-twin")
+                self.assertEqual((twin["outcome"], twin["branch_outcome"]), (twin_outcome, None))
+                self.assertTrue(self.has_branch(branch))
+        self.assertEqual(self.asked_github_about(), [])
 
     def test_a_branch_that_moves_during_the_lookup_is_kept(self):
         moving = self.linked("moving")

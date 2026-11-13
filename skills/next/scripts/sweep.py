@@ -12,6 +12,7 @@ import subprocess
 import sys
 
 sys.dont_write_bytecode = True
+from chain_ledger import is_open
 from sessions import repository_root
 from tracker_failure import run_tracker
 
@@ -228,21 +229,26 @@ def resolve_root(repo, rows):
 Ledger = namedtuple("Ledger", "counts owned")
 
 
-def read_ledger(path, pending=True):
-    """Count each worktree's spawn-ledger rows, and name the worktrees the ledger owns."""
-    counts, owned = {}, set()
+def ledger_owned(path):
+    """Name every worktree chain.sh owns: those of open rows, and of a pending transaction."""
+    owned = set(read_ledger(path).owned)
     # A reserve or claim interrupted before it finished leaves this record naming its worktree,
     # and the next chain.sh command rolls that transaction back.
     try:
         with open(path + ".pending", encoding="utf-8") as record:
-            transaction = json.load(record) if pending else None
+            transaction = json.load(record)
     except FileNotFoundError:
-        transaction = None
-    if transaction is not None:
-        if not isinstance(transaction, dict) or not isinstance(transaction.get("worktree"), str) \
-                or not transaction["worktree"]:
-            raise ValueError(f"{path}.pending: pending worktree record requires a worktree path")
-        owned.add(os.path.realpath(transaction["worktree"]))
+        return owned
+    if not isinstance(transaction, dict) or not isinstance(transaction.get("worktree"), str) \
+            or not transaction["worktree"]:
+        raise ValueError(f"{path}.pending: pending worktree record requires a worktree path")
+    owned.add(os.path.realpath(transaction["worktree"]))
+    return owned
+
+
+def read_ledger(path):
+    """Count each worktree's spawn-ledger rows, and name the worktrees an open row owns."""
+    counts, owned = {}, set()
     try:
         ledger = open(path, encoding="utf-8")
     except FileNotFoundError:
@@ -256,8 +262,7 @@ def read_ledger(path, pending=True):
                 raise ValueError(f"{path}:{number}: ledger row requires a worktree path")
             worktree = os.path.realpath(row["worktree"])
             counts[worktree] = counts.get(worktree, 0) + 1
-            # chain.sh treats a row without a finish time as open, and owns its worktree.
-            if not row.get("finish_time"):
+            if is_open(row):
                 owned.add(worktree)
     return Ledger(counts, owned)
 
@@ -399,8 +404,9 @@ def find_record(path, records, main_path, common):
     raise RuntimeError(f"cannot find git's record of the worktree at {path}")
 
 
-def record_refusals(root, row, record):
+def record_refusals(root, row, records, main_path, common):
     """Name what git's record of a worktree holds that removal would destroy, or git would refuse."""
+    record = find_record(row["path"], records, main_path, common)
     reasons = []
     if any(os.path.lexists(os.path.join(record, name)) for name in OPERATION_STATE):
         reasons.append("operation-in-progress")
@@ -451,9 +457,8 @@ def changes_since_judged(root, row, records, main_path, common, ledger):
     fresh = {**current, "exists": row["exists"], "holder_pids": [], "errors": [],
              "_marked": row["_marked"], "owner_alive": row["owner_alive"],
              "dirty": uncommitted(row["path"]) if row["exists"] else None,
-             "_ledger_owned": row["path"] in read_ledger(ledger).owned}
-    fresh["_record_refusals"] = record_refusals(
-        root, fresh, find_record(fresh["path"], records, main_path, common))
+             "_ledger_owned": row["path"] in ledger_owned(ledger)}
+    fresh["_record_refusals"] = record_refusals(root, fresh, records, main_path, common)
     reasons = []
     if (current["_head"], current["branch"]) != (row["_head"], row["branch"]):
         reasons.append("head-moved")
@@ -541,6 +546,8 @@ def remove_worktree(root, row):
         # git deletes the registration even when it fails to delete the whole directory.
         if row["_registered"] not in {other["_registered"] for other in worktrees(root)}:
             row["reasons"].append("registration-lost")
+        elif uncommitted(row["path"]):
+            row["reasons"].append("uncommitted-changes")
         return False
     return True
 
@@ -587,7 +594,7 @@ def in_another_worktree(root, common, branch):
     return False
 
 
-def reclaim_branch(root, row, common):
+def reclaim_branch(root, row, rows, common):
     """Delete the branch a removed worktree freed, once GitHub shows it merged at its tip."""
     branch = row["branch"]
     if not branch or not branch.startswith(HEADS):
@@ -611,6 +618,10 @@ def reclaim_branch(root, row, common):
     if git_run(root, "rev-parse", "--verify", "--quiet", branch, check=False).returncode == 1:
         row["branch_outcome"] = None
         return
+    # A twin this sweep pruned or declined still answers for the branch, as it says it does.
+    if any(other is not row and other["branch"] == branch and other["outcome"] != "removed"
+           for other in rows):
+        return keep("in-another-worktree")
     reason = reason_to_keep()
     if reason:
         return keep(reason)
@@ -649,8 +660,7 @@ def reclaim(root, rows, kernel_paths, main_path, common, ledger):
         row["_record_refusals"] = []
         if row["exists"] is not None and not row["errors"] and row["path"] != main_path:
             try:
-                row["_record_refusals"] = record_refusals(
-                    root, row, find_record(row["path"], records, main_path, common))
+                row["_record_refusals"] = record_refusals(root, row, records, main_path, common)
             except (OSError, RuntimeError, subprocess.SubprocessError) as error:
                 row["errors"].append(error_message(error))
     for row in rows:
@@ -701,7 +711,7 @@ def reclaim(root, rows, kernel_paths, main_path, common, ledger):
             continue
         earlier_errors = len(row["errors"])
         try:
-            reclaim_branch(root, row, common)
+            reclaim_branch(root, row, rows, common)
         except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
             row["errors"].append(error_message(error))
         if row["branch"]:
@@ -726,7 +736,9 @@ def main():
         main_path = rows[0]["path"] if rows and not rows[0]["bare"] else None
         ledger = os.path.abspath(args.ledger or os.path.join(root, ".git-loopy", "subagents.jsonl"))
         rows = [row for row in rows if not row.pop("bare")]
-        spawn_ledger = read_ledger(ledger, pending=args.remove)
+        spawn_ledger = read_ledger(ledger)
+        # Only removal needs the pending record, so a report never depends on reading it.
+        owned = ledger_owned(ledger) if args.remove else spawn_ledger.owned
         # Resolve pwd before entering any worktree, where a relative PATH entry could find another.
         pwd = shutil.which("pwd")
         if pwd is None:
@@ -741,7 +753,7 @@ def main():
         pids_by_worktree = holders(rows, kernel_paths) if rows else {}
         for row in rows:
             classify(row, pids_by_worktree[row["path"]], spawn_ledger.counts.get(row["path"], 0))
-            row["_ledger_owned"] = row["path"] in spawn_ledger.owned
+            row["_ledger_owned"] = row["path"] in owned
         if args.remove and rows:
             reclaim(root, rows, kernel_paths, main_path, common, ledger)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
