@@ -35,8 +35,8 @@ def git_run(repo, *args):
     )
 
 
-def leave_caller_repository():
-    """Drop the repository a caller such as a git hook exports, as git does entering another one."""
+def ignore_exported_repository():
+    """Drop the repository an invoking git hook exports, as git does entering another repository."""
     # Otherwise every git and gh call would read the caller's repository, and staged work there
     # would make a worktree's own status read clean.
     names = os.fsdecode(subprocess.run(["git", "rev-parse", "--local-env-vars"], check=True,
@@ -332,15 +332,58 @@ def encloses(directory, path):
     return False
 
 
-def unfinished_work(root, row):
-    """Name work a worktree's git directory holds beyond its files, which removal would destroy."""
+def administrative_directories(common):
+    """Map each linked worktree's path to git's record of it under the common directory."""
+    found = {}
+    base = os.path.join(common, "worktrees")
+    try:
+        entries = os.listdir(base)
+    except FileNotFoundError:
+        return found
+    for entry in entries:
+        record = os.path.join(base, entry)
+        try:
+            with open(os.path.join(record, "gitdir"), "rb") as gitdir:
+                target = os.fsdecode(gitdir.read()).removesuffix("\n")
+        except OSError:
+            continue
+        # gitdir names the worktree's .git file, absolute or relative to the record itself.
+        found[os.path.dirname(os.path.realpath(os.path.join(record, target)))] = record
+    return found
+
+
+def record_refusals(root, row, records):
+    """Name what git's record of a worktree holds that removal would destroy, or git would refuse."""
+    if row["exists"]:
+        record = rev_parse_path(row["path"], "--absolute-git-dir")
+    elif row["path"] in records:
+        record = records[row["path"]]
+    else:
+        raise RuntimeError("cannot find git's record of the vanished worktree")
     reasons = []
-    git_dir = os.fsdecode(git(row["path"], "rev-parse", "--absolute-git-dir")).removesuffix("\n")
-    if any(os.path.lexists(os.path.join(git_dir, name)) for name in OPERATION_STATE):
+    if any(os.path.lexists(os.path.join(record, name)) for name in OPERATION_STATE):
         reasons.append("operation-in-progress")
-    # A detached HEAD's commits may be on no branch, and its reflog goes with the worktree.
+    # A detached HEAD's commits may be on no branch, and the record holds its only reflog.
     if row["branch"] is None and not git(root, "for-each-ref", "--count=1", "--contains", row["_head"]):
         reasons.append("unreferenced-head")
+    if not row["exists"]:
+        # With the directory gone, the index is the only place a staged change still exists.
+        staged = subprocess.run(
+            ["git", "--no-optional-locks", "--git-dir", record, "diff-index", "--cached", "--quiet",
+             "HEAD", "--"], cwd=root, capture_output=True)
+        if staged.returncode not in (0, 1):
+            raise subprocess.CalledProcessError(staged.returncode, staged.args, staged.stdout,
+                                                staged.stderr)
+        if staged.returncode:
+            reasons.append("uncommitted-changes")
+        return reasons
+    # git refuses to remove a worktree holding a checked-out submodule.
+    for entry in git(row["path"], "ls-files", "--stage", "-z").split(b"\0"):
+        mode, _, name = entry.partition(b"\t")
+        if mode.startswith(b"160000 ") and os.path.lexists(
+                os.path.join(row["path"], os.fsdecode(name), ".git")):
+            reasons.append("contains-submodule")
+            break
     return reasons
 
 
@@ -356,38 +399,33 @@ def refusals(row, rows, main_path, common):
     if row["locked"]:
         reasons.append("locked")
     if row["exists"] is False:
-        # Only the registration is left to reconcile, and git must agree that it is stale.
+        # Only git's record is left, so pruning it needs git to report it prunable.
         if not row["_prunable"]:
             reasons.append("not-prunable")
-        return reasons
-    # git worktree remove deletes nested repositories, a nested worktree's unsaved work included.
-    if any(other["path"].startswith(row["path"] + os.sep) or encloses(row["path"], other["path"])
-           for other in rows if other is not row):
-        reasons.append("contains-worktree")
-    if row["path"] != main_path and encloses(row["path"], common):
-        reasons.append("contains-repository")
-    if row["dirty"]:
-        reasons.append("uncommitted-changes")
-    reasons.extend(row["_unfinished"])
-    if not row["_marked"]:
-        reasons.append("unvouched")
-    elif row["owner_alive"]:
-        reasons.append("owner-alive")
-    elif row["owner_alive"] is None:
-        reasons.append("owner-liveness-unknown")
+    else:
+        # git worktree remove deletes nested repositories, a nested worktree's unsaved work included.
+        if any(other["path"].startswith(row["path"] + os.sep) or encloses(row["path"], other["path"])
+               for other in rows if other is not row):
+            reasons.append("contains-worktree")
+        if row["path"] != main_path and encloses(row["path"], common):
+            reasons.append("contains-repository")
+        if row["dirty"]:
+            reasons.append("uncommitted-changes")
+    reasons.extend(reason for reason in row["_record"] if reason not in reasons)
+    if row["exists"] is not False:
+        if not row["_marked"]:
+            reasons.append("unvouched")
+        elif row["owner_alive"]:
+            reasons.append("owner-alive")
+        elif row["owner_alive"] is None:
+            reasons.append("owner-liveness-unknown")
     return reasons
 
 
-def unregister(root, row):
+def git_worktree_remove(root, row):
     """Run git's own unforced removal, which refuses a worktree holding uncommitted changes."""
     # That refusal follows status.showUntrackedFiles, so make it see every untracked file.
     git_run(root, "-c", "status.showUntrackedFiles=all", "worktree", "remove", row["_registered"])
-
-
-def registered_paths(root):
-    listing = git(root, "worktree", "list", "--porcelain", "-z")
-    return {os.fsdecode(field[len(b"worktree "):])
-            for field in listing.split(b"\0") if field.startswith(b"worktree ")}
 
 
 def remove_worktree(root, row):
@@ -405,12 +443,12 @@ def remove_worktree(root, row):
     except OSError:
         pass
     try:
-        unregister(root, row)
+        git_worktree_remove(root, row)
     except subprocess.CalledProcessError as error:
         row["reasons"].append("removal-failed")
         row["errors"].append(error_message(error))
         # git deletes the registration even when it fails to delete the whole directory.
-        if row["_registered"] not in registered_paths(root):
+        if row["_registered"] not in {other["_registered"] for other in worktrees(root)}:
             row["reasons"].append("registration-lost")
         if os.path.isdir(row["path"]):
             os.makedirs(os.path.dirname(marker), exist_ok=True)
@@ -441,7 +479,7 @@ def branch_tip(root, branch):
     return os.fsdecode(git(root, "rev-parse", "--verify", branch)).strip()
 
 
-def reclaim_branch(root, row, rows):
+def reclaim_branch(root, row):
     """Delete the branch a removed worktree freed, once GitHub shows it merged at its tip."""
     branch = row["branch"]
     if not branch or not branch.startswith("refs/heads/"):
@@ -453,11 +491,13 @@ def reclaim_branch(root, row, rows):
         if error is not None:
             row["errors"].append(error_message(error))
 
-    if any(other is not row and other["branch"] == branch
-           and other["outcome"] not in ("removed", "pruned") for other in rows):
-        return keep("checked-out-elsewhere")
+    def checked_out():
+        return any(other["branch"] == branch for other in worktrees(root))
+
     name = branch[len("refs/heads/"):]
     try:
+        if checked_out():
+            return keep("checked-out-elsewhere")
         tip = branch_tip(root, branch)
     except subprocess.CalledProcessError as error:
         return keep("branch-unreadable", error)
@@ -468,22 +508,32 @@ def reclaim_branch(root, row, rows):
     if verdict != "merged":
         return keep(verdict)
     try:
-        if branch_tip(root, branch) != tip:
-            return keep("branch-moved")
-        git_run(root, "branch", "-D", "--", name)
+        # git branch -D would refuse a branch a worktree checked out during the lookup.
+        if checked_out():
+            return keep("checked-out-elsewhere")
+        # Deleting against the tip GitHub vouched for refuses a branch that moved since.
+        git_run(root, "update-ref", "-d", branch, tip)
     except subprocess.CalledProcessError as error:
-        return keep("deletion-failed", error)
+        try:
+            moved = branch_tip(root, branch) != tip
+        except subprocess.CalledProcessError:
+            moved = False
+        return keep("branch-moved") if moved else keep("deletion-failed", error)
+    # update-ref leaves behind the configuration git branch -D would also remove.
+    subprocess.run(["git", "--no-optional-locks", "-C", root, "config", "--remove-section",
+                    f"branch.{name}"], capture_output=True)
     row["branch_outcome"] = "deleted"
 
 
 def reclaim(root, rows, kernel_paths, main_path, common):
     """Remove every vouched worktree and prune every vanished one, then decide freed branches."""
+    records = administrative_directories(common)
     for row in rows:
-        row["_unfinished"] = []
-        if row["exists"] and not row["errors"]:
+        row["_record"] = []
+        if row["exists"] is not None and not row["errors"] and row["path"] != main_path:
             try:
-                row["_unfinished"] = unfinished_work(root, row)
-            except (OSError, subprocess.SubprocessError) as error:
+                row["_record"] = record_refusals(root, row, records)
+            except (OSError, RuntimeError, subprocess.SubprocessError) as error:
                 row["errors"].append(error_message(error))
     for row in rows:
         row.update(outcome="declined", reasons=refusals(row, rows, main_path, common),
@@ -505,7 +555,7 @@ def reclaim(root, rows, kernel_paths, main_path, common):
                 if os.path.lexists(row["path"]):
                     row["reasons"].append("reappeared")
                 else:
-                    unregister(root, row)
+                    git_worktree_remove(root, row)
                     row["outcome"] = "pruned"
             elif remove_worktree(root, row):
                 row["outcome"] = "removed"
@@ -514,12 +564,20 @@ def reclaim(root, rows, kernel_paths, main_path, common):
             if "removal-failed" not in row["reasons"]:
                 row["reasons"].append("removal-failed")
     # Branches wait for every removal, so slow GitHub lookups never widen the window above.
+    decided = {}
     for row in candidates:
-        if row["outcome"] == "removed":
-            try:
-                reclaim_branch(root, row, rows)
-            except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
-                row["errors"].append(error_message(error))
+        if row["outcome"] != "removed":
+            continue
+        if row["branch"] in decided:
+            row["branch_outcome"], row["branch_reasons"] = decided[row["branch"]]
+            continue
+        try:
+            reclaim_branch(root, row)
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
+            row["errors"].append(error_message(error))
+        if row["branch"]:
+            # Worktrees forced onto one branch share its single decision.
+            decided[row["branch"]] = (row["branch_outcome"], list(row["branch_reasons"]))
 
 
 def main():
@@ -531,7 +589,7 @@ def main():
                         help="remove vouched worktrees and the merged branches they free")
     args = parser.parse_args()
     try:
-        leave_caller_repository()
+        ignore_exported_repository()
         repo = args.repo or os.getcwd()
         rows = worktrees(repo)
         root = resolve_root(repo, rows)

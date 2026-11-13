@@ -20,6 +20,7 @@ import unittest
 GH_STUB = r'''
 import json
 import os
+import subprocess
 import sys
 
 watched = json.loads(os.environ.get("GH_STUB_WATCH", "[]"))
@@ -27,6 +28,8 @@ with open(os.environ["GH_STUB_LOG"], "a") as log:
     log.write(json.dumps(sys.argv[1:] + [[os.path.exists(path) for path in watched]]) + "\n")
 if os.environ.get("GH_STUB_FAIL"):
     sys.exit("HTTP 502: Bad Gateway")
+if os.environ.get("GH_STUB_RUN"):
+    subprocess.run(os.environ["GH_STUB_RUN"], shell=True, check=True)
 head = sys.argv[sys.argv.index("--head") + 1]
 with open(os.environ["GH_STUB_PULLS"]) as pulls:
     print(json.dumps(json.load(pulls).get(head, [])))
@@ -557,7 +560,7 @@ class SweepCLI(unittest.TestCase):
     def row(self, report, path):
         return next(row for row in report["worktrees"] if row["path"] == str(path))
 
-    def github(self, pulls=None, fail=False, path=(), watch=()):
+    def github(self, pulls=None, fail=False, path=(), watch=(), run=None):
         """Stub gh on PATH; pulls maps a branch to the merged pull requests GitHub lists for it."""
         stub = self.root / "gh-bin"
         stub.mkdir(exist_ok=True)
@@ -570,7 +573,18 @@ class SweepCLI(unittest.TestCase):
                "GH_STUB_WATCH": json.dumps([str(watched) for watched in watch])}
         if fail:
             env["GH_STUB_FAIL"] = "1"
+        if run:
+            env["GH_STUB_RUN"] = run
         return env
+
+    def rebase_to_edit(self, path):
+        """Leave a worktree stopped at an interactive rebase's edit step, clean but unfinished."""
+        self.commit("one", cwd=path)
+        self.commit("two", cwd=path)
+        subprocess.run(["git", "-C", str(path), "-c", "user.name=test",
+                        "-c", "user.email=test@example.com", "rebase", "--quiet", "-i", "HEAD~1"],
+                       env={**os.environ, "GIT_SEQUENCE_EDITOR": "sed -i.bak -e s/^pick/edit/"},
+                       check=True, capture_output=True)
 
     def asked_github_about(self):
         if not self.gh_log.exists():
@@ -785,12 +799,7 @@ class SweepCLI(unittest.TestCase):
 
     def test_an_unfinished_operation_refuses_removal(self):
         rebasing = self.linked("rebasing")
-        self.commit("one", cwd=rebasing)
-        self.commit("two", cwd=rebasing)
-        subprocess.run(["git", "-C", str(rebasing), "-c", "user.name=test",
-                        "-c", "user.email=test@example.com", "rebase", "--quiet", "-i", "HEAD~1"],
-                       env={**os.environ, "GIT_SEQUENCE_EDITOR": "sed -i.bak -e s/^pick/edit/"},
-                       check=True, capture_output=True)
+        self.rebase_to_edit(rebasing)
         self.dead_owner(rebasing)
         row = self.row(self.sweep("--remove", env=self.github()), rebasing)
         self.assertIs(row["dirty"], False)
@@ -897,6 +906,79 @@ class SweepCLI(unittest.TestCase):
         row = self.row(self.sweep("--remove", env=self.github(path=[lsof])), gone)
         self.assertEqual((row["outcome"], row["reasons"]), ("declined", ["reappeared"]))
         self.assertIn(str(gone), self.registered())
+
+    def test_a_vanished_worktree_whose_record_holds_work_is_not_pruned(self):
+        detached = self.root / "detached"
+        self.git("worktree", "add", "--quiet", "--detach", str(detached))
+        self.commit("only copy", cwd=detached)
+        staged = self.linked("staged")
+        (staged / "notes").write_text("staged\n")
+        self.git("add", "notes", cwd=staged)
+        rebasing = self.linked("rebasing")
+        self.rebase_to_edit(rebasing)
+        for path in (detached, staged):
+            shutil.rmtree(path)
+        # Moved rather than deleted: git's record is all that still connects the copy.
+        rebasing.rename(self.root / "moved")
+        report = self.sweep("--remove", env=self.github())
+        for path, reason in ((detached, "unreferenced-head"), (staged, "uncommitted-changes"),
+                             (rebasing, "operation-in-progress")):
+            with self.subTest(path.name):
+                row = self.row(report, path)
+                self.assertIs(row["exists"], False)
+                self.assertEqual((row["outcome"], row["reasons"]), ("declined", [reason]))
+                self.assertIn(str(path), self.registered())
+        self.assertEqual(report["counts"]["pruned"], 0)
+
+    def test_a_vanished_worktree_registered_by_relative_path_is_pruned(self):
+        relative = self.root / "relative"
+        self.git("-c", "worktree.useRelativePaths=true", "worktree", "add", "--quiet",
+                 "-b", "relative", str(relative))
+        shutil.rmtree(relative)
+        row = self.row(self.sweep("--remove", env=self.github()), relative)
+        self.assertEqual((row["outcome"], row["reasons"]), ("pruned", []))
+        self.assertNotIn(str(relative), self.registered())
+
+    def test_worktrees_forced_onto_one_branch_share_its_decision(self):
+        shared = self.linked("shared")
+        twin = self.root / "twin"
+        self.git("worktree", "add", "--quiet", "--force", str(twin), "shared")
+        for path in (shared, twin):
+            self.dead_owner(path)
+        env = self.github({"shared": [{"headRefOid": self.tip("shared"), "isCrossRepository": False}]})
+        report = self.sweep("--remove", env=env)
+        for path in (shared, twin):
+            row = self.row(report, path)
+            self.assertEqual((row["outcome"], row["branch_outcome"], row["branch_reasons"]),
+                             ("removed", "deleted", []))
+        self.assertFalse(self.has_branch("shared"))
+        self.assertEqual(self.asked_github_about(), ["shared"])
+
+    def test_a_branch_that_moves_during_the_lookup_is_kept(self):
+        moving = self.linked("moving")
+        self.dead_owner(moving)
+        tip = self.tip("moving")
+        self.commit("elsewhere")
+        env = self.github({"moving": [{"headRefOid": tip, "isCrossRepository": False}]},
+                          run=f"git -C '{self.repo}' update-ref refs/heads/moving HEAD")
+        row = self.row(self.sweep("--remove", env=env), moving)
+        self.assertEqual((row["outcome"], row["branch_outcome"], row["branch_reasons"]),
+                         ("removed", "kept", ["branch-moved"]))
+        self.assertNotEqual(self.tip("moving"), tip)
+
+    def test_a_checked_out_submodule_is_a_named_refusal(self):
+        library = self.root / "library"
+        self.git("init", "--quiet", str(library), cwd=self.root)
+        self.commit("library", cwd=library)
+        host = self.linked("host")
+        self.git("-c", "protocol.file.allow=always", "submodule", "--quiet", "add",
+                 str(library), "library", cwd=host)
+        self.commit("add library", cwd=host)
+        self.dead_owner(host)
+        row = self.row(self.sweep("--remove", env=self.github()), host)
+        self.assertIs(row["dirty"], False)
+        self.assertEqual((row["outcome"], row["reasons"]), ("declined", ["contains-submodule"]))
+        self.assertTrue((host / "library" / ".git").exists())
 
     def test_branch_checked_out_elsewhere_is_kept_without_asking_github(self):
         shared = self.linked("shared")
