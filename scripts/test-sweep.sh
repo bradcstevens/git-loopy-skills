@@ -402,6 +402,32 @@ class SweepCLI(unittest.TestCase):
         self.assertEqual(row["classification"], "held")
         self.assertIn(holder.pid, row["holder_pids"])
 
+    def test_nested_worktree_outranks_its_parent_only_when_certain(self):
+        outer = self.root / "outer-certain"
+        self.git("worktree", "add", "--quiet", "--detach", str(outer))
+        annotated = outer / "x (deleted)"
+        vanished = outer / "gone"
+        cloned = outer / "cloned"
+        for path in (annotated, vanished, cloned):
+            self.git("worktree", "add", "--quiet", "--detach", str(path))
+        shutil.rmtree(vanished)
+        shutil.rmtree(cloned)
+        self.git("init", "--quiet", str(cloned), cwd=self.root)
+        stub = self.root / "stub-bin"
+        stub.mkdir()
+        (stub / "lsof").write_text(
+            "#!/bin/sh\n"
+            f"printf 'p1\\0R0\\0n%s\\0' '{outer}/x (deleted)'\n"
+            f"printf 'p2\\0R0\\0n%s\\0' '{vanished}'\n"
+            f"printf 'p3\\0R0\\0n%s\\0' '{cloned}'\n"
+        )
+        (stub / "lsof").chmod(0o755)
+        report = self.sweep(expected=1,
+                            env={**os.environ, "PATH": str(stub) + os.pathsep + os.environ["PATH"]})
+        rows = {row["path"]: row for row in report["worktrees"]}
+        self.assertEqual(rows[str(outer)]["holder_pids"], [1, 2, 3])
+        self.assertIn("directory belongs to another repository", rows[str(cloned)]["errors"])
+
     def test_vanished_worktree_under_a_differently_spelled_ancestor_is_still_held(self):
         (self.root / "\u00e9base").mkdir()
         if not (self.root / "\u00c9BASE").exists():

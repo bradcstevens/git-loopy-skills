@@ -20,6 +20,8 @@ LSOF_ESCAPES = {0x08: b"\\b", 0x09: b"\\t", 0x0a: b"\\n", 0x0c: b"\\f", 0x0d: b"
 # lsof leads other control bytes, and 0xff where char is unsigned, with a caret, so a
 # caret is the only token in its spelling that a literal character can also produce.
 LSOF_AMBIGUOUS = b"^"
+# lsof may append an annotation such as " (deleted)", which a literal " (" can mimic.
+LSOF_ANNOTATION = b" ("
 
 
 def git_run(repo, *args):
@@ -125,23 +127,24 @@ def lsof_listing():
 
 def lies_in(name, spelling):
     """Report whether an lsof name is a spelled path or lies beneath it."""
-    # lsof can follow a name with an annotation such as " (deleted)" or " (host:/export)".
-    return name == spelling or name.startswith(spelling + b"/") or name.startswith(spelling + b" (")
+    return (name == spelling or name.startswith(spelling + b"/")
+            or name.startswith(spelling + LSOF_ANNOTATION))
 
 
-def worktrees_named(name, spellings, unreliable):
+def worktrees_named(name, spellings, certain):
     """Return every worktree an lsof name may lie in, innermost wherever that is certain."""
     matches = [(path, spelling) for spelling, paths in spellings.items()
                if lies_in(name, spelling)
                for path in paths]
-    # A nested worktree outranks its parent only when its own row is reliable, the name
-    # continues its path itself rather than through an annotation, and nothing ambiguous
-    # lies between their spellings, so the name cannot mean another directory.
+    # A nested worktree outranks its parent only when its directory is certainly one of
+    # this repository's worktrees, the name continues its path itself rather than through
+    # an annotation, and nothing ambiguous lies between their spellings.
     return {path for path, spelling in matches
             if not any(inner.startswith(path + os.sep)
-                       and inner not in unreliable
+                       and inner in certain
                        and (name == inner_spelling or name.startswith(inner_spelling + b"/"))
-                       and LSOF_AMBIGUOUS not in inner_spelling[len(spelling):]
+                       and not any(token in inner_spelling[len(spelling):]
+                                   for token in (LSOF_AMBIGUOUS, LSOF_ANNOTATION))
                        for inner, inner_spelling in matches)}
 
 
@@ -156,7 +159,7 @@ def holders(rows, kernel_paths):
                 if row["exists"] is False:
                     # A deleted name keeps git's spelling, so also match it ignoring ASCII case.
                     folded.setdefault(spelling.lower(), []).append(row["path"])
-    unreliable = {row["path"] for row in rows if row["errors"]}
+    certain = {row["path"] for row in rows if row["exists"] and not row["errors"]}
     found = {row["path"]: set() for row in rows}
     pid = None
     excluded = False
@@ -170,7 +173,7 @@ def holders(rows, kernel_paths):
             excluded = excluded or int(field[1:]) == lsof_pid
         elif field.startswith(b"n/") and pid is not None and not excluded:
             name = field[1:]
-            for path in worktrees_named(name, spellings, unreliable):
+            for path in worktrees_named(name, spellings, certain):
                 found[path].add(pid)
             lowered = name.lower()
             for spelling, paths in folded.items():
@@ -223,7 +226,7 @@ def error_message(error):
     return str(error)
 
 
-def inspect_checkout(row):
+def inspect_checkout(row, common):
     """Record whether a worktree's directory exists and holds uncommitted changes."""
     path = row["path"]
     row["dirty"] = None
@@ -240,6 +243,8 @@ def inspect_checkout(row):
         top = rev_parse_path(path, "--show-toplevel")
         if top != path and not os.path.samefile(top, path):
             raise RuntimeError("directory no longer resolves to the registered worktree")
+        if not os.path.samefile(rev_parse_path(path, "--git-common-dir"), common):
+            raise RuntimeError("directory belongs to another repository")
         status = git_run(path, "status", "--porcelain=v1", "-z", "--untracked-files=all",
                          "--ignore-submodules=none", "--", ".", f":(exclude){MARKER}")
         # git warns about a directory it cannot read and still exits 0.
@@ -298,9 +303,10 @@ def main():
         if pwd is None:
             raise RuntimeError("pwd not found on PATH")
         pwd = os.path.abspath(pwd)
+        common = rev_parse_path(repo, "--git-common-dir")
         kernel_paths = {}
         for row in rows:
-            inspect_checkout(row)
+            inspect_checkout(row, common)
             if row["exists"] is not None:
                 kernel_paths[row["path"]] = kernel_spelling(pwd, row)
         pids_by_worktree = holders(rows, kernel_paths) if rows else {}
