@@ -4108,6 +4108,72 @@ if [ -e "$dead_parent_worktree" ]; then
   err "recovery did not release a dead parent's reservation worktree"
 fi
 
+# Reclaiming a reservation whose directory vanished prunes only that registration. A
+# repository-wide prune would also drop another vanished worktree's record, staged work and all.
+vanished_ledger="$tmp_dir/.git-loopy/vanished-reservation-subagents.jsonl"
+vanished_reservation="$tmp_dir/worktree-vanished-reservation"
+vanished_bystander="$tmp_dir/worktree-vanished-bystander"
+bash -c '
+  "$1" reserve --ledger "$2" --route implement --target issue-vanished \
+    --spawn-time 2026-08-22T00:00:00Z --worktree "$3" --chain-depth 1 --parent-pid "$$"
+  :
+' bash "$CHAIN" "$vanished_ledger" "$vanished_reservation"
+git -C "$tmp_dir" worktree add --quiet --detach "$vanished_bystander"
+rm -rf "$vanished_reservation" "$vanished_bystander"
+vanished_output="$("$CHAIN" recover --ledger "$vanished_ledger" --stale-after-seconds 3600 \
+  --now 2026-08-22T00:00:01Z)"
+assert_plan "vanished reservation recovery" "$vanished_output" \
+  '{"recovered":1,"targets":["issue-vanished"]}'
+vanished_registrations="$(git -C "$tmp_dir" worktree list --porcelain)"
+if grep -qxF "worktree $vanished_reservation" <<< "$vanished_registrations"; then
+  err "recovery left a vanished reservation's registration behind"
+fi
+if ! grep -qxF "worktree $vanished_bystander" <<< "$vanished_registrations"; then
+  err "recovering one vanished reservation pruned another worktree's registration"
+fi
+git -C "$tmp_dir" worktree remove "$vanished_bystander"
+
+# A locked registration whose directory vanished stays, as `git worktree prune` always left it, so
+# rolling back an interrupted transaction still clears its pending record.
+locked_ledger="$tmp_dir/.git-loopy/locked-pending-subagents.jsonl"
+locked_worktree="$tmp_dir/worktree-locked-pending"
+git -C "$tmp_dir" worktree add --quiet -b locked-pending "$locked_worktree"
+git -C "$tmp_dir" worktree lock --reason initializing "$locked_worktree"
+rm -rf "$locked_worktree"
+printf '{"worktree":"%s","branch":"locked-pending","commit":"row","reservation_id":"locked"}\n' \
+  "$locked_worktree" > "$locked_ledger.pending"
+locked_output="$("$CHAIN" recover --ledger "$locked_ledger" --stale-after-seconds 300)"
+assert_plan "rollback leaves a locked vanished registration" "$locked_output" \
+  '{"recovered":0,"targets":[]}'
+if [ -e "$locked_ledger.pending" ]; then
+  err "rolling back an interrupted transaction's locked, vanished worktree kept its pending record"
+fi
+git -C "$tmp_dir" worktree unlock "$locked_worktree"
+git -C "$tmp_dir" worktree remove "$locked_worktree"
+git -C "$tmp_dir" branch -D locked-pending >/dev/null
+
+# Recovery keeps a reclaimed worktree whose clean status hides work found nowhere else: here a
+# commit on a detached HEAD that no ref contains, which removal would leave unreachable.
+unique_ledger="$tmp_dir/.git-loopy/unique-work-subagents.jsonl"
+unique_worktree="$tmp_dir/worktree-unique-work"
+bash -c '
+  "$1" reserve --ledger "$2" --route implement --target issue-unique-work \
+    --spawn-time 2026-08-22T00:00:00Z --worktree "$3" --chain-depth 1 --parent-pid "$$"
+  :
+' bash "$CHAIN" "$unique_ledger" "$unique_worktree"
+git -C "$unique_worktree" checkout --quiet --detach
+git -C "$unique_worktree" -c user.name=test -c user.email=test@example.com \
+  commit --quiet --allow-empty -m "only copy"
+unique_head="$(git -C "$unique_worktree" rev-parse HEAD)"
+unique_output="$("$CHAIN" recover --ledger "$unique_ledger" --stale-after-seconds 3600 \
+  --now 2026-08-22T00:00:01Z 2>/dev/null)"
+assert_plan "recovery retains unique work" "$unique_output" \
+  '{"recovered":1,"targets":["issue-unique-work"],"retained_worktrees":["'"$unique_worktree"'"]}'
+if [ "$(git -C "$unique_worktree" rev-parse HEAD 2>/dev/null)" != "$unique_head" ]; then
+  err "recovery removed a reclaimed worktree whose detached commit no ref contains"
+fi
+git -C "$tmp_dir" worktree remove --force "$unique_worktree"
+
 # The routing agent reaches `reserve` through a shell that exits with the command,
 # so the invoking process is never the one whose death orphans the reservation.
 # The reserving parent is the session that will bind the run, and only the caller
