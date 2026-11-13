@@ -5,11 +5,15 @@ import argparse
 import json
 import os
 from pathlib import Path
-import re
 import subprocess
 import sys
 
+sys.dont_write_bytecode = True
 from sessions import repository_root
+
+
+LSOF_ESCAPES = {0x08: b"\\b", 0x09: b"\\t", 0x0a: b"\\n", 0x0c: b"\\f", 0x0d: b"\\r",
+                0x5c: b"\\\\"}
 
 
 def git(repo, *args):
@@ -45,9 +49,27 @@ def marker_owner(path):
     return json.loads(result.stdout)
 
 
+def lsof_spelling(path):
+    """Spell a path the way lsof prints names under LC_ALL=C."""
+    spelled = bytearray()
+    for byte in os.fsencode(path):
+        if byte in LSOF_ESCAPES:
+            spelled += LSOF_ESCAPES[byte]
+        elif 0x20 <= byte < 0x7f:
+            spelled.append(byte)
+        elif byte < 0x20:
+            spelled += b"^" + bytes([byte + 0x40])
+        elif byte == 0xff:
+            spelled += b"^?"
+        else:
+            spelled += b"\\x%02x" % byte
+    return bytes(spelled)
+
+
 def holders(rows):
     with subprocess.Popen(
         ["lsof", "-nP", "-F0pRn"], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        env={**os.environ, "LC_ALL": "C"},
     ) as process:
         try:
             stdout, stderr = process.communicate(timeout=30)
@@ -55,10 +77,15 @@ def holders(rows):
             process.kill()
             process.communicate()
             raise
-    if process.returncode not in (0, 1) or stderr:
-        raise RuntimeError(f"lsof inspection failed: {os.fsdecode(stderr).strip()}")
-    if process.returncode == 1 and stdout:
-        raise RuntimeError("lsof inspection returned partial results")
+    # lsof always lists itself, so an empty listing is a failed inspection too.
+    if process.returncode or stderr or not stdout:
+        detail = os.fsdecode(stderr).strip() or (
+            f"exit status {process.returncode} with {'partial' if stdout else 'no'} output")
+        raise RuntimeError(f"lsof inspection failed: {detail}")
+    # A literal caret and a control byte can share one spelling; such a name holds both.
+    spellings = {}
+    for row in rows:
+        spellings.setdefault(lsof_spelling(row["path"]), []).append(row["path"])
     found = {row["path"]: set() for row in rows}
     pid = None
     own = False
@@ -71,19 +98,12 @@ def holders(rows):
             # Linux lsof forks helpers that inherit its working directory.
             own = own or int(field[1:]) == process.pid
         elif field.startswith(b"n/") and pid is not None and not own:
-            # lsof escapes non-printing bytes even with NUL field separators.
-            escapes = {b"a": b"\a", b"b": b"\b", b"f": b"\f", b"n": b"\n",
-                       b"r": b"\r", b"t": b"\t", b"v": b"\v", b"\\": b"\\"}
-            name = re.sub(
-                rb"\\(x[0-9a-fA-F]{2}|[abfnrtv\\])",
-                lambda match: (bytes([int(match[1][1:], 16)]) if match[1].startswith(b"x")
-                               else escapes[match[1]]),
-                field[1:],
-            )
-            path = os.path.realpath(os.fsdecode(name))
-            matches = [root for root in found if path == root or path.startswith(root + os.sep)]
+            name = field[1:]
+            matches = [spelling for spelling in spellings
+                       if name == spelling or name.startswith(spelling + b"/")]
             if matches:
-                found[max(matches, key=len)].add(pid)
+                for path in spellings[max(matches, key=len)]:
+                    found[path].add(pid)
     return found
 
 
@@ -136,9 +156,9 @@ def error_message(error):
     return str(error)
 
 
-def inspect_worktree(row, pids, recorded):
+def inspect_worktree(row, pids, ledger_rows):
     path = row["path"]
-    row.update(ledger_rows=recorded, holder_pids=sorted(pids), errors=[],
+    row.update(ledger_rows=ledger_rows, holder_pids=sorted(pids), errors=[],
                exists=os.path.isdir(path), dirty=None, owner_alive=None)
     marked = os.path.lexists(os.path.join(path, ".git-loopy", "worktree-owner"))
     row["classification"] = "held" if pids else "marked" if marked else "unvouched"
@@ -179,10 +199,11 @@ def main():
         root = resolve_root(args.repo, rows)
         ledger = os.path.abspath(args.ledger or os.path.join(root, ".git-loopy", "subagents.jsonl"))
         rows = [row for row in rows if not row.pop("bare")]
-        recorded = ledger_counts(ledger)
-        held = holders(rows) if rows else {}
+        rows_by_worktree = ledger_counts(ledger)
+        pids_by_worktree = holders(rows) if rows else {}
         for row in rows:
-            inspect_worktree(row, held[row["path"]], recorded.get(row["path"], 0))
+            inspect_worktree(row, pids_by_worktree[row["path"]],
+                             rows_by_worktree.get(row["path"], 0))
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         print(f"error: {error_message(error)}", file=sys.stderr)
         return 1

@@ -38,4 +38,5 @@ jobs:
           scripts/test-chain.sh
           python3 scripts/test-chain-entry.py
           python3 scripts/test-target-holders.py
+          bash scripts/test-sweep.sh
           bash scripts/test-chain-hook.sh

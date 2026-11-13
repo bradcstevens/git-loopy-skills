@@ -155,6 +155,42 @@ class SweepCLI(unittest.TestCase):
             self.assertIn(os.getpid(), rows[str(linked)]["holder_pids"])
             self.assertEqual(rows[str(neighbor)]["classification"], "unvouched")
 
+    def hold(self, directory):
+        holder = subprocess.Popen(
+            [sys.executable, "-c", "import time; print('ready', flush=True); time.sleep(120)"],
+            cwd=directory, stdout=subprocess.PIPE, text=True,
+        )
+        def stop():
+            holder.terminate()
+            holder.wait()
+            holder.stdout.close()
+        self.addCleanup(stop)
+        self.assertEqual(holder.stdout.readline().strip(), "ready")
+        return holder
+
+    def test_caret_escaped_names_are_still_held(self):
+        for name in ("bell\atree", "escape\x1btree", "delete\x7ftree", "caret^Gtree"):
+            with self.subTest(name=name):
+                linked = self.root / name
+                self.git("worktree", "add", "--quiet", "--detach", str(linked))
+                holder = self.hold(linked)
+                row = next(row for row in self.sweep()["worktrees"]
+                           if row["path"] == str(linked))
+                self.assertEqual(row["classification"], "held")
+                self.assertIn(holder.pid, row["holder_pids"])
+
+    def test_ambiguous_lsof_spelling_holds_every_worktree_it_could_name(self):
+        control = self.root / "spelled\atree"
+        caret = self.root / "spelled^Gtree"
+        for path in (control, caret):
+            self.git("worktree", "add", "--quiet", "--detach", str(path))
+        holder = self.hold(caret)
+        rows = {row["path"]: row for row in self.sweep()["worktrees"]}
+        for path in (control, caret):
+            self.assertEqual(rows[str(path)]["classification"], "held")
+            self.assertIn(holder.pid, rows[str(path)]["holder_pids"])
+        self.assertEqual(rows[str(self.repo)]["classification"], "unvouched")
+
     def test_empty_bare_repository_is_not_an_all_unvouched_report(self):
         bare = self.root / "bare.git"
         self.git("init", "--quiet", "--bare", str(bare))
@@ -205,9 +241,15 @@ class SweepCLI(unittest.TestCase):
         fake_lsof.write_text("#!/bin/sh\necho 'inspection denied' >&2\nexit 1\n")
         fake_lsof.chmod(0o755)
         env = {**os.environ, "PATH": str(fake_bin) + os.pathsep + os.environ["PATH"]}
+        silent_bin = self.root / "silent-bin"
+        silent_bin.mkdir()
+        (silent_bin / "lsof").write_text("#!/bin/sh\nexit 1\n")
+        (silent_bin / "lsof").chmod(0o755)
+        silent = {**os.environ, "PATH": str(silent_bin) + os.pathsep + os.environ["PATH"]}
         ledger = self.root / "malformed.jsonl"
         ledger.write_text("not json\n")
-        for args, environment in [((), env), (("--ledger", str(ledger)), os.environ)]:
+        for args, environment in [((), env), ((), silent),
+                                  (("--ledger", str(ledger)), os.environ)]:
             with self.subTest(args=args):
                 result = subprocess.run(
                     ["bash", os.environ["SWEEP"], "--repo", str(self.repo), *args],

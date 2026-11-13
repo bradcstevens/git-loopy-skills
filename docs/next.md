@@ -127,7 +127,8 @@ metadata, or removing anything. Run it from any checkout, or specify a repositor
 bash skills/next/scripts/sweep.sh --repo /path/to/repository
 ```
 
-It requires Git, Python 3 and `lsof` on `PATH` and makes no network requests.
+It requires Git, Python 3.9 or newer and `lsof` on `PATH` and makes no network
+requests. `CHAIN_PYTHON` selects the interpreter, as it does for `chain.sh`.
 It prints one JSON object with `worktrees`, `counts` (held, marked and unvouched),
 and the resolved spawn `ledger` path. A bare repository entry is not a working
 tree and is excluded; with no working trees the array is empty and every count
@@ -141,6 +142,9 @@ and `errors`. Classification follows this precedence:
 - **Held:** `lsof` observes a process with its current directory or an open file
   in the worktree. The sweep, its `lsof` child and the helpers that `lsof` forks
   on Linux do not count. Nested paths belong to the innermost registered worktree.
+  Paths are compared as `lsof` spells them, which writes a control byte such as
+  BEL as `^G`; a worktree named with a literal `^G` shares that spelling, so a
+  holder of either holds both.
 - **Marked:** a `.git-loopy/worktree-owner` marker exists. `chain.sh owner`
   supplies owner liveness, including its PID-reuse protection and conservative
   treatment of an unparseable start time. A live marker owner alone does not
@@ -165,7 +169,9 @@ worktrees are still reported.
 Exit status is **0** for a complete report (including missing directories),
 **1** for inspection errors and **2** for invalid arguments. Per-worktree errors
 appear in the JSON entry; repository, ledger and process-enumeration failures
-emit an `error:` diagnostic on stderr and no success-shaped report. `lsof`
+emit an `error:` diagnostic on stderr and no success-shaped report. Any `lsof`
+diagnostic, non-zero exit or empty listing is such a failure, since `lsof`
+always lists at least itself. `lsof`
 visibility is limited to what the invoking account can inspect, and the report
 is a point-in-time observation, never proof that removal is safe.
 
