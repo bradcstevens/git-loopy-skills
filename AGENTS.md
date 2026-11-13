@@ -11,8 +11,19 @@ relative to the repository root and resolve their tools through `PATH`.
 
 | Loop | Command | When to run |
 | --- | --- | --- |
-| Skill validation and script suites | `scripts/validate-skills.sh` | Any change under `skills/`, `docs/`, `scripts/` or `.github/hooks/`, or edits `.gitignore` |
+| Skill validation and script suites | `scripts/validate-skills.sh` | Any change under `skills/`, `profiles/`, `docs/`, `scripts/`, `.github/agents/` or `.github/hooks/`, or edits `.gitignore` |
 | README skill index | `node scripts/build-readme.mjs --check` | Any change that adds, removes, renames or re-describes a skill, changes its invocation mode, adds or removes `docs/<skill>.md`, or edits `scripts/build-readme.mjs`, `.gitignore` or `README.md` |
+
+Hook suites must invoke the resolver from a throwaway fixture repository, not this
+checkout. The invocation logger uses the process working directory to find the
+primary checkout's `.git-loopy/hook-invocations.jsonl`; a fixture payload's `cwd`
+does not isolate that log. `scripts/test-chain-hook.sh` asserts that every resolver
+call appears in its fixture repository's log.
+
+When changing hook-suite isolation, run the full validation loop from a linked
+worktree. Snapshot the primary checkout's hook invocation log before and after,
+compare its contents (not just its line count), and record both line counts in
+the pull request. Do not truncate or restore the live log to make the check pass.
 
 ## Skill headers
 
@@ -27,9 +38,25 @@ context: 1M
 
 These values are generated, so do not hand-tune them. `skills/model-scorecard/profiles.json`
 maps each skill to the role whose work it is, `/model-scorecard` scores that role and fits
-the context to the skill's measured runs (`references/skill-headers.json`), and `/set-task-models`
-writes the headers with `skills/set-task-models/sync_skill_headers.py`. A new skill needs a
-`skills` entry in `profiles.json` and a header; `scripts/validate-skills.sh` enforces both.
+the context to the skill's measured runs (`references/skill-headers.json`), and its build
+automatically runs `skills/set-task-models/sync_skill_headers.py --write` to update the
+headers and `.github/agents/<skill>.agent.md`. `/set-task-models` uses that same projection
+with its decision map. A new skill needs a `skills` entry in `profiles.json`, a header and
+a generated same-named agent. Run the projection rather than hand-tuning them.
+
+Explicit user selections can be recorded in `references/skill-headers.json` with
+`selection_source: "user"` and a supported `tier`, then projected normally.
+Their context sizes are advisory labels, not new model capabilities; `auto` omits
+a fixed context size. A fresh scorecard build replaces these one-off selections.
+
+`to-tickets` is the exception: its interactive persona is retired in favor of
+git-loopy's Planner. Keep the Skill and its model mapping for the Planner and
+non-git-loopy fallback; the projection guards against recreating its persona.
+
+Agent `model` and `reasoning-effort` are runtime fields. Context is advisory metadata,
+not an agent runtime setting: each agent includes an exact CLI launch command applying
+all three settings. Preserve hand-written agent instructions outside the generated
+`model-scorecard` block. The `*-agent` chain carriers remain independently managed.
 
 ## Agent skills
 

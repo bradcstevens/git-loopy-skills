@@ -12,24 +12,37 @@ npx skills update wait-what
 
 ## What it does
 
-`wait-what` is the emergency brake for a message that didn't land. It stops the agent and makes it **re-pitch** what it just said: a little context first, in [ASD-STE100 Simplified Technical English](https://www.asd-ste100.org/), using the ubiquitous language from `GLOSSARY.md`.
+You type `wait-what` when you did not understand a message. The [agent](https://www.aihero.dev/ai-coding-dictionary/agent) then re-pitches what it just said. It adds the context you were missing, writes in plain English, and uses the vocabulary from your project's `GLOSSARY.md`.
 
-It's one line of a skill, and that's the point — the cost of asking is low enough that you use it the moment you feel yourself nodding along.
+The skill is three lines long. That is the design, not an unfinished draft. Skills against verbosity usually fail because they grow too long. A four-hundred-line concision skill still leaves the [model](https://www.aihero.dev/ai-coding-dictionary/model) verbose, because the model copies the length of the skill, not its request. This one has a single precise leading word and nothing else.
 
 ## When to reach for it
 
-You invoke this by typing `/wait-what` — the agent won't reach for it on its own.
+You invoke it by typing `/wait-what`. The agent will not reach for it on its own, and it shouldn't. Only you know when you stopped following.
 
-Reach for it the instant an explanation goes over your head, leans on a term you don't recognise, or quietly skips the step that would have made it make sense. Reaching for it early is cheaper than the alternative: approving something you didn't follow.
+Use it as soon as you notice you're skimming. For example, the agent has started to use jargon it invented, put five acronyms in one sentence, or explained a decision whose premise you never saw. It fixes the conversation you're already in. To stop the jargon arriving at all, use [grill-with-docs](./grill-with-docs.md), which builds the shared language upfront.
 
-## Why those constraints
+## The name is the mechanism
 
-- **Context first** — a re-pitch that restarts from the same midpoint fails the same way. It has to back up.
-- **Simplified Technical English** — a controlled language built for one meaning per word and short, direct sentences. It strips the register that makes an explanation sound complete without being understood.
-- **The ubiquitous language from `GLOSSARY.md`** — the project's own glossary, so the re-pitch reaches for terms you've already agreed on rather than inventing fresh ones.
+The leading word is **wait**. "Be concise" is an instruction about the agent's output, and the model obeys it by clipping words and losing you further. **Wait** is about *your* state. It says you stopped understanding here. An agent that hears "be brief" writes clipped fragments. An agent that hears "wait, you lost me" backs up and explains.
 
-If `GLOSSARY.md` doesn't exist yet, that absence is itself the finding: [domain-modeling](./domain-modeling.md) is the skill that writes one.
+That difference is the whole skill. Every popular fix for verbosity names the *output*: `/tldr`, `/no-fluff`, `/talk-normal`. The model over-corrects into clipped fragments that are shorter and no clearer. Naming the *listener* asks for both halves at once: fewer words **and** the context you were missing.
+
+The skill says re-pitch **that**, not "that last message". What lost you is usually bigger than one paragraph, so the agent decides how far back to go.
+
+## It plugs into the language you already have
+
+The body reuses the leading words already in your global `AGENTS.md` and your project's `GLOSSARY.md`. ASD-STE100 Simplified Technical English sets the register. The ubiquitous language supplies the nouns. The skill, `CLAUDE.md` and `GLOSSARY.md` use the same [tokens](https://www.aihero.dev/ai-coding-dictionary/token), so invoking it is not a new instruction. It is a reminder of one the agent already agreed to.
+
+If you have no `GLOSSARY.md` (and no `GLOSSARY-MAP.md` pointing to one for the context at hand), the skill still works. You lose only the domain-vocabulary half.
+
+## It's working if
+
+- The re-pitch is **shorter and clearer**, not shorter and blunter.
+- It adds the premise you were missing, instead of only deleting words.
+- Project nouns replace invented ones. The terms in your `GLOSSARY.md` come back.
+- You can use it twice in a row, and it does not degrade into terseness.
 
 ## Where it fits
 
-`wait-what` is a reach-for-it-anytime standalone that sits *across* the other skills rather than inside any chain — it applies to whatever the agent just said, in any session. It leans on the glossary that [domain-modeling](./domain-modeling.md) maintains, and pairs naturally with [teach](./teach.md) when the gap is a topic to learn rather than a message to restate. When you're unsure which skill fits the moment, [next](./next.md) routes you.
+You can use `wait-what` at any point, in any conversation, inside any other skill. It repairs one message after the fact. The real fix is a shared language agreed upfront, and that is [grill-with-docs](./grill-with-docs.md): a [grilling](https://www.aihero.dev/ai-coding-dictionary/grilling) session that runs [domain-modeling](./domain-modeling.md) as it goes, so it records the words you both use in your `GLOSSARY.md`. If you're unsure which skill fits the moment, [ask-matt](./next.md) routes you.

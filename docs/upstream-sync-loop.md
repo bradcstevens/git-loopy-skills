@@ -66,7 +66,7 @@ Both repositories are public, so anyone can comment or open a fork pull request.
 ### Controller
 
 `scripts/upstream-sync.py control` is a pure function of the sensor output, tested offline by
-`scripts/test-upstream-sync.py`. Each run takes the first action that applies:
+`scripts/test-upstream-sync.py`. Each run takes the first action that applies (a sensor that cannot read the system yields `blocked` before any row):
 
 | # | When | Action |
 | --- | --- | --- |
@@ -79,8 +79,9 @@ Both repositories are public, so anyone can comment or open a fork pull request.
 | 7 | Every ticket of an open spec is closed | `close-out` |
 | 8 | The last sync is not in git-loopy's pin | `implement` its ready ticket there, or `downstream-plan` one |
 | 9 | An open spec has an eligible ticket | `implement` (`priority` first, then oldest) |
-| 10 | A release is past the baseline | `plan` if it changes an in-scope skill, else `record-release` |
-| 11 | Otherwise | `none` |
+| 10 | An open spec has no eligible ticket | `wait` if others are being worked, else `blocked` |
+| 11 | No open spec, and a release is past the baseline | `plan` if it changes an in-scope skill, else `record-release` |
+| 12 | Otherwise | `none`, or `blocked` when no sync baseline exists |
 
 A ticket is eligible when it is open, `ready-for-agent` without `ready-for-human`, has both
 `## What to build` and `## Acceptance criteria`, has no open blocker, no assignee and no claim, and
@@ -91,7 +92,7 @@ At most one loop pull request is open at a time, across both repositories.
 ### Actuator
 
 The [GitHub Copilot CLI](https://docs.github.com/copilot/how-tos/copilot-cli), run headless with
-the model, effort and context pinned from `git-loopy.env`, and the
+the model, effort and context pinned in the workflow's `COPILOT_FLAGS`, and the
 [`upstream-sync` skill](../.github/skills/upstream-sync/SKILL.md). The skill drives this
 repository's own skills through the skill tool:
 
@@ -108,7 +109,7 @@ In CI the catalog is copied, never linked, into the agent's skill root, so a tic
 
 ### Merge
 
-Deterministic. The workflow merges only when `skills/next/chain.sh gate` allows: GitHub reports
+Deterministic. The workflow merges only when `skills/next/scripts/chain.sh gate` allows: GitHub reports
 the pull request mergeable, the ticket carries a `review-clean` record for the exact head, and
 every check is green. Making a pull request a draft pauses it.
 
@@ -132,16 +133,17 @@ python3 scripts/upstream-sync.py shepherd --dry-run                  # both, plu
 python3 scripts/test-upstream-sync.py                                # the controller's tests
 ```
 
-To run the actuator on the controller's choice, in a scratch directory:
+To run the actuator on the controller's choice, in a scratch directory (the `copilot` flags below
+mirror `COPILOT_FLAGS` in
+[`agent-upstream-sync.yml`](../.github/workflows/agent-upstream-sync.yml); keep them in step):
 
 ```bash
 python3 scripts/upstream-sync.py control /tmp/sensor.json --out /tmp/decision.json
 python3 scripts/upstream-sync.py start /tmp/decision.json --root /tmp/upstream-sync --out /tmp/workspace.json
 python3 scripts/upstream-sync.py prompt /tmp/decision.json --workspace /tmp/workspace.json > /tmp/agent-prompt.md
-source git-loopy.env
 cd "$(jq -r .work /tmp/workspace.json)"
-copilot -p "$(cat /tmp/agent-prompt.md)" --model "$GIT_LOOPY_MODEL" --reasoning-effort "$GIT_LOOPY_EFFORT" \
-  --context "$GIT_LOOPY_CONTEXT" --allow-all --no-ask-user --no-color --output-format json \
+copilot -p "$(cat /tmp/agent-prompt.md)" --model gpt-6.1-sol --reasoning-effort xhigh --context long_context \
+  --allow-all --no-ask-user --no-color --output-format json \
   --share /tmp/agent-session.md --add-dir <this checkout> > /tmp/agent-output.jsonl
 grep '^{' /tmp/agent-output.jsonl \
   | jq -rs '[.[] | select(.type == "assistant.message" and (.data.content // "") != "")] | last | .data.content // empty' \

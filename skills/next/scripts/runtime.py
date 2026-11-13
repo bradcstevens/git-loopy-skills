@@ -69,6 +69,8 @@ def window(context: str) -> int:
 
 
 def tier_for(model: str, context: str, catalog_path: str) -> Tuple[str, str]:
+    if model == "auto" and context == "auto":
+        return "default", "fallback"
     try:
         with open(catalog_path, encoding="utf-8") as handle:
             caps = json.load(handle).get("models", {}).get(model) or {}
@@ -110,6 +112,9 @@ def scorecard_runtime(name: str, catalog_path: str) -> Optional[Dict[str, str]]:
     values: Dict[str, str] = {}
     for key in KEYS:
         value = entry.get(key)
+        if key == "context" and entry.get("model") == "auto" and value is None:
+            values[key] = "auto"
+            continue
         if not isinstance(value, str) or not VALID[key].fullmatch(value):
             return None
         values[key] = value
@@ -128,13 +133,15 @@ def resolve(name: str, skills_dir: str, catalog_path: str) -> Tuple[int, Dict[st
         read_error = f"{skill_md}: {error}"
 
     present = [key for key in KEYS if key in header]
-    problems = [f"missing {key}" for key in KEYS if key not in header] if present else []
+    required = KEYS[:2] if header.get("model") == "auto" and "context" not in header else KEYS
+    problems = [f"missing {key}" for key in required if key not in header] if present else []
     problems += [
         f"{key} {header[key]!r} is not valid" for key in present if not VALID[key].fullmatch(header[key])
     ]
 
-    if not read_error and len(present) == len(KEYS) and not problems:
-        values = {key: header[key] for key in KEYS}
+    if not read_error and len(present) == len(required) and not problems:
+        values = {key: header[key] for key in present}
+        values.setdefault("context", "auto")
         runtime_source = "skill-header"
     else:
         values = scorecard_runtime(name, catalog_path) or {}

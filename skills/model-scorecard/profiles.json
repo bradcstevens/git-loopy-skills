@@ -1,12 +1,12 @@
 {
   "schema_version": 1,
   "fields": [
+    {"id": "first_answer", "label": "Time to first answer token", "source": "timeToFirstAnswerToken (thinking + prompt processing)"},
     {"id": "success", "label": "Task-fit success", "source": "intelligenceIndex inside the role's band, times the role's benchmarks"},
-    {"id": "first_answer", "label": "Time to first answer token", "source": "medianTimeToFirstAnswerTokenSeconds (thinking + prompt processing)"},
-    {"id": "end_to_end", "label": "End-to-end time", "source": "medianEndToEndResponseTimeSeconds (first answer token + 500 tokens)"},
+    {"id": "end_to_end", "label": "End-to-end time", "source": "first answer token + 500 tokens at outputSpeed"},
     {"id": "token_appetite", "label": "Token appetite", "source": "intelligenceIndexCostPerTask / price1mOutputTokens (tokens spent per task)"},
-    {"id": "consistency", "label": "Consistency", "source": "p95/p05 spread of time to first token and of output tokens/s"},
-    {"id": "throughput", "label": "Output tokens/s", "source": "medianOutputTokensPerSecond"}
+    {"id": "consistency", "label": "Consistency", "source": "p95/p05 spread of time to first token and of output tokens/s; the current dataset omits percentiles, so it scores 0.5"},
+    {"id": "throughput", "label": "Output tokens/s", "source": "outputSpeed"}
   ],
   "roles": {
     "copilot:explore": {
@@ -84,7 +84,7 @@
       "exclude_efforts": ["max"],
       "working_set_k": 188,
       "distinct_vendor_from": "git-loopy:implementation",
-      "why": "Judges whether work was built right with push authority; cross-vendor review holds by construction (ADR-0048)."
+      "why": "Judges whether work was built right, read-only: the Orchestrator alone publishes and closes (ADR-0072); cross-vendor review holds by construction (ADR-0048)."
     },
     "git-loopy:implementation": {
       "harness": "git-loopy",
@@ -154,6 +154,7 @@
   ],
   "skills": {
     "capacity": "copilot:task",
+    "chief-of-staff": "git-loopy:planning",
     "code-review": "copilot:code-review",
     "codebase-audit": "copilot:code-review",
     "codebase-design": "git-loopy:planning",
@@ -186,13 +187,16 @@
     "prototype": "git-loopy:implementation",
     "push": "git-loopy:chore",
     "release": "git-loopy:chore",
+    "release-assessment": "copilot:task",
     "research": "copilot:research",
     "retro": "git-loopy:planning",
     "setup-git-loopy-skills": "git-loopy:chore",
     "show-me": "git-loopy:docs",
+    "sync-branches": "git-loopy:chore",
     "sync-model-roster": "git-loopy:chore",
     "tdd": "git-loopy:test",
     "teach": "git-loopy:docs",
+    "to-handoff": "git-loopy:docs",
     "to-questionnaire": "git-loopy:planning",
     "to-spec": "git-loopy:planning",
     "to-tickets": "git-loopy:planning",

@@ -1,10 +1,10 @@
 ---
 name: grill-me
 description: A relentless interview to sharpen a plan or design.
-model: claude-opus-5.5
-effort: medium
-context: 1M
+model: gpt-6.1-terra
+effort: low
+context: 272K
 disable-model-invocation: true
 ---
 
-Run a `/grilling` session.
+Call the Skill tool with "grilling".

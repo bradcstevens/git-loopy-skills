@@ -3,6 +3,8 @@
 
 import importlib.util
 import json
+import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -66,6 +68,99 @@ def synthetic_picks():
     return scorer.recommend(PROFILES, {"copilot-cli": pool, "git-loopy": pool}, {"roles": {}}, "alpha-1")
 
 
+class BuildCommand(unittest.TestCase):
+    """Real scoring/projection with frozen fixtures at the live-data boundaries."""
+
+    def setUp(self):
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.repo = Path(self.directory.name) / "skills repo"
+        self.skill = self.repo / "skills/model-scorecard"
+        scripts = self.skill / "scripts"
+        scripts.mkdir(parents=True)
+        (self.skill / "references").mkdir()
+        subprocess.run(["git", "init", "-q", str(self.repo)], check=True)
+        for name in ("build.sh", "score.py"):
+            shutil.copy2(SKILL / "scripts" / name, scripts / name)
+        sync_dir = self.repo / "skills/set-task-models"
+        sync_dir.mkdir()
+        shutil.copy2(REPO / "skills/set-task-models/sync_skill_headers.py", sync_dir)
+        self.plan = self.repo / "skills/plan/SKILL.md"
+        self.plan.parent.mkdir()
+        self.plan.write_text("---\nname: plan\ndescription: Plan.\n---\n")
+        profiles = {**PROFILES, "skills": {"plan": "git-loopy:planning"}}
+        (self.skill / "profiles.json").write_text(json.dumps(profiles))
+        models = {**listing(("alpha-1", ["high"], "enabled"), ("beta-2", ["high"], "enabled"),
+                           ("gamma-3", ["low"], "enabled")), "cli_version": "fixture"}
+        leaderboard = {
+            "models": [row("Alpha 1 (high)", 53), row("Beta 2 (high)", 47, creator="Vendor B"),
+                       row("Gamma 3 (low)", 35, creator="Vendor C")],
+            "page": "https://example.test/leaderboard", "captured_at": "fixture",
+            "verification": {"current_models": 3, "rows_matched": 5},
+        }
+        for name, fixture in (("capture_leaderboard.py", leaderboard), ("list_models.py", models),
+                              ("measure_context.py", {"roles": {}})):
+            (scripts / name).write_text(
+                "import json, sys\nfrom pathlib import Path\n"
+                f"Path(sys.argv[sys.argv.index('--out') + 1]).write_text({json.dumps(json.dumps(fixture))})\n"
+            )
+        bin_dir = self.repo / "bin"
+        bin_dir.mkdir()
+        uv = bin_dir / "uv"
+        uv.write_text('#!/bin/sh\n[ "$1" = run ] && [ "$2" = --project ] && [ "$4" = --no-sync ] || exit 97\n'
+                      'shift 4\nexec "$@"\n')
+        uv.chmod(0o755)
+        (bin_dir / "python").symlink_to(sys.executable)
+        (bin_dir / "python3").symlink_to(sys.executable)
+        self.env = {**os.environ, "PATH": f"{bin_dir}:{os.environ['PATH']}", "TMPDIR": str(self.repo),
+                    "COPILOT_HOME": str(self.repo / ".copilot")}
+
+    def build(self):
+        return subprocess.run(
+            ["bash", str(self.skill / "scripts/build.sh"), "--jev-home", str(self.repo / "jev"),
+             "--git-loopy", str(self.repo / "loopy"), "--main-model", "alpha-1"],
+            capture_output=True, text=True, env=self.env,
+        )
+
+    def test_build_applies_fresh_picks_to_skills_and_agents(self):
+        result = self.build()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        agent = self.repo / ".github/agents/plan.agent.md"
+        self.assertTrue(agent.exists(), result.stdout)
+        self.assertIn("model: alpha-1\neffort: high\n", self.plan.read_text())
+        self.assertIn("model: alpha-1\nreasoning-effort: high\n", agent.read_text())
+        check = subprocess.run(
+            [sys.executable, str(self.repo / "skills/set-task-models/sync_skill_headers.py"),
+             "--skills-repo", str(self.repo), "--check"], capture_output=True, text=True,
+        )
+        self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+
+    def test_failed_capture_leaves_references_and_projections_untouched(self):
+        reference = self.skill / "references/scorecard.md"
+        reference.write_text("Previous scorecard.\n")
+        before = self.plan.read_text()
+        (self.skill / "scripts/capture_leaderboard.py").write_text(
+            "import sys\nsys.exit('fixture capture unavailable')\n"
+        )
+        result = self.build()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("fixture capture unavailable", result.stderr)
+        self.assertEqual(reference.read_text(), "Previous scorecard.\n")
+        self.assertEqual(self.plan.read_text(), before)
+        self.assertFalse((self.repo / ".github/agents").exists())
+
+    def test_projection_failure_is_a_failed_build_not_a_successful_report(self):
+        extra = self.repo / "skills/unmapped/SKILL.md"
+        extra.parent.mkdir()
+        extra.write_text("---\nname: unmapped\ndescription: Missing a role.\n---\n")
+        before = self.plan.read_text()
+        result = self.build()
+        self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+        self.assertIn("no role is mapped for unmapped", result.stderr)
+        self.assertEqual(self.plan.read_text(), before)
+        self.assertFalse((self.repo / ".github/agents").exists())
+
+
 class WeightsAndNames(unittest.TestCase):
     def test_rank_order_centroid_weights(self):
         weights = scorer.roc_weights(6)
@@ -113,6 +208,14 @@ class Capture(unittest.TestCase):
         wrong = "Model A (high)\n1M\nVendor A\n12\n$1.00\n5\n1.00\n2.00\n"
         self.assertEqual(len(capture.cross_check(self.MODELS, wrong)["conflicts"]), 1)
 
+    def test_cross_check_reads_time_per_task_and_first_answer_columns(self):
+        current = {"shortName": "Model A (xhigh)", "intelligenceIndex": 55.31, "intelligenceIndexCostPerTask": 3.6589,
+                   "intelligenceIndexTimePerTask": 622.64, "timeToFirstAnswerToken": 124.0888}
+        seen = "Model A (xhigh)\n1M\nVendor A\n55\n$3.66\n10.4\n124.09\nModel\n"
+        self.assertEqual(capture.cross_check([current], seen)["matched"], ["Model A (xhigh)"])
+        wrong = "Model A (xhigh)\n1M\nVendor A\n55\n$3.66\n99.9\n1.00\nModel\n"
+        self.assertEqual(len(capture.cross_check([current], wrong)["conflicts"]), 1)
+
 
 class Scoring(unittest.TestCase):
     def pool(self, rows, models):
@@ -124,6 +227,14 @@ class Scoring(unittest.TestCase):
         pool = self.pool(rows, [("alpha-1", ["low", "high"], "enabled"), ("beta-2", ["low"], None),
                                 ("gamma-3", ["high"], "enabled"), ("delta-4", ["high"], "disabled")])
         self.assertEqual(sorted((c["id"], c["effort"]) for c in pool), [("alpha-1", "high"), ("beta-2", "low")])
+
+    def test_build_candidates_reads_the_current_dataset_shape(self):
+        current = {"shortName": "Alpha 1 (high)", "deprecated": False, "modelCreatorName": "Vendor A",
+                   "intelligenceIndex": 50, "timeToFirstAnswerToken": 7.0, "timeToFirstToken": 7.0, "outputSpeed": 50.0,
+                   "scores": {"terminalbench-4-0": 0.6, "artificial-analysis-long-context-reasoning": 0.8}}
+        [candidate] = self.pool([current], [("alpha-1", ["high"], "enabled")])
+        self.assertEqual((candidate["first_answer"], candidate["throughput"], candidate["end_to_end"]), (7.0, 50.0, 17.0))
+        self.assertEqual(candidate["benchmarks"], {"terminalBench40": 0.6, "lcr": 0.8})
 
     def test_in_band_beats_below_floor_at_equal_speed(self):
         pool = self.pool([row("Alpha 1 (high)", 48), row("Beta 2 (high)", 40)],
@@ -227,7 +338,7 @@ class ProfilesAndRender(unittest.TestCase):
         builtins = {f"copilot:{name}" for name in measure.BUILTINS}
         task_types = {f"git-loopy:{key}" for key in ("planning", "review", "implementation", "test", "docs", "chore", "bugfix")}
         self.assertEqual(set(roles), builtins | task_types)
-        self.assertEqual(PROFILES["fields"][0]["id"], "success")
+        self.assertEqual([field["id"] for field in PROFILES["fields"][:2]], ["first_answer", "success"])
         for role_id, role in roles.items():
             self.assertLess(role["band"][0], role["band"][1], role_id)
             self.assertIn(role["harness"], {"copilot-cli", "git-loopy"}, role_id)

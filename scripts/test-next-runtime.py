@@ -99,6 +99,27 @@ class RuntimeTest(unittest.TestCase):
     def test_a_route_is_the_skill_name_with_or_without_its_slash(self) -> None:
         self.assertEqual(self.resolve("implement"), self.resolve("/implement"))
 
+    def test_auto_retains_dynamic_context_in_header_and_scorecard_fallback(self) -> None:
+        skill(self.skills, "coordinator", "model: auto\neffort: max\n")
+        resolved = self.resolve("/coordinator")
+        self.assertEqual(
+            (resolved["model"], resolved["effort"], resolved["context"], resolved["tier"]),
+            ("auto", "max", "auto", "default"),
+        )
+        self.assertEqual(resolved["runtime_source"], "skill-header")
+        with open(self.catalog, encoding="utf-8") as handle:
+            catalog = json.load(handle)
+        catalog["skills"]["coordinator"] = {"model": "auto", "effort": "max"}
+        with open(self.catalog, "w", encoding="utf-8") as handle:
+            json.dump(catalog, handle)
+        os.remove(os.path.join(self.skills, "coordinator", "SKILL.md"))
+        resolved = self.resolve("/coordinator")
+        self.assertEqual(
+            (resolved["model"], resolved["effort"], resolved["context"], resolved["tier"]),
+            ("auto", "max", "auto", "default"),
+        )
+        self.assertEqual(resolved["runtime_source"], "model-scorecard")
+
     def test_a_model_without_a_long_tier_stays_default(self) -> None:
         self.assertEqual(self.resolve("/summarize")["tier"], "default")
 

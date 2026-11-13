@@ -21,7 +21,9 @@ git-loopy task types. Common SDLC tasks and every skill in this repository map
 onto those roles, so each skill also gets a header pick: its role's model and
 effort, with the context fitted to the skill's own runs.
 
-It **reports recommendations**, not configuration changes. The output includes
+It **automatically synchronizes skill headers and same-named agents** from the
+new picks. Built-in subagent and git-loopy settings remain recommendations.
+The output includes
 ranked alternatives, current settings, per-role evidence, and coverage gaps so
 the user can see what changed and what the recommendations do not establish.
 
@@ -46,7 +48,7 @@ credentials. It also resolves the git-loopy checkout, defaulting to
 checkout's `git-loopy/python/.venv` supplies the Copilot SDK; its Run logs and
 configuration feed the comparison.
 
-The [build script](../skills/model-scorecard/scripts/build.sh) runs four stages
+The [build script](../skills/model-scorecard/scripts/build.sh) runs five stages
 fail-fast. Jev opens the live leaderboard and verifies its embedded dataset
 against visible rows. The SDK lists the models available through the installed
 Copilot CLI for subagents and git-loopy's pinned CLI for task types. Local
@@ -56,6 +58,13 @@ ranks selectable model-and-effort combinations, gives each skill its role's pick
 with the context fitted to that skill's runs (its role's, below five runs), and
 rewrites the scorecard and
 [`skill-headers.json`](../skills/model-scorecard/references/skill-headers.json).
+The final stage applies those picks through
+[`sync_skill_headers.py`](../skills/set-task-models/sync_skill_headers.py), updating
+every non-ignored `skills/**/SKILL.md` and creating or updating
+`.github/agents/<skill>.agent.md` in the git-loopy-skills checkout. It defaults
+to the checkout containing the skill, following symlinks. With an independently
+installed copy, pass `--skills-repo <checkout>`; a missing projection helper fails
+before the live stages start.
 `--no-headless` lets the user watch Jev.
 
 The [profiles](../skills/model-scorecard/profiles.json) are the tuning surface:
@@ -84,11 +93,38 @@ SDK, or sign-in stage is reported as an error, not replaced with a success-shape
 scorecard. Completion requires at least five matched visible rows, no conflicts,
 and `jev_status` equal to `done`.
 
-**Does it commit the result or enforce the picks?** No. It reads and diffs the
-regenerated scorecard, reports the changes, and leaves the user to commit it or
-apply settings, including each skill's `model`, `effort` and `context` header,
-with [set-task-models](./set-task-models.md). That skill refreshes
-evidence and checks runtime contracts; it is not a blind copy of this table.
+**Does it commit the result or enforce the picks?** It does not commit or change
+global settings. It automatically writes each skill's `model`, `effort` and
+`context` header and its matching agent's sizing. Use
+[set-task-models](./set-task-models.md) for deeper calibration and enforced
+built-in subagent/git-loopy settings.
+
+**Does picking an agent set its context?** No. Agent frontmatter supports `model`
+and `reasoning-effort`, but not context. Each generated agent records
+`metadata.scorecard-context` and `metadata.scorecard-context-tier` and includes
+a CLI command with explicit `--model`, `--reasoning-effort` and `--context`.
+Run that command from the repository root to apply all three. Skill headers and
+agent metadata describe prompt caps, not enforcement. See
+[GitHub's agent configuration reference](https://docs.github.com/en/copilot/reference/custom-agents-configuration).
+
+**What happens to existing agents?** Their hand-written instructions, tools and
+unrelated metadata remain intact; only sizing, the matching name, and a marked
+generated invocation/launch block are managed. New agents copy the skill's
+invocation flags. The `*-agent` chain carriers remain unchanged, and agents
+outside the skill catalog are not removed. Same-named skill agents can shadow
+built-ins such as `code-review` and `research` in the custom-agent picker.
+
+**Can I apply the saved results without new research?** Yes:
+
+```bash
+python3 skills/set-task-models/sync_skill_headers.py --skills-repo . --write
+python3 skills/set-task-models/sync_skill_headers.py --skills-repo . --check
+```
+
+Without either flag the command only reports changes. Missing role picks,
+unsupported runtime values or malformed agent blocks prevent all projection
+writes. A build that cannot apply its generated results fails; the regenerated
+references can remain on disk, and any write-time partial state is reported.
 
 ## It's working if
 
@@ -96,14 +132,14 @@ evidence and checks runtime contracts; it is not a blind copy of this table.
 - Every role has a model, effort, context, and score in the regenerated reference,
   and every skill has a header pick.
 - The report shows the subagent, git-loopy and skill tables and changes from the
-  prior scorecard, and names each skill whose header differs from its pick.
+  prior scorecard, and names the skill headers and agents changed. The report's
+  **Now** column records headers before automatic application.
 - `outside band`, `II estimated`, coverage gaps, and estimated working sets are
   explicitly reported rather than hidden.
 
 ## Where it fits
 
-`model-scorecard` is a calibration aid alongside the engineering workflow, not a
-build or publication step. It supplies a readable recommendation artifact;
-[set-task-models](./set-task-models.md) owns the evidence-to-configuration
-transition. Keeping those separate lets you inspect a ranking without changing
-the agents that perform implementation, research, and review.
+`model-scorecard` supplies readable recommendations and keeps this repository's
+skill/agent pairs aligned. [set-task-models](./set-task-models.md) owns deeper
+calibration and application of global built-in and git-loopy settings. Neither
+skill changes the active session's sizing or publishes its changes.

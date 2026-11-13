@@ -3872,6 +3872,8 @@ if [ -e "$reused_pid_run_worktree" ]; then
   err "recovery did not reclaim an abandoned run after parent pid reuse"
 fi
 
+# A bound run whose parent identity cannot be evaluated has no liveness proof to
+# wait for, so age is its only exit; without it the row holds a slot forever.
 unknown_parent_run_ledger="$tmp_dir/.git-loopy/unknown-parent-run-subagents.jsonl"
 unknown_parent_run_worktree="$tmp_dir/worktree-unknown-parent-run"
 reserve_and_bind \
@@ -3882,7 +3884,7 @@ reserve_and_bind \
   --agent-id agent-unknown-parent-run \
   --agent-type implement-agent \
   --agent-name implement-agent \
-  --spawn-time 2015-01-01T00:00:00Z \
+  --spawn-time 2026-08-22T00:00:00Z \
   --worktree "$unknown_parent_run_worktree" \
   --chain-depth 1
 python3 - "$unknown_parent_run_ledger" <<'PY'
@@ -3891,19 +3893,123 @@ import sys
 
 with open(sys.argv[1], encoding="utf-8") as ledger:
     row = json.loads(ledger.readline())
-del row["parent_pid"]
+row["parent_pid"] = None
 del row["parent_start"]
 with open(sys.argv[1], "w", encoding="utf-8") as ledger:
     ledger.write(json.dumps(row, separators=(",", ":")) + "\n")
 PY
 
-unknown_parent_output="$("$CHAIN" recover --ledger "$unknown_parent_run_ledger" \
-  --stale-after-seconds 0 --now 2026-08-22T00:00:01Z)"
-assert_plan "unknown-parent run recovery" "$unknown_parent_output" \
+unknown_parent_fresh_output="$("$CHAIN" recover --ledger "$unknown_parent_run_ledger" \
+  --stale-after-seconds 60 --now 2026-08-22T00:00:30Z)"
+assert_plan "unknown-parent run before the stale threshold" "$unknown_parent_fresh_output" \
   '{"recovered":0,"targets":[]}'
 if [ ! -e "$unknown_parent_run_worktree" ]; then
-  err "recovery reclaimed a run without proof its parent was gone"
+  err "recovery reclaimed an unknown-parent run before the stale threshold"
 fi
+
+unknown_parent_output="$("$CHAIN" recover --ledger "$unknown_parent_run_ledger" \
+  --stale-after-seconds 60 --now 2026-08-22T00:05:00Z)"
+assert_plan "unknown-parent run past the stale threshold" "$unknown_parent_output" \
+  '{"recovered":1,"targets":["issue-unknown-parent-run"]}'
+if [ -e "$unknown_parent_run_worktree" ]; then
+  err "recovery did not release a stale unknown-parent run's worktree"
+fi
+if ! python3 - "$unknown_parent_run_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    row = json.loads(ledger.readline())
+
+assert row["finish_time"] == "2026-08-22T00:05:00Z"
+assert row["outcome"] == "reclaimed"
+assert row["reclaimed_at"] == "2026-08-22T00:05:00Z"
+PY
+then
+  err "stale unknown-parent run was not recorded as reclaimed"
+fi
+unknown_parent_repeat_output="$("$CHAIN" recover --ledger "$unknown_parent_run_ledger" \
+  --stale-after-seconds 60 --now 2026-08-22T00:10:00Z)"
+assert_plan "reclaimed unknown-parent run is closed" "$unknown_parent_repeat_output" \
+  '{"recovered":0,"targets":[]}'
+
+# Every unusable parent identity takes the same age path, while a well-formed
+# identity of a live parent never does, however old the row.
+malformed_parent_ledger="$tmp_dir/.git-loopy/malformed-parent-subagents.jsonl"
+malformed_parent_in_place="$tmp_dir/malformed-parent-in-place"
+mkdir -p "$malformed_parent_in_place"
+live_parent_start="$(TZ=UTC ps -o lstart= -p "$$" | xargs)"
+python3 - "$malformed_parent_ledger" "$tmp_dir" "$$" "$live_parent_start" "$malformed_parent_in_place" <<'PY'
+import json
+import sys
+
+ledger, tmp_dir, live_pid, live_start, in_place = sys.argv[1:]
+rows = []
+for target, route, agent_name, spawn_time in [
+    ("504", "/implement", "run_init wizard seam", "2026-08-23T02:33:13Z"),
+    ("PROMPT.md-skill-exclusions", "/implement", "task", "2026-08-23T04:52:36Z"),
+    ("513", "/code-review", "code-review", "2026-08-23T04:55:39Z"),
+    ("469", "/code-review", "review-469-python-readiness", "2026-08-23T05:05:54Z"),
+    ("535", "/implement", "implement-535-skill-policy-split", "2026-08-23T05:08:11Z"),
+    ("525", "/implement", "implement-525-pin-install-release", "2026-08-23T05:10:45Z"),
+]:
+    rows.append({
+        "route": route, "target": target, "agent_name": agent_name,
+        "spawn_time": spawn_time, "parent_pid": None,
+    })
+rows.extend([
+    {"target": "missing-pid", "parent_start": live_start},
+    {"target": "zero-pid", "parent_pid": 0, "parent_start": live_start},
+    {"target": "string-pid", "parent_pid": live_pid, "parent_start": live_start},
+    {"target": "bool-pid", "parent_pid": True, "parent_start": live_start},
+    {"target": "empty-start", "parent_pid": int(live_pid), "parent_start": ""},
+    {"target": "in-place-null-pid", "parent_pid": None, "in_place": True,
+     "worktree": in_place},
+    {"target": "live-parent", "parent_pid": int(live_pid), "parent_start": live_start},
+])
+with open(ledger, "w", encoding="utf-8") as output:
+    for index, row in enumerate(rows):
+        row.setdefault("route", "/implement")
+        row.setdefault("spawn_time", "2026-08-23T00:00:00Z")
+        row.setdefault("worktree", f"{tmp_dir}/malformed-parent-missing-{index}")
+        row.update({
+            "session_id": f"session-{index}", "agent_id": f"agent-{index}",
+            "agent_type": "implement-agent", "finish_time": "", "outcome": "",
+        })
+        row.setdefault("agent_name", "implement-agent")
+        output.write(json.dumps(row, separators=(",", ":")) + "\n")
+PY
+
+malformed_parent_output="$("$CHAIN" recover --ledger "$malformed_parent_ledger" \
+  --stale-after-seconds 604800 --now 2026-10-17T00:00:00Z)"
+assert_plan "unusable parent identities past the stale threshold" "$malformed_parent_output" \
+  '{"recovered":12,"targets":["504","PROMPT.md-skill-exclusions","513","469","535","525","missing-pid","zero-pid","string-pid","bool-pid","empty-start","in-place-null-pid"]}'
+if [ ! -d "$malformed_parent_in_place" ]; then
+  err "recovery removed the directory of an in-place unknown-parent run"
+fi
+if ! python3 - "$malformed_parent_ledger" <<'PY'
+import json
+import sys
+
+with open(sys.argv[1], encoding="utf-8") as ledger:
+    rows = [json.loads(line) for line in ledger]
+
+for row in rows:
+    if row["target"] == "live-parent":
+        assert row["finish_time"] == "", row
+        assert "reclaimed_at" not in row, row
+    else:
+        assert row["finish_time"] == "2026-10-17T00:00:00Z", row
+        assert row["outcome"] == "reclaimed", row
+        assert row["reclaimed_at"] == "2026-10-17T00:00:00Z", row
+PY
+then
+  err "recovery mis-settled rows by parent identity shape"
+fi
+malformed_parent_repeat_output="$("$CHAIN" recover --ledger "$malformed_parent_ledger" \
+  --stale-after-seconds 604800 --now 2026-10-18T00:00:00Z)"
+assert_plan "reclaimed unusable parent identities are closed" "$malformed_parent_repeat_output" \
+  '{"recovered":0,"targets":[]}'
 
 dirty_abandoned_run_ledger="$tmp_dir/.git-loopy/dirty-abandoned-run-subagents.jsonl"
 dirty_abandoned_run_worktree="$tmp_dir/worktree-dirty-abandoned-run"
@@ -4065,6 +4171,27 @@ fi
 if [ -e "$gone_parent_worktree" ]; then
   err "reserve created a worktree for a reservation whose parent was already gone"
 fi
+
+# A parent named by anything but a positive pid cannot be checked for liveness,
+# so reserve refuses it rather than writing a row recovery could only age out.
+for invalid_parent_pid in abc 0 -1 "$$x"; do
+  invalid_parent_ledger="$tmp_dir/.git-loopy/invalid-parent-subagents.jsonl"
+  invalid_parent_worktree="$tmp_dir/worktree-invalid-parent"
+  if "$CHAIN" reserve \
+    --ledger "$invalid_parent_ledger" \
+    --route implement \
+    --target issue-invalid-parent \
+    --spawn-time 2026-08-22T00:00:00Z \
+    --worktree "$invalid_parent_worktree" \
+    --chain-depth 1 \
+    --parent-pid "$invalid_parent_pid" 2>/dev/null
+  then
+    err "reserve accepted a non-numeric parent pid: $invalid_parent_pid"
+  fi
+  if [ -e "$invalid_parent_ledger" ] || [ -e "$invalid_parent_worktree" ]; then
+    err "reserve recorded a reservation whose parent pid was not numeric: $invalid_parent_pid"
+  fi
+done
 
 automatic_ledger="$tmp_dir/.git-loopy/automatic-recovery-subagents.jsonl"
 automatic_worktree="$tmp_dir/worktree-automatic-recovery"

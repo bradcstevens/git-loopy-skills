@@ -1,9 +1,9 @@
 ---
 name: domain-modeling
 description: Build and sharpen a project's domain model. Use when discussing codebase terminology, writing or editing a GLOSSARY.md, or recording or editing an ADR.
-model: claude-opus-5.5
+model: gpt-6-astra
 effort: medium
-context: 1M
+context: 272K
 ---
 
 # Domain Modeling

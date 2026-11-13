@@ -80,7 +80,8 @@ finishing and the next sweep, starving the chain — a regression wearing the cl
 An **orphaned reservation** is a ledger row, and `GLOSSARY.md` names it. `chain.sh recover` reuses the
 existing stale-lock recovery machinery to verify the reserving parent's process identity. It
 reclaims an unbound reservation when its parent is gone, with age as a backstop, and reclaims a
-bound **abandoned run** only when its parent is proven gone. The sweeper calls `recover`; it does not
+bound **abandoned run** only when its parent is proven gone. A bound row whose parent identity cannot
+be evaluated, written before `reserve` required one, falls back to the age backstop. The sweeper calls `recover`; it does not
 reimplement it.
 
 That leaves the sweeper the worktrees **no ledger tracks**: those the `git-loopy --parallel` runner

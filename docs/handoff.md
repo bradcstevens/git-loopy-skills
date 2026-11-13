@@ -12,6 +12,8 @@ npx skills update handoff
 
 ## What it does
 
+For a portable document without launching a session, use [/to-handoff](./to-handoff.md).
+
 `handoff` takes the recommendation [next](./next.md) just made — its prompt and the runtime its routed skill names — and **launches a fresh GitHub Copilot CLI session in the background** to carry it out. The work starts immediately, in the same working directory, while you keep your own session. If `/next` hasn't just run, `handoff` runs it first, because its output is the seed.
 
 The session is launched by [`handoff.sh`](https://github.com/bradcstevens/git-loopy-skills/blob/main/skills/handoff/handoff.sh), which takes the model, effort, and context tier from the recommendation's `Runtime` line and the path to a file holding the prompt:
@@ -24,7 +26,7 @@ handoff.sh --name "<descriptive name>" \
 
 It returns straight away with one JSON object naming the outcome — `launched`, `rejected` (the CLI refused a flag), or `exited` (the session ended within seconds) — along with the log path and the resume command. You follow the run with `tail -f <log path>` and pick the session up interactively later with `copilot --yolo --resume="<descriptive name>"`.
 
-Your own session then waits on it. When the routing after the run belongs back in this conversation, `handoff` arms a background wait on the launched pid and runs [next](./next.md) the moment it exits, so the recommendation that follows reads the state the run actually left rather than the state it was launched to reach. Closing the conversation ends that wait while the detached session carries on regardless. A launch you asked for on its own, or one that bridges into another harness or directory, goes unwatched — that routing is yours or the other session's.
+Your own session then waits on it. When the follow-up belongs back in this conversation, `handoff` arms a background wait on the launched pid and reports how the run ended. Invoke [next](./next.md) afterward when you want to route from the state the run actually left. Closing the conversation ends that wait while the detached session carries on regardless. A launch you asked for on its own, or one that bridges into another harness or directory, goes unwatched — that routing is yours or the other session's.
 
 ## When to reach for it
 

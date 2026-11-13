@@ -1,9 +1,9 @@
 ---
 name: triage
 description: Move issues and external PRs through a state machine of triage roles, categorise, verify, grill if needed, and write agent-ready briefs.
-model: claude-opus-5.5
+model: gpt-6-astra
 effort: medium
-context: 1M
+context: 1050K
 disable-model-invocation: true
 ---
 
@@ -154,5 +154,3 @@ Capture everything resolved during grilling under "established so far" so the wo
 ## Resuming a previous session
 
 If prior triage notes exist on the issue or PR, read them, check whether the reporter has answered any outstanding questions, and present an updated picture before continuing. Don't re-ask resolved questions.
-
-At the conclusion of a `/triage` session, call the Skill tool with "next".

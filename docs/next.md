@@ -19,20 +19,97 @@ situation. Its co-installed `SKILL-SELECTION.md` covers interview wrappers, buil
 scope, and standalone requests such as release, human-only setup, learning, agent
 writing, and model configuration. Those requests use the context their branch
 needs rather than requiring an engineering tracker and chain hook.
+Interview wrappers retain the project's domain language in `GLOSSARY.md`.
 
 It does not itself grill, write a spec, or fix anything. It either orients at a checkpoint boundary or, when the chain gate approves, records and launches work owned by the spawned route. What separates it from a checklist is where it looks: not at what you told it in conversation, but at `docs/agents/issue-tracker.md`, the tracker itself, and your branch and diff. Concurrent sessions move that state underneath you, so the recommendation is drawn from live records rather than from a session summary.
 
 ## When to reach for it
 
-This one is model-invoked — the agent reaches for it on its own when a workflow skill concludes and the next step is unclear. You can also invoke `/next` directly.
+Invoke `/next` directly when a workflow skill concludes or the next step is unclear. It is user-invoked rather than selected automatically by the agent.
 
 Reach for it whenever you're unsure which skill or flow a situation calls for: a skill just finished and you don't know what follows, you have an idea and don't know where to start, or two skills look interchangeable and you can't tell them apart. If you already know the skill you want, skip the router and invoke it directly.
 
 ## The earliest unresolved gate
 
-The idea `next` runs on is the **gate** — the first unresolved condition standing between the work and its destination. The flow is composable, not a fixed sequence, so it doesn't ask "which step comes after the last one" but "what is the earliest thing still unresolved". An idea that still has human decisions in it gates on grilling; an agreed destination with no durable spec gates on [to-spec](./to-spec.md); an unblocked ticket gates on [implement](./implement.md). Ranking follows from that: ready actions before blocked ones, the workstream you're already in before a cold one, and the action that clears the most downstream blockers before the rest.
+The idea `next` runs on is the **gate**, the first unresolved condition standing between the work and its destination. The flow is composable, not a fixed sequence, so it doesn't ask "which step comes after the last one" but "what is the earliest thing still unresolved". An idea that still has human decisions in it gates on grilling; an agreed build destination with no durable spec gates on [to-spec](./to-spec.md); an unblocked ticket gates on [implement](./implement.md). Ranking follows from that: ready actions before blocked ones, the workstream you're already in before a cold one, and the action that clears the most downstream blockers before the rest.
 
 Every recommendation is labelled **HITL** or **AFK-safe** — whether the next action needs your judgement, or is specified tightly enough to be left to run on its own. Blocked actions are still returned, but must name the condition that would make them ready.
+
+### Wayfinder destinations
+
+[Wayfinder](./wayfinder.md) finishes a map when there is no open decision ticket and no fog
+in **Not yet specified**, not merely when its ticket list is empty. It closes the map
+with a closing summary comment. `next` reads that comment, the named destination,
+and the recorded decisions before applying the generic spec gate.
+
+| Map state | Route |
+| --- | --- |
+| Open frontier or remaining fog | Continue `/wayfinder` |
+| Finished, specification destination | Continue from the spec through the usual gates; wayfinder already called `/to-spec` |
+| Finished, decision destination | No next route: report completion unless the recorded decisions themselves call for follow-up work; route that work through its own gate |
+| Finished, in-place change or proof of concept still to build | `/to-spec`, or `/implement` only when the effort proved genuinely small |
+
+Do not synthesize an existing spec again. If the specification handoff has not
+produced a durable spec, name that missing spec as the unresolved gate.
+A finished decision destination does not need a spec or a build just to count as complete.
+
+This is a kept git-loopy overlay over upstream `ask-matt` at pin
+`49dd158d1076134a641b33efb035946536778336`: upstream merges every cleared map
+at `/to-spec`; git-loopy routes by the destination instead.
+
+### Decomposition
+
+A spec without executable tickets routes to `git-loopy plan <spec>` when
+`docs/agents/issue-tracker.md` and `.github/hooks/git-loopy-chain.json` exist and
+`git-loopy` is on `PATH`. Otherwise the decomposition route remains `/to-tickets`
+in the current conversation; missing repository configuration still gates on
+setup first.
+
+The Planner recommendation is **HITL**, **Fresh session**, with **Runtime:
+git-loopy planning Routing** and a shell command carrying the published spec
+issue URL. This is the exception to the skill-runtime and paste-a-prompt format
+below. Run it interactively from the repository; `/next` neither spawns it as a
+chain subagent nor decomposes in the old context. Publish any decisions that
+remain only in conversation before handing off.
+
+### Whole-spec builds and retrospectives
+
+Once a spec has executable tickets, [implement-spec](./implement-spec.md) is the
+**HITL**, user-invoked alternative to driving [implement](./implement.md) per
+ticket. It coordinates the ready frontier in parallel on one integration branch
+and finishes with a review of that branch; it does not replace decomposition.
+
+`next` offers [retro](./retro.md) after a build or a `/diagnosing-bugs` fix,
+before considering [improve-codebase-architecture](./improve-codebase-architecture.md).
+The retrospective improves the agent's environment, not the code. Run it in the
+session it examines before clearing, or point it at that session's log afterward.
+It is **HITL** and user-invoked: completed or declined retrospectives are not
+offered again for the same work. Accepted improvements return through the relevant
+idea, spec, or ticket gate. A diagnosis exposing a missing seam or structural cause
+can then warrant an architecture survey.
+
+Publication still routes to [push](./push.md). [pr](./pr.md) shapes the body
+inside `/push`; it is not a direct route.
+
+### Portable context and long-running goals
+
+The co-installed `PHASE-BOUNDARIES.md` uses the upstream ordered tree: continue,
+clear irrelevant context, make a portable file, delegate AFK work, then compact.
+The first applicable choice wins; decide at a phase boundary, not mid-phase.
+Portability routes to [to-handoff](./to-handoff.md) for a new harness (for example,
+Copilot CLI to Codex), a new directory, a colleague, or a mid-phase side task.
+A prototype detour uses it in both directions when context must travel.
+The recommendation says **Continue here** to write the file; the user takes it
+to the destination. It does not launch a session.
+
+[handoff](./handoff.md) keeps its separate job: launching a `/next` recommendation
+in the background on its resolved runtime. It is neither the portable-file writer
+nor the chain's in-session launcher.
+
+For a long-running goal held in one session, [chief-of-staff](./chief-of-staff.md)
+coordinates subagents and recurring schedules while retaining strategic context.
+Like `/implement-spec` and `/retro`, `/to-handoff` and `/chief-of-staff` are
+**HITL**, user-invoked recommendations. This map does not enlarge the chain allowlist.
 
 ## The sessions it tracks
 
@@ -144,7 +221,9 @@ its reserving parent — the routing session itself, never the shell that runs t
 with it: recovery reclaims an unbound orphan immediately when that
 parent is gone, or after `CHAIN_RESERVATION_STALE_SECONDS` (300 seconds by default), marking it
 `reclaimed` rather than as a completed run. An abandoned run is reclaimed only when the same
-liveness check proves its reserving parent is gone; age alone never reclaims an in-flight run.
+liveness check proves its reserving parent is gone; age alone never reclaims an in-flight run. A bound
+row whose parent identity cannot be evaluated (a missing, null or non-positive `parent_pid`, or an
+empty `parent_start`) predates that identity and is reclaimed once it is older than the stale threshold.
 Reclaiming releases the row's slot and applies the same worktree rule as completion, below. Every
 `plan` runs recovery before checking capacity, so
 reclaimed slots immediately become available to the next candidate. It stops at a checkpoint
@@ -173,13 +252,15 @@ subagent.
 - You get back exactly one action, with a live target — a linked issue, PR, spec, branch, or the current conversation — and never a menu of possibilities.
 - Fan-out never turns that into a menu either: the chain reaches its ten concurrent worktrees by asking for one recommendation at a time, and names which of the three limits stopped it — the ceiling of ten, no ready action left, or every remaining candidate waiting on a worktree another agent holds.
 - Once the ten are running, the chain keeps itself full: each finished run frees its slot, and the batch of runs that finished since the last turn comes back as one re-entry that refills every one of them while ready work remains.
-- A recommendation names the model, effort, and context window its routed skill's header sets, and carries no command to run.
+- A skill recommendation names the model, effort, and context window its routed skill's header sets.
+  The Planner route instead names git-loopy planning Routing and its shell command.
 - An AFK-safe recommendation for one of the four allowlisted routes arrives with its in-session
   subagent already running only when `chain.sh plan` returns `spawn`; on `decline`, it remains at
   the checkpoint boundary as a prompt.
 - The recommendation names whether to continue in this context, start a fresh session, or run as a
-  subagent, matching the flow's own rules: grill → spec → tickets stays in one context, while the
-  chain starts only approved delivery work.
+  subagent, matching the flow's own rules: grill → spec stays in one context,
+  the Planner starts fresh, and only fallback `/to-tickets` stays in the spec context.
+  The chain starts only approved delivery work.
 - For engineering work in a repo missing either its tracker configuration or
   `.github/hooks/git-loopy-chain.json`, it routes to
   [setup-git-loopy-skills](./setup-git-loopy-skills.md) and nothing else.

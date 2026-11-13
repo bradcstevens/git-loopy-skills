@@ -1,17 +1,17 @@
 ---
 name: to-tickets
-description: Break a plan, spec, or the current conversation into a set of tracer-bullet tickets, each declaring its blocking edges, published to the configured tracker — edges as text in one file per ticket locally, or native blocking links on a real tracker.
+description: Break a plan, spec, or the current conversation into a set of tracer-bullet tickets, each declaring its blocking edges, published to the configured tracker (edges as text in one file per ticket locally, or native blocking links on a real tracker).
 model: claude-opus-5.5
-effort: medium
-context: 1M
-disable-model-invocation: false
+effort: high
+context: 1050K
+disable-model-invocation: true
 ---
 
 # To Tickets
 
 Break a plan, spec, or conversation into a set of **tickets**: tracer-bullet vertical slices, each declaring the tickets that **block** it.
 
-The issue tracker and triage label vocabulary should have been provided to you — run `/setup-git-loopy-skills` if not.
+The issue tracker and triage label vocabulary should have been provided to you. If not, tell the user to run `/setup-git-loopy-skills`.
 
 ## Process
 
@@ -60,7 +60,7 @@ Iterate until the user approves the breakdown.
 
 ### 5. Publish the tickets to the configured tracker
 
-Publish the approved tickets. **How** depends on the tracker `/setup-git-loopy-skills` configured; the tickets are the same either way, only the shape of the blocking edges changes:
+Publish the approved tickets. **How** depends on the tracker `/setup-matt-pocock-skills` configured; the tickets are the same either way, only the shape of the blocking edges changes:
 
 - **Local files** → write one file per ticket under `.scratch/<feature-slug>/issues/<NN>-<slug>.md`, numbered from `01` in dependency order (blockers first). Each file's "Blocked by" lists the numbers/titles it depends on. Use the per-ticket file template below: one ticket per file, never a single combined file.
 - **A real issue tracker (GitHub, Linear, …)** → publish one issue per ticket in dependency order (blockers first) so each ticket's blocking edges can reference real identifiers. Use the platform's native blocking relationship where it has one; otherwise set each ticket's "Blocked by" to the blocking issues. If the source was an existing issue, make each ticket its sub-issue (tracker doc's operation). Apply the `ready-for-agent` triage label unless instructed otherwise; the tickets are agent-grabbable by construction.
@@ -69,52 +69,15 @@ Work the **frontier**: any ticket whose blockers are all done. For a purely line
 
 Do NOT close or modify any parent issue.
 
-### Label each published ticket
-
-For a tracker that supports labels, make three separate decisions while creating each
-ticket. Read the exact label strings from the configured repository's triage-label
-documentation; do not invent label names or substitutes.
-
-1. Apply the configured AFK-ready triage label unless instructed otherwise.
-2. Apply exactly one `task-type:` label from the closed seven: `planning`, `review`,
-   `implementation`, `test`, `docs`, `chore`, or `bugfix`. Choose it by **dominant
-   risk**: the dimension whose failure is most expensive, not the one with the most
-   files.
-3. Decide independently whether to add the configured `parallel-safe` marker. It is
-   additive, alongside the triage and task-type labels, and applies only when the
-   ticket can land beside another ticket without colliding.
-
-Treat these hazards as release-blocking:
-
-- A ticket needs exactly one `task-type:` label. Multiple task-type labels fail
-  silently because the router selects the first match from an unordered list.
-- Never invent an eighth task type. An out-of-taxonomy `task-type:` label still looks
-  labelled, so the classifier will not correct it and routing falls through.
-- Do not infer a missing `parallel-safe` marker. There is no classifier for it; unlike
-  `task-type:`, which has a classifier fallback, its absence silently forfeits the
-  parallel lane.
-
-For local-file tickets, record the same selected task type and parallel-safety
-judgement in the ticket file so they can be applied when the ticket reaches a
-label-capable tracker.
-
-Work the **frontier**: any ticket whose blockers are all done. For a purely linear chain that means top to bottom.
-
-Do NOT close or modify any parent issue.
-
 <local-ticket-template>
 
-# <NN> — <Ticket title>
+# <NN>: <Ticket title>
 
-**What to build:** the end-to-end behaviour this ticket makes work, from the user's perspective — not a layer-by-layer implementation list.
+**What to build:** the end-to-end behaviour this ticket makes work, from the user's perspective, not a layer-by-layer implementation list.
 
-**Blocked by:** the numbers/titles of the tickets that gate this one, or "None — can start immediately".
+**Blocked by:** the numbers/titles of the tickets that gate this one, or "None (can start immediately)".
 
 **Status:** ready-for-agent
-
-**Task type:** one exact `task-type:` label from the configured closed taxonomy.
-
-**Parallel safety:** `parallel-safe`, or "not parallel-safe".
 
 - [ ] Acceptance criterion 1
 - [ ] Acceptance criterion 2
@@ -129,7 +92,7 @@ A reference to the parent issue on the tracker (if the source was an existing is
 
 ## What to build
 
-The end-to-end behaviour this ticket makes work, from the user's perspective — not layer-by-layer implementation.
+The end-to-end behaviour this ticket makes work, from the user's perspective, not layer-by-layer implementation.
 
 ## Acceptance criteria
 
@@ -138,40 +101,8 @@ The end-to-end behaviour this ticket makes work, from the user's perspective —
 
 ## Blocked by
 
-- A reference to each blocking ticket, or "None — can start immediately".
+- A reference to each blocking ticket, or "None (can start immediately)". Omit this section when blockers were set as native edges.
 
 </issue-template>
 
-In either form, avoid specific file paths or code snippets — they go stale fast. Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it and note briefly that it came from a prototype. Trim to the decision-rich parts — not a working demo, just the important bits.
-
-Work the frontier one ticket at a time with `/implement`, clearing context between tickets.
-
-## 6. Record the decomposition
-
-Decomposition is a durable workflow transition. Record it so the next session — human or
-agent — reads the same answer you did.
-
-**Only record once the whole approved graph is durable.** The approved child set and its
-edges are what make a ticket executable, so finish creating all of it first:
-
-1. Create **every** approved ticket, and link each one to the spec parent as a native
-   **sub-issue**: `gh api --method POST repos/<owner>/<repo>/issues/<spec>/sub_issues -F
-   sub_issue_id=<child-db-id>`, where `<child-db-id>` is the child's numeric database id
-   (`gh api repos/<owner>/<repo>/issues/<n> --jq .id`, _not_ the `#number`).
-2. Create **every** approved blocking edge as a native dependency: `gh api --method POST
-   repos/<owner>/<repo>/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`.
-   These native edges are the lifecycle fact readiness is derived from — a "Blocked by" line
-   in the body is a fallback for trackers without dependencies, never the record.
-3. Post one short evidence comment on the spec parent naming the tickets you created
-   (`gh issue comment <spec-issue> --body "..."`).
-
-If you cannot finish the graph, do not leave it half-recorded: a partially wired
-decomposition would make a ticket look executable against a plan that doesn't fully exist
-yet. Finish creating and wiring every approved ticket before treating the decomposition as
-done.
-
-Closing the spec parent is **cleanup**, not delivery — do it once every child ticket has
-closed, as bookkeeping rather than a step in the route:
-`gh issue close <spec-issue>`.
-
-At the conclusion of a `/to-tickets` session, run `/next` to determine what to do after tickets are generated.
+In either form, avoid specific file paths or code snippets: they go stale fast. Exception: if a prototype produced a snippet that encodes a decision more precisely than prose can (state machine, reducer, schema, type shape), inline it and note briefly that it came from a prototype. Trim to the decision-rich parts, not a working demo, just the important bits.

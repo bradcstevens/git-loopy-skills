@@ -1,8 +1,8 @@
 ---
 name: tdd
 description: Test-driven development. Use when the user wants to build features or fix bugs test-first, mentions "red-green-refactor", or wants integration tests.
-model: gpt-6-astra
-effort: medium
+model: gpt-6.1-sol
+effort: low
 context: 272K
 ---
 

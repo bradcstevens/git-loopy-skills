@@ -22,7 +22,7 @@ from pathlib import Path
 DEFAULT_URL = "https://huggingface.co/spaces/ArtificialAnalysis/LLM-Performance-Leaderboard"
 JEV_GOAL = (
     "Show the LLM leaderboard table. Stop when its first model rows are visible "
-    "with name, creator, Intelligence Index, cost per task, output speed and latency."
+    "with name, creator, Intelligence Index, cost per task, time per task and first answer token."
 )
 USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_0) AppleWebKit/537.36 (KHTML, like Gecko)"
 MIN_MATCHED_ROWS = 5
@@ -105,6 +105,10 @@ def expected_tokens(row: dict) -> list[str]:
         tokens.append(f"{row['medianTimeToFirstTokenSeconds']:.2f}")
     if row.get("medianEndToEndResponseTimeSeconds") is not None:
         tokens.append(f"{row['medianEndToEndResponseTimeSeconds']:.2f}")
+    if row.get("intelligenceIndexTimePerTask"):
+        tokens.append(f"{row['intelligenceIndexTimePerTask'] / 60:.1f}")
+    if row.get("timeToFirstAnswerToken") is not None:
+        tokens.append(f"{row['timeToFirstAnswerToken']:.2f}")
     return tokens
 
 

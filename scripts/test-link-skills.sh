@@ -14,10 +14,10 @@ err() {
 
 checkout="$tmp_dir/checkout with spaces"
 home="$tmp_dir/home"
-mkdir -p "$checkout/scripts" "$checkout/skills/example/nested" "$checkout/.github/agents"
+mkdir -p "$checkout/scripts" "$checkout/skills/example/nested" "$checkout/skills/archive/deprecated" "$checkout/.github/agents"
 cp "$REPO/scripts/link-skills.sh" "$checkout/scripts/"
 cp "$REPO/.github/agents/"*.agent.md "$checkout/.github/agents/"
-touch "$checkout/skills/example/SKILL.md" "$checkout/skills/example/nested/SKILL.md"
+touch "$checkout/skills/example/SKILL.md" "$checkout/skills/example/nested/SKILL.md" "$checkout/skills/archive/deprecated/SKILL.md"
 printf 'retired profile\n' > "$checkout/.github/agents/retired.agent.md"
 
 run_linker() {
@@ -36,6 +36,7 @@ for destination in "$home/.copilot/skills" "$home/.config/git-loopy/skills"; do
     err "example skill was not linked into $destination"
   [ -f "$destination/example/nested/SKILL.md" ] || err "nested skill was not installed"
   [ ! -e "$destination/nested" ] || err "nested skill was flattened"
+  [ -f "$destination/archive/deprecated/SKILL.md" ] || err "skill under a deprecated path was not installed"
 done
 
 agents="$home/.copilot/agents"

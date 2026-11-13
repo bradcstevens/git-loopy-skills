@@ -6,7 +6,7 @@ set -euo pipefail
 #   - has YAML frontmatter with a name and a description
 #   - has a frontmatter name matching its directory name
 #   - names its GitHub Copilot model, effort and context in that frontmatter
-# Also checks that relative links between docs/*.md resolve.
+# Also checks docs links and alignment of scorecard roles with profiles/.
 
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$REPO"
@@ -61,7 +61,7 @@ while IFS= read -r skill_md; do
     err "$skill_md frontmatter 'model' must be a GitHub Copilot model id, not '$model'"
   [[ "$effort" =~ ^(none|minimal|low|medium|high|xhigh|max)$ ]] ||
     err "$skill_md frontmatter 'effort' must be a reasoning effort, not '$effort'"
-  [[ "$context" =~ ^[0-9]+[KM]$ ]] ||
+  [[ "$context" =~ ^[0-9]+[KM]$ || ( "$model" == auto && -z "$context" ) ]] ||
     err "$skill_md frontmatter 'context' must be a context size such as 200K or 1M, not '$context'"
 done < <(find skills -name SKILL.md -not -path '*/node_modules/*' | sort)
 
@@ -92,14 +92,27 @@ fi
 scripts/test-chain.sh || fail=1
 python3 scripts/test-chain-entry.py || fail=1
 bash scripts/test-sweep.sh || fail=1
+python3 scripts/test-target-holders.py || fail=1
 bash scripts/test-link-skills.sh || fail=1
 bash scripts/test-chain-hook.sh || fail=1
 bash scripts/test-hook-log.sh || fail=1
 bash scripts/test-review-clean-record.sh || fail=1
 bash scripts/test-handoff.sh || fail=1
 python3 scripts/test-next-runtime.py || fail=1
+python3 scripts/test-next-guidance.py || fail=1
+python3 scripts/test-plan-handoff.py || fail=1
+python3 scripts/test-planning-guidance.py || fail=1
+python3 scripts/test-to-handoff.py || fail=1
 python3 scripts/test-set-task-models.py || fail=1
 python3 scripts/test-model-scorecard.py || fail=1
+python3 scripts/validate-profile-roles.py || fail=1
+python3 scripts/test-profile-roles.py || fail=1
 python3 scripts/test-next-sessions.py || fail=1
 python3 scripts/test-upstream-sync.py || fail=1
+python3 scripts/test-load-guidance.py || fail=1
+python3 scripts/test-implement-spec.py || fail=1
+python3 scripts/test-skill-sync.py || fail=1
+python3 scripts/test-pr-guidance.py || fail=1
+python3 scripts/test-chief-of-staff.py || fail=1
+python3 scripts/test-retro.py || fail=1
 exit "$fail"

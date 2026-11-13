@@ -1,9 +1,9 @@
 ---
 name: create-readme
 description: 'Create a README.md file for the project'
-model: claude-sonnet-5.5
-effort: medium
-context: 200K
+model: gpt-6.1-terra
+effort: low
+context: 272K
 ---
 
 ## Role

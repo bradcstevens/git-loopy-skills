@@ -1,0 +1,5 @@
+interface:
+  display_name: "Sync Branches"
+  short_description: "Two-way sync every local branch with GitHub"
+policy:
+  allow_implicit_invocation: false

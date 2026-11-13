@@ -1,9 +1,9 @@
 ---
 name: sync-model-roster
 description: Reconcile git-loopy's pinned model roster and one config.toml scope with authenticated harness evidence.
-model: claude-sonnet-5.5
+model: gpt-6.1-sol
 effort: low
-context: 200K
+context: 272K
 disable-model-invocation: true
 ---
 

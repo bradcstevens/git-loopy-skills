@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
-"""Project each skill's model, effort and context into its SKILL.md header.
+"""Project each skill's model, effort and context into its skill and named agent.
 
 The picks come from ``skill-headers.json``, which /model-scorecard writes beside its
 scorecard. With ``--decision``, each skill instead takes the profile set-task-models
 decided for its role, and its context is re-fitted to that model by the scorecard's
-rule. Dry-run by default; ``--write`` edits the headers that differ, and ``--check``
-exits 1 while any header differs. Exit 2 means the inputs cannot produce a header
-for every skill.
+rule. Agents use model/reasoning-effort frontmatter, context metadata and an
+explicitly sized CLI launch command: agent frontmatter cannot set runtime context.
+Explicit user selections retain their advisory context label and supported tier;
+Auto omits a fixed context size. A new scorecard build replaces these selections.
+Dry-run by default; ``--write`` edits differing files, and ``--check`` exits 1
+while any differ. Exit 2 means the inputs cannot produce every projection.
 """
 
 from __future__ import annotations
@@ -27,6 +30,11 @@ HEADERS = Path("skills/model-scorecard/references/skill-headers.json")
 DEFAULT_COMPACTION_RATIO = 0.8
 _MODEL_ID = re.compile(r"[a-z0-9][a-z0-9.-]*")
 _CONTEXT = re.compile(r"[0-9]+[KM]")
+AGENT_START = "<!-- model-scorecard: start -->"
+AGENT_END = "<!-- model-scorecard: end -->"
+# Decomposition belongs to git-loopy's Planner; the Skill remains its procedure
+# and the fallback outside git-loopy, but no longer has an interactive persona.
+RETIRED_PERSONAS = {"to-tickets"}
 
 
 class HeaderError(Exception):
@@ -73,13 +81,14 @@ def targets(headers: dict, decision: dict | None) -> dict[str, dict[str, str]]:
         if decision:
             values = decided(name, entry, decision, headers.get("models") or {}, ratio)
         else:
-            values = {key: entry[key] for key in KEYS}
+            values = {key: entry[key] for key in KEYS if key in entry}
         if not _MODEL_ID.fullmatch(str(values["model"])):
             raise HeaderError(f"{name}: model {values['model']!r} is not a Copilot model id")
         if values["effort"] not in EFFORTS:
             raise HeaderError(f"{name}: effort {values['effort']!r} is not one of {', '.join(EFFORTS)}")
-        if not _CONTEXT.fullmatch(str(values["context"])):
-            raise HeaderError(f"{name}: context {values['context']!r} is not a size like 200K or 1M")
+        if not (values["model"] == "auto" and "context" not in values):
+            if not _CONTEXT.fullmatch(str(values.get("context", ""))):
+                raise HeaderError(f"{name}: context {values.get('context')!r} is not a size like 200K or 1M")
         wanted[name] = values
     return wanted
 
@@ -92,8 +101,15 @@ def skill_files(repo: Path) -> dict[str, Path]:
             continue
         relative = f"{skill_md.parent.relative_to(repo).as_posix()}/"
         ignored = subprocess.run(["git", "-C", str(repo), "check-ignore", "-q", relative], capture_output=True)
-        if ignored.returncode != 0:
-            found[skill_md.parent.name] = skill_md
+        if ignored.returncode not in (0, 1):
+            raise HeaderError(f"cannot check ignored skills: {ignored.stderr.decode().strip()}")
+        if ignored.returncode == 1:
+            name = skill_md.parent.name
+            if not re.fullmatch(r"[a-z0-9][a-z0-9-]*", name):
+                raise HeaderError(f"{skill_md}: invalid skill name {name!r}")
+            if name in found:
+                raise HeaderError(f"duplicate skill name {name}: {found[name]} and {skill_md}")
+            found[name] = skill_md
     return found
 
 
@@ -129,19 +145,112 @@ def set_header(text: str, values: dict[str, str]) -> str:
 
     The keys are written, in that order, where the first of them already sits, else after ``description``.
     """
+    if "context" not in values:
+        lines, end = _split(text)
+        text = "".join([lines[0], *(line for line in lines[1:end] if _key(line) != "context"), *lines[end:]])
+    return set_fields(text, values)
+
+
+def set_fields(text: str, values: dict[str, str]) -> str:
+    """Replace owned top-level fields, preserving all other frontmatter and the body."""
     lines, end = _split(text)
     newline = "\r\n" if lines[0].endswith("\r\n") else "\n"
     kept: list[str] = []
     position = None
     for line in lines[1:end]:
-        if _key(line) in KEYS:
+        if _key(line) in values:
             position = len(kept) if position is None else position
             continue
         kept.append(line)
     if position is None:
         position = _after_description(kept)
-    block = [f"{key}: {values[key]}{newline}" for key in KEYS]
+    block = [f"{key}: {value}{newline}" for key, value in values.items()]
     return "".join([lines[0], *kept[:position], *block, *kept[position:], *lines[end:]])
+
+
+def agent_tier(name: str, values: dict[str, str], headers: dict) -> str:
+    """Resolve a measured cap or an explicitly recorded user selection to a supported CLI tier."""
+    entry = headers["skills"][name]
+    manual = entry.get("selection_source") == "user" and values == {
+        key: entry[key] for key in KEYS if key in entry
+    }
+    if manual and values["model"] == "auto" and "context" not in values and entry.get("tier") == "default":
+        return "default"
+    model = headers.get("models", {}).get(values["model"])
+    if not model:
+        raise HeaderError(f"{name}: {values['model']} has no model capabilities; rebuild the scorecard")
+    efforts = model.get("efforts") or ["none"]
+    if values["effort"] not in efforts:
+        raise HeaderError(f"{name}: {values['model']} does not support effort {values['effort']}")
+    if manual:
+        tier = entry.get("tier")
+        cap = model.get({"default": "default_cap", "long_context": "long_cap"}.get(tier, ""))
+        if not cap:
+            raise HeaderError(f"{name}: {values['model']} does not support context tier {tier!r}")
+        return tier
+    for tier, key in (("default", "default_cap"), ("long_context", "long_cap")):
+        cap = model.get(key)
+        if cap and context_size(cap) == values["context"]:
+            return tier
+    raise HeaderError(f"{name}: context {values['context']} is not a prompt cap for {values['model']}")
+
+
+def agent_text(name: str, skill: str, values: dict[str, str], tier: str, text: str | None,
+               relative_skill: str) -> str:
+    """Create a skill carrier or update its sizing without replacing hand-written instructions."""
+    if text is None:
+        skill_lines, end = _split(skill)
+        flags = "".join(line for line in skill_lines[1:end]
+                        if _key(line) in ("disable-model-invocation", "user-invocable"))
+        text = f"---\nname: {name}\ndescription: Run the /{name} skill.\n{flags}---\n"
+    text = set_fields(text, {"name": name})
+    text = set_fields(text, {"model": values["model"], "reasoning-effort": values["effort"]})
+    lines, end = _split(text)
+    newline = "\r\n" if lines[0].endswith("\r\n") else "\n"
+    metadata = (
+        f'  scorecard-context: "{values.get("context", "auto")}"{newline}'
+        f'  scorecard-context-tier: "{tier}"{newline}'
+    )
+    positions = [index for index in range(1, end) if _key(lines[index]) == "metadata"]
+    if positions:
+        start = positions[0]
+        if len(positions) != 1 or lines[start].strip() != "metadata:":
+            raise HeaderError(f"{name}: agent metadata must be a single block mapping")
+        finish = start + 1
+        while finish < end and _key(lines[finish]) is None:
+            finish += 1
+        kept = [line for line in lines[start + 1:finish]
+                if line.strip().split(":", 1)[0] not in ("scorecard-context", "scorecard-context-tier")]
+        text = "".join([*lines[:start + 1], *kept, metadata, *lines[finish:]])
+    else:
+        text = "".join([*lines[:end], f"metadata:{newline}{metadata}", *lines[end:]])
+    block = newline.join([
+        AGENT_START,
+        f'Call the Skill tool with "{name}" immediately and follow its instructions.',
+        f"If the skill is not installed, read and follow [SKILL.md](../../{relative_skill}) instead.",
+        "",
+        "For the recorded context, launch from the repository root with:",
+        "",
+        "```bash",
+        f"copilot --agent {name} --model {values['model']} --reasoning-effort {values['effort']} "
+        f"--context {tier} -i 'Invoke the /{name} skill.'",
+        "```",
+        "",
+        "Context metadata is advisory; selecting this agent alone does not set the context tier.",
+        AGENT_END,
+    ])
+    lines, end = _split(text)
+    body = "".join(lines[end + 1:])
+    if (body.count(AGENT_START), body.count(AGENT_END)) not in ((0, 0), (1, 1)):
+        raise HeaderError(f"{name}: agent has an incomplete or duplicate model-scorecard block")
+    if AGENT_START in body:
+        if body.index(AGENT_END) < body.index(AGENT_START):
+            raise HeaderError(f"{name}: agent model-scorecard markers are reversed")
+        start, finish = body.index(AGENT_START), body.index(AGENT_END) + len(AGENT_END)
+        body = body[:start] + block + body[finish:]
+    else:
+        body = newline + block + newline + body
+    return "".join(lines[:end + 1]) + body
 
 
 def _after_description(header: list[str]) -> int:
@@ -164,7 +273,8 @@ def _read(path: Path) -> str:
 def write_atomic(path: Path, text: str) -> None:
     """Replace ``path`` with ``text`` through a same-directory rename, keeping its permissions."""
     target = path.resolve()
-    mode = target.stat().st_mode & 0o7777
+    mode = target.stat().st_mode & 0o7777 if target.exists() else 0o644
+    target.parent.mkdir(parents=True, exist_ok=True)
     handle, temporary = tempfile.mkstemp(dir=target.parent, prefix=f".{target.name}.", suffix=".tmp")
     try:
         with os.fdopen(handle, "w", encoding="utf-8", newline="") as stream:
@@ -186,8 +296,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--headers", type=Path, help=f"skill picks; defaults to <skills-repo>/{HEADERS}")
     parser.add_argument("--decision", type=Path, help="set-task-models decision.json whose role profiles replace the picks")
     mode = parser.add_mutually_exclusive_group()
-    mode.add_argument("--write", action="store_true", help="edit every header that differs")
-    mode.add_argument("--check", action="store_true", help="exit 1 while any header differs")
+    mode.add_argument("--write", action="store_true", help="edit every skill or agent that differs")
+    mode.add_argument("--check", action="store_true", help="exit 1 while any skill or agent differs")
     args = parser.parse_args(argv)
 
     repo = args.skills_repo.expanduser()
@@ -199,7 +309,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {error}", file=sys.stderr)
         return 2
 
-    files = skill_files(repo)
+    try:
+        files = skill_files(repo)
+    except (OSError, HeaderError) as error:
+        print(f"error: {error}", file=sys.stderr)
+        return 2
     if not files:
         print(f"error: no skills under {repo / 'skills'}", file=sys.stderr)
         return 2
@@ -215,21 +329,39 @@ def main(argv: list[str] | None = None) -> int:
         print(f"note: {name} has a pick but no SKILL.md here; skipped", file=sys.stderr)
 
     planned: list[tuple[Path, str]] = []
+    agent_planned: list[tuple[Path, str]] = []
     for name, path in sorted(files.items()):
-        text = _read(path)
         try:
+            text = _read(path)
             updated = set_header(text, wanted[name])
-        except HeaderError as error:
+            agent_path = repo / ".github/agents" / f"{name}.agent.md"
+            previous = agent = None
+            if name in RETIRED_PERSONAS:
+                if agent_path.exists():
+                    raise HeaderError(f"{name}: retired persona still exists at {agent_path}; remove it explicitly")
+            else:
+                previous = _read(agent_path) if agent_path.exists() else None
+                agent = agent_text(name, text, wanted[name], agent_tier(name, wanted[name], headers), previous,
+                                   path.relative_to(repo).as_posix())
+        except (OSError, HeaderError, TypeError, ValueError) as error:
             print(f"error: {path}: {error}", file=sys.stderr)
             return 2
         if updated != text:
             planned.append((path, updated))
             print(f"{path.relative_to(repo)}: {_describe(read_header(text))} -> {_describe(wanted[name])}")
+        if agent != previous:
+            agent_planned.append((agent_path, agent))
+            print(f"{agent_path.relative_to(repo)}: {'update' if previous is not None else 'create'}")
     if args.write:
-        for path, updated in planned:
-            write_atomic(path, updated)
+        for path, updated in planned + agent_planned:
+            try:
+                write_atomic(path, updated)
+            except OSError as error:
+                print(f"error: {path}: {error}; earlier writes may have completed", file=sys.stderr)
+                return 2
     print(f"{len(planned)} of {len(files)} skill headers {'updated' if args.write else 'differ'}")
-    return 1 if args.check and planned else 0
+    print(f"{len(agent_planned)} of {len(files)} skill agents {'updated' if args.write else 'differ'}")
+    return 1 if args.check and (planned or agent_planned) else 0
 
 
 if __name__ == "__main__":

@@ -43,7 +43,7 @@ while IFS= read -r -d '' skill_md; do
     names+=("$name")
     srcs+=("$src")
   fi
-done < <(find "$SKILLS_ROOT" -name SKILL.md -not -path '*/node_modules/*' -not -path '*/deprecated/*' -print0)
+done < <(find "$SKILLS_ROOT" -name SKILL.md -not -path '*/node_modules/*' -print0)
 
 for DEST in "${DESTS[@]}"; do
   # If $DEST is a symlink that resolves into this repo, we'd end up writing the

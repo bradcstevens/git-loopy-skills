@@ -38,6 +38,20 @@ To pull down later changes:
 npx skills update
 ```
 
+## Agent profiles
+
+[`profiles/`](profiles) carries git-loopy's seven Task-type profiles beside the
+Skills. They are role definitions, not Skills or interactive `.github/agents`
+personas: `npx skills add` installs Skills, not these profiles. Their frontmatter
+declares Required Skills, Permitted Skills and access; model selection stays with
+git-loopy's Routing.
+
+Profile changes follow the paired-change order: publish this repository's commit,
+prove its clean checkout with `python -m git_loopy.skill_candidate` from git-loopy,
+and only then advance the downstream pin in a separate change. Publishing profiles
+here does not activate them in a Run. See
+[PRD: Agent profiles](https://github.com/bradcstevens/git-loopy/issues/821).
+
 ## Start here
 
 Two skills are worth installing first:
@@ -49,8 +63,11 @@ Two skills are worth installing first:
   of any other engineering skill. It records where your issues live, what your triage labels are
   called, and where domain docs sit; the rest of the skills read that config.
 
-The main flow runs idea → ship: `/grill-with-docs` → `/to-spec` → `/to-tickets` → `/implement` →
-`/code-review`. Everything else is either an on-ramp onto that flow or a standalone you reach for on
+The main flow runs idea → ship: `/grill-with-docs` → `/to-spec` → decomposition → `/implement` →
+`/code-review`. Decomposition is a fresh `git-loopy plan <spec>` when the repository has
+`docs/agents/issue-tracker.md`, `.github/hooks/git-loopy-chain.json`, and `git-loopy` on `PATH`;
+elsewhere it remains `/to-tickets` in the current conversation. The Planner reads the published
+spec, not the preceding conversation. Everything else is either an on-ramp onto that flow or a standalone you reach for on
 its own. [**Skill connections**](docs/skill-connections.md) maps the whole set — which skills route
 to which, which nest inside another's session, and the sequence diagrams for each workflow.
 
@@ -63,19 +80,20 @@ situation matches. The rest you invoke by name.
 
 | Skill | Invoke | What it does |
 | --- | --- | --- |
+| [chief-of-staff](docs/chief-of-staff.md) | automatic | Pursue a long-running goal in a single session by co-ordinating subagents. |
 | [code-review](docs/code-review.md) | automatic | Review the changes since a fixed point (commit, branch, tag, or merge-base) along two axes: Standards (does the code follow this repo's documented coding standards?) and Spec (does the code match what the originating issue/spec asked for?). |
-| codebase-audit | automatic | Deep audit before GitHub push: removes junk files, dead code, security holes, and optimization issues. |
+| [codebase-audit](docs/codebase-audit.md) | automatic | Deep audit before GitHub push: removes junk files, dead code, security holes, and optimization issues. |
 | [codebase-design](docs/codebase-design.md) | automatic | Shared vocabulary for designing deep modules. |
-| create-readme | automatic | Create a README.md file for the project |
+| [create-readme](docs/create-readme.md) | automatic | Create a README.md file for the project |
 | [design-control-loop](docs/design-control-loop.md) | automatic | interview the user to design an agentic control loop (sensor, controller, actuator under disturbances) tailored to their codebase, then build it as locally-runnable components plus a scheduled GitHub Copilot CLI workflow |
 | [diagnosing-bugs](docs/diagnosing-bugs.md) | automatic | Diagnosis loop for hard bugs and performance regressions. |
 | [domain-modeling](docs/domain-modeling.md) | automatic | Build and sharpen a project's domain model. |
-| grill-me | `/grill-me` | A relentless interview to sharpen a plan or design. |
+| [grill-me](docs/grill-me.md) | `/grill-me` | A relentless interview to sharpen a plan or design. |
 | [grill-with-docs](docs/grill-with-docs.md) | `/grill-with-docs` | A relentless interview to sharpen a plan or design, which also creates docs (ADR's and glossary) as we go. |
 | [grilling](docs/grilling.md) | automatic | Grill the user relentlessly about a plan, decision, or idea. |
-| [handoff](docs/handoff.md) | automatic | Launch a `/next` recommendation — its prompt and the runtime its routed skill names — as a background agent, then watch it to its exit and route on. |
-| [implement](docs/implement.md) | automatic | Implement a spec or tickets, or reconcile a branch with a moved remote head and resolve merge, rebase, or cherry-pick conflicts. |
-| implement-spec | `/implement-spec` | Implement the result of /to-spec and /to-tickets in code. |
+| [handoff](docs/handoff.md) | `/handoff` | Launch a `/next` recommendation — its prompt and the runtime its routed skill names — as a background agent, then watch it to its exit and route on. |
+| [implement](docs/implement.md) | `/implement` | Implement a spec or tickets, or reconcile a branch with a moved remote head and resolve merge, rebase, or cherry-pick conflicts. |
+| [implement-spec](docs/implement-spec.md) | `/implement-spec` | Implement the result of /to-spec and /to-tickets in code. |
 | [improve-codebase-architecture](docs/improve-codebase-architecture.md) | `/improve-codebase-architecture` | Scan a codebase for deepening opportunities, present them as a visual HTML report, then grill through whichever one you pick. |
 | jev-ultrafast | automatic | Run fast goal-driven browser automation with Jev Ultrafast for navigating, searching, and interacting with visible web pages. |
 | [loop-me](docs/loop-me.md) | `/loop-me` | Grill me about specs for the workflows I want to build, within this workspace. |
@@ -84,26 +102,29 @@ situation matches. The rest you invoke by name.
 | microsoft-docs | automatic | Understand Microsoft technologies by querying official documentation. |
 | microsoft-foundry | automatic | Deploy, evaluate, and manage Foundry agents end-to-end: Docker build, ACR push, hosted/prompt agent create, container start, batch eval, continuous eval, prompt optimizer workflows, agent.yaml, dataset curation from traces. |
 | [model-scorecard](docs/model-scorecard.md) | `/model-scorecard` | Score Copilot models 1–100 for every SDLC task type, Copilot built-in subagent and git-loopy task type from the live Artificial Analysis leaderboard, and rewrite the scorecard reference. |
-| narrow-react-prop-types | automatic | narrow React component prop types to match live code paths |
-| [next](docs/next.md) | automatic | Route the engineering workflow or choose a skill for the current situation. |
+| [narrow-react-prop-types](docs/narrow-react-prop-types.md) | automatic | narrow React component prop types to match live code paths |
+| [next](docs/next.md) | `/next` | Route the engineering workflow or choose a skill for the current situation. |
 | playwright-cli | automatic | Automates browser interactions for web testing, form filling, screenshots, and data extraction. |
-| pr | automatic | Use when writing a PR body. |
+| [pr](docs/pr.md) | automatic | Use when writing a PR body. |
 | [prototype](docs/prototype.md) | automatic | Build a throwaway prototype to answer a design question. |
 | [push](docs/push.md) | automatic | Publish current work by staging intended changes, committing, pushing, and opening a pull request when needed. |
 | [release](docs/release.md) | `/release` | Release completed work at the next patch version, or the version you specify. |
+| release-assessment | `/release-assessment` | Read an advisory release assessment in Copilot App and ask follow-up questions about its review packet. |
 | [research](docs/research.md) | automatic | Investigate a question against high-trust primary sources and capture the findings as a Markdown file in the repo. |
-| retro | `/retro` | Conduct a retrospective on a coding session. |
+| [retro](docs/retro.md) | `/retro` | Conduct a retrospective on a coding session. |
 | [set-task-models](docs/set-task-models.md) | `/set-task-models` | Set the model, effort, and context of every Copilot built-in subagent and git-loopy task type from fresh model research, and enforce them. |
 | [setup-git-loopy-skills](docs/setup-git-loopy-skills.md) | `/setup-git-loopy-skills` | Configure this repo for the engineering skills: set up its issue tracker, triage label vocabulary, and domain doc layout. |
-| show-me | automatic | Help the user understand the current topic visually with concise diagrams, code-shape sketches, and focused HTML artifacts. |
+| [show-me](docs/show-me.md) | automatic | Help the user understand the current topic visually with concise diagrams, code-shape sketches, and focused HTML artifacts. |
+| [sync-branches](docs/sync-branches.md) | `/sync-branches` | Two-way sync every local branch with its GitHub upstream: fast-forward, push, rebase clean divergence, and prune merged branches. |
 | [sync-model-roster](docs/sync-model-roster.md) | `/sync-model-roster` | Reconcile git-loopy's pinned model roster and one config.toml scope with authenticated harness evidence. |
 | [tdd](docs/tdd.md) | automatic | Test-driven development. |
 | [teach](docs/teach.md) | `/teach` | Teach the user a new skill or concept, within this workspace. |
+| [to-handoff](docs/to-handoff.md) | `/to-handoff` | Compact the current conversation into a handoff document for another agent to pick up. |
 | [to-questionnaire](docs/to-questionnaire.md) | `/to-questionnaire` | Turn a decision you can't fully answer into a questionnaire for someone else to fill in. |
-| [to-spec](docs/to-spec.md) | automatic | Turn the current conversation into a spec and publish it to the project issue tracker — no interview, just synthesis of what you've already discussed. |
-| [to-tickets](docs/to-tickets.md) | automatic | Break a plan, spec, or the current conversation into a set of tracer-bullet tickets, each declaring its blocking edges, published to the configured tracker — edges as text in one file per ticket locally, or native blocking links on a real tracker. |
+| [to-spec](docs/to-spec.md) | automatic | Turn the current conversation into a spec and publish it to the project issue tracker: no interview, just synthesis of what you've already discussed. |
+| [to-tickets](docs/to-tickets.md) | automatic | Break a plan, spec, or the current conversation into a set of tracer-bullet tickets, each declaring its blocking edges, published to the configured tracker (edges as text in one file per ticket locally, or native blocking links on a real tracker). |
 | [triage](docs/triage.md) | `/triage` | Move issues and external PRs through a state machine of triage roles, categorise, verify, grill if needed, and write agent-ready briefs. |
-| [wait-what](docs/wait-what.md) | automatic | Stop — that last message did not land, so re-pitch it. |
+| [wait-what](docs/wait-what.md) | automatic | Stop. |
 | [wayfinder](docs/wayfinder.md) | `/wayfinder` | Plan a huge chunk of work (more than one agent session can hold) as a shared map of decision tickets on your issue tracker, and resolve them one at a time until the way to the destination is clear. |
 | [wizard](docs/wizard.md) | automatic | Generate an interactive bash wizard that walks a human through steps only they can perform. |
 | [writing-for-agents](docs/writing-for-agents.md) | automatic | Writing documents for agents. |
@@ -115,17 +136,53 @@ situation matches. The rest you invoke by name.
 ```
 skills/<name>/SKILL.md    the skill itself — this is what `npx skills add` installs
 skills/<name>/agents/     per-agent interface and policy overrides
+profiles/                 role profiles (bugfix, chore, docs, implementation, planning, review, test)
 docs/<name>.md            the long-form write-up: what it does, when to reach for it, where it fits
-scripts/                  maintainer tooling (see below)
+docs/adr/                 architecture decision records for the chain and the next loop
+docs/agents/              repo config the skills read: issue tracker, triage labels, domain docs
+GLOSSARY.md               the project's vocabulary (single context)
+scripts/                  maintainer tooling and test suites (see Development)
+.github/agents/           one generated custom agent per skill, plus the `*-agent` chain carriers
+.github/hooks/            the chain hooks: git-loopy-chain.json/.sh, the agent-stop hook, the hook log
+.github/skills/           repo-local skills; `upstream-sync` drives the upstream-sync loop
+.github/agent-prompts/    prompts for the loop's agent actuator
+.github/agent-memory/     durable memory the upstream-sync agent distils between runs
+.github/upstream-sync.json  scope gate and settings for the upstream-sync loop
+.github/workflows/        CI: skill validation and the upstream-sync workflows
 ```
 
 ## Development
 
 ```bash
-scripts/validate-skills.sh    # check frontmatter, naming and docs links
+scripts/validate-skills.sh    # check frontmatter, naming and docs links, then run the script suites
 node scripts/build-readme.mjs # regenerate the skill index above
 scripts/list-skills.sh        # list every SKILL.md path
 scripts/link-skills.sh        # symlink all skills into ~/.copilot/skills for local testing
+```
+
+`scripts/validate-skills.sh` also runs the script test suites, fail-fast per suite:
+`test-chain.sh`, `test-chain-entry.py`, `test-link-skills.sh`, `test-chain-hook.sh`,
+`test-hook-log.sh`, `test-review-clean-record.sh`, `test-handoff.sh`, `test-next-runtime.py`,
+`test-plan-handoff.py`, `test-set-task-models.py`, `test-model-scorecard.py`,
+`test-profile-roles.py`, `test-next-sessions.py`, `test-upstream-sync.py` and
+`test-load-guidance.py`, alongside the validators `validate-chain-hook.py` and
+`validate-profile-roles.py`. Run a single suite directly, for example
+`python3 scripts/test-upstream-sync.py`.
+
+Other entry points under `scripts/`: `generate-shell-env.sh` (see Shell wrappers),
+`agent-iteration.py` (the shared `/iterate` helper for agent-opened PRs),
+`review-clean-record.py` (creates and matches the review-clean evidence record), and
+`upstream-sync.py` (the upstream-sync loop). Test inputs live in `scripts/fixtures/`.
+
+### Upstream-sync loop
+
+A scheduled loop keeps this repo synced with mattpocock/skills releases. Its design and steering are in
+[docs/upstream-sync-loop.md](docs/upstream-sync-loop.md). Run it locally, read-only until `apply`:
+
+```bash
+python3 scripts/upstream-sync.py sense --out /tmp/sensor.json   # measure
+python3 scripts/upstream-sync.py control /tmp/sensor.json       # decide
+python3 scripts/upstream-sync.py shepherd --dry-run             # both, plus what apply would do
 ```
 
 `scripts/link-skills.sh` is a maintainer convenience for working on skills in place — it symlinks
@@ -156,8 +213,11 @@ wayfinder                       # open a session on the /wayfinder skill
 wayfinder <loose idea>          # chart a new map
 wayfinder <map> [ticket]        # work through an existing map
 to-spec                         # synthesize the conversation into a spec
-to-tickets [spec]               # slice a spec into tracer-bullet tickets
 ```
+
+The `to-tickets` persona and shell wrapper are retired. In a configured repository,
+run `git-loopy plan <spec>` for a fresh interactive Planner session. The `/to-tickets`
+Skill remains available as its procedure and as the fallback elsewhere.
 
 The wrappers call `co` when it is defined and fall back to the `copilot` binary otherwise, so the
 file loads in both zsh and bash. `GIT_LOOPY_MODEL`, `GIT_LOOPY_EFFORT` and `GIT_LOOPY_CONTEXT` are

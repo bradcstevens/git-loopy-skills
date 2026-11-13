@@ -1,10 +1,13 @@
 ---
 name: next
-description: Route the engineering workflow or choose a skill for the current situation. Use when a workflow skill concludes, the user asks what to do next, or needs help choosing a skill or flow.
-model: claude-sonnet-5.5
-effort: low
-context: 936K
+description: Route the engineering workflow or choose a skill for the current situation. Use when a workflow skill concludes, the user asks what to do next, or needs help choosing a skill or flow. Prioritize the oldest issues labeled `ready-for-human` to ensure efficient conversion to `ready-for-agent`.
+model: claude-opus-5.5
+effort: xhigh
+context: 1M
+disable-model-invocation: true
 ---
+
+**If this skill was invoked by a user request: Ensure that the current workstreams and sessions are accounted for before making any routing decisions. This prevents conflicts and ensures that the routing logic has the most accurate view of ongoing work. Always refresh the durable state and scan for active sessions to maintain consistency. Prioritize the oldest issues first that are labeled `ready-for-human` so that issues with this label convert to `ready-for-agent` as efficiently as possible.**
 
 # Route the Workflow
 
@@ -46,6 +49,11 @@ workstream referenced by the conversation from its configured tracker: issue or 
 labels, assignees, comments, sub-issues, and blockers. Inspect the local branch, commits, and
 diff when review or publication may be next.
 
+For a Wayfinder map, also read its Destination, Notes, Decisions so far,
+Not yet specified, and closing summary comment, including when the map is closed.
+Follow its linked spec or recorded follow-up work rather than inferring a build
+from an empty ticket list.
+
 When the conversation names no workstream, review the open workflow-bearing
 issues and their relationships to find the active maps, specs, tickets, and PRs.
 Use live records rather than session summaries because concurrent sessions may
@@ -68,6 +76,21 @@ git-loopy runner holding one: a git-loopy run names the issue it bound in the ne
 directory another session is writing collides with it, and an `ended` session's uncommitted
 worktree is abandoned work to name, not free space.
 
+For each engineering target, run this skill's read-only holder command from
+this session's own checkout, retaining its caller identity rather than switching
+to a discovered holder's worktree:
+
+```bash
+python3 <this skill>/scripts/target-holders.py --target <ticket-or-PR>
+```
+
+It shares `plan`'s canonical target and reports closing pull requests, open bound
+runs, and live owners of head-branch worktrees. Drop targets with `held: true`
+from the candidate set and name their holders instead of recommending another
+implementation. Holders marked `own: true` belong to this checkout or branch and
+do not block its continuation. If the lookup fails, classify that target as
+blocked rather than treating it as unheld.
+
 This step is complete when a standalone request has a concrete outcome and its
 branch's required context, or every engineering candidate has current state and
 blocker information from its durable source, this run's scan is in the session log,
@@ -84,7 +107,13 @@ does not make an explicit standalone request complete.
 | --- | --- |
 | The repository is not configured for the engineering skills | `/setup-git-loopy-skills` |
 | An intentional phase boundary needs a context transition | Apply `PHASE-BOUNDARIES.md` before choosing a route |
+| The phase-boundary tree selects portability to a new harness, directory, colleague, or mid-phase side task | `/to-handoff` (HITL) |
+| The user wants to pursue a long-running goal held in one session | `/chief-of-staff` (HITL) |
 | A codebase property should improve through a measured, recurring agentic loop | `/design-control-loop` |
+| A Wayfinder map has an open decision ticket or remaining fog | `/wayfinder` |
+| A finished Wayfinder map has a decision destination | No next route: report completion unless the recorded decisions themselves call for follow-up work; route that work through its own gate |
+| A finished Wayfinder map has a specification destination | Continue from the spec wayfinder handed to `/to-spec`, using the spec and delivery gates below |
+| A finished Wayfinder map names an in-place change or proof of concept still to build | `/to-spec`, or `/implement` only when the effort proved genuinely small |
 | An idea outside a codebase still needs sharpening | `/grill-me` |
 | An idea in a codebase still has human decisions | `/grill-with-docs` |
 | The destination is too foggy or large for one planning context | `/wayfinder` |
@@ -94,14 +123,16 @@ does not make an explicit standalone request complete.
 | A runnable behavior or visual answer is cheaper than more discussion | `/prototype` |
 | Domain language itself blocks the decision | `/domain-modeling` |
 | A module interface, seam, or boundary needs designing | `/codebase-design` |
-| The destination is agreed but no durable spec exists | `/to-spec` |
-| A spec exists but executable tracer-bullet tickets do not | `/to-tickets` |
+| A build destination is agreed but no durable spec exists | `/to-spec` |
+| A spec exists but executable tracer-bullet tickets do not | `git-loopy plan <spec>` when the decomposition check below passes; otherwise `/to-tickets` |
 | A raw incoming issue or external PR needs readiness work | `/triage` |
 | An in-progress merge, rebase, or cherry-pick has conflicts | `/implement` |
 | A concrete behavior should be built test-first without the broader ticket flow | `/tdd` |
+| A spec has executable tickets and the user wants the whole ready frontier orchestrated on one integration branch | `/implement-spec` (HITL) |
 | An unblocked `ready-for-agent` ticket or small agreed change is available | `/implement` |
 | Implemented work or review fixes still need a fixed-point review | `/code-review` |
 | Reviewed work remains local or the current branch lacks its PR | `/push` |
+| A build or `/diagnosing-bugs` fix is complete and its session has not had a retrospective offered | `/retro` (HITL) |
 | No delivery work is active and codebase health needs a survey | `/improve-codebase-architecture` |
 | The user wants a stateful learning path | `/teach` |
 | The task is to write or revise a document an agent consumes | `/writing-for-agents` |
@@ -109,26 +140,51 @@ does not make an explicit standalone request complete.
 
 Apply these flow rules:
 
-- Keep `/grill-with-docs`, `/to-spec`, and `/to-tickets` in one unbroken context.
+- Keep `/grill-with-docs` and `/to-spec` in one unbroken context. Decomposition
+  uses the handoff below; only the `/to-tickets` fallback continues here.
 - At an intentional phase boundary, `PHASE-BOUNDARIES.md` alone chooses the
-  context transition. Use `/handoff` only for its portability cases: a new
+  context transition. Use `/to-handoff` only for its portability cases: a new
   harness, directory, colleague, or mid-phase side task.
-- Bridge a prototype detour with `/handoff` in both directions when its new
+- Bridge a prototype detour with `/to-handoff` in both directions when its new
   directory or mid-phase fork needs portability. Route the validated answer
   back into the main flow.
 - Route source-answerable gaps to `/research` and answers held by another person
   to `/to-questionnaire`. Resume the decision flow with either result in
   `/grill-with-docs` or `/to-spec`.
-- `/to-tickets` output is already agent-ready; reserve `/triage` for work that
+- Planner and `/to-tickets` output is already agent-ready; reserve `/triage` for work that
   arrived raw.
-- If a Wayfinder map has an open frontier, continue `/wayfinder`. When the
-  destination is clear and no decision ticket remains, route to `/to-spec`, not
-  directly to implementation unless the effort proved genuinely small.
+- If a Wayfinder map has an open frontier, continue `/wayfinder`. An empty ticket
+  list alone is not completion: a finished map has no open decision ticket and no fog
+  in **Not yet specified**, and wayfinder closes it with a closing summary comment.
+  Route by its named destination before applying the generic spec gate.
+  For a specification destination, wayfinder already handed the map to `/to-spec`:
+  continue from the resulting spec through the usual gates; do not synthesize it again.
+  If that handoff has not produced a durable spec, name the missing spec as the
+  unresolved gate rather than assuming the handoff succeeded.
+  A decision destination is complete unless the recorded decisions themselves call
+  for follow-up work; route only that work through its own gate, not the map to `/to-spec`.
+  An in-place change or proof of concept still to build routes to `/to-spec`, or
+  directly to `/implement` only when the effort proved genuinely small.
 - `/implement` drives `/tdd` internally and closes with `/code-review`. Route
   directly to those skills only for their standalone branches.
-- If review finds defects, route back to `/implement` with the findings. After a
-  bug fix, route to `/improve-codebase-architecture` only when the diagnosis
-  exposed a missing seam or structural cause.
+- `/implement-spec` is the user-invoked alternative to per-ticket `/implement`
+  once a spec has its tickets. Its implementers drive `/tdd`, and it closes with
+  `/code-review` of the integration branch.
+- Reach `/pr` through `/push`, not as a direct route; it shapes the PR body
+  inside publication.
+- If review finds defects, route back to `/implement` with the findings.
+  After a build or a `/diagnosing-bugs` fix, offer `/retro` to improve the agent's
+  environment before considering `/improve-codebase-architecture`.
+  Run `/retro` in the session it examines before clearing; if that session is
+  already cleared, point it at the session log. Do not re-offer a completed or
+  declined retrospective for the same work. Route its accepted improvements
+  through the relevant idea, spec, or ticket gate; no accepted improvements means
+  no new work. After a bug fix, consider `/improve-codebase-architecture` only
+  when the diagnosis exposed a missing seam or structural cause.
+- `/implement-spec`, `/retro`, `/to-handoff`, and `/chief-of-staff` are
+  user-invoked: mark their recommendations HITL and leave invocation to the
+  human. They do not extend the chain allowlist. `/handoff` remains the
+  background launcher of a `/next` recommendation, not the portable-file route.
 - A candidate selected by `/improve-codebase-architecture` becomes an idea for
   `/grill-with-docs`; the survey does not implement it.
 - Reach for `/domain-modeling` or `/codebase-design` directly only when the
@@ -136,6 +192,34 @@ Apply these flow rules:
 
 This step is complete when every candidate is classified as ready, blocked, or
 complete.
+
+## Decomposition handoff
+
+From the repository root, use the same configuration test as step 1 (tracker
+instructions and chain hook present), plus `git-loopy` on `PATH`:
+
+```bash
+test -f docs/agents/issue-tracker.md &&
+test -f .github/hooks/git-loopy-chain.json &&
+command -v git-loopy >/dev/null 2>&1
+```
+
+If the check succeeds, the decomposition route is `git-loopy plan <spec>`, with
+`<spec>` replaced by the durable spec issue URL. Otherwise it is `/to-tickets`
+in this conversation. The missing-configuration gate in step 1 still routes
+engineering setup first; it never recommends an unavailable Planner.
+
+When the command route wins ranking, return **HITL**, **Context: Fresh session**,
+and **Runtime: git-loopy planning Routing**. Give the human the exact
+`git-loopy plan <spec>` shell command to run interactively from this repository,
+not a slash-command prompt to paste into Copilot. This is an explicit exception
+to steps 4–6: git-loopy owns the runtime and fresh Planner boundary, so skip the
+skill-header lookup, phase-boundary choice and chain spawn gate for this route.
+Stop after recommending it; a launch failure is a blocker, not permission to
+fall back silently.
+
+The Planner drafts from the published spec alone. If facts needed for the graph
+remain only in this conversation, finish `/to-spec` before handing off.
 
 ## 3. Rank the actions
 
@@ -313,8 +397,8 @@ recommendation is launched by the chain gate in step 7. When the context is
 directory, because the prompt opens with the `chain.sh claim` that makes the
 worktree and moves the agent before it writes.
 
-For `/handoff`, use `Continue here` and say that its output opens the fresh
-session.
+For `/to-handoff`, use `Continue here` and say that its output is a portable
+file the user takes to the destination session; it does not launch that session.
 
 For a terminal workstream, return:
 
@@ -339,7 +423,8 @@ the durable reserve, bind, complete, and guard operations. Each reservation reco
 identity of its reserving parent, which is this routing session and never the shell that runs the
 command: pass `--parent-pid "$PPID"` from that shell, whose own parent is the session. Recovery
 reclaims an unbound orphan when that parent is gone, with the configured timeout as a backstop. It
-reclaims a bound abandoned run only when that parent is proven gone. `plan` runs that recovery before
+reclaims a bound abandoned run only when that parent is proven gone; a bound row whose parent
+identity cannot be evaluated is reclaimed by the timeout instead. `plan` runs that recovery before
 it evaluates concurrency, so an orphan cannot make a later candidate appear to be at the ceiling.
 Launch the agent on the recommendation's paste-safe prompt and resolved runtime: its `model`,
 `effort` and `tier` become the `task` invocation's `model`, `reasoning_effort` and `context_tier`,

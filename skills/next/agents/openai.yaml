@@ -1,3 +1,5 @@
 interface:
   display_name: "Next"
   short_description: "Choose a skill or next workflow action"
+policy:
+  allow_implicit_invocation: false
