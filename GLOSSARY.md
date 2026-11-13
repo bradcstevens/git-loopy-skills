@@ -125,8 +125,8 @@ _Avoid_: Dead worktree, leftover
 **Retained worktree**:
 A worktree `chain.sh` did not remove when completing or reclaiming its row, because it has
 uncommitted changes, cannot be inspected, or cannot be removed, or, when reclaiming, because the
-sweeper judges that it contains work that exists nowhere else. Its row is closed, so it holds no slot and is no
-longer the chain's to reclaim.
+sweeper judges that it contains work that exists nowhere else. Its row is closed, so it holds no
+slot and is no longer the chain's to reclaim.
 
 **Held**:
 Said of a worktree a live process is using at the moment it is looked at. Weak evidence on its own,

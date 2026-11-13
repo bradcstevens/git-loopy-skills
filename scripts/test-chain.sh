@@ -4134,7 +4134,7 @@ fi
 git -C "$tmp_dir" worktree remove "$vanished_bystander"
 
 # A locked registration whose directory vanished stays, as `git worktree prune` always left it, so
-# rolling back an interrupted reservation still clears its pending record.
+# rolling back an interrupted transaction still clears its pending record.
 locked_ledger="$tmp_dir/.git-loopy/locked-pending-subagents.jsonl"
 locked_worktree="$tmp_dir/worktree-locked-pending"
 git -C "$tmp_dir" worktree add --quiet -b locked-pending "$locked_worktree"
@@ -4146,7 +4146,7 @@ locked_output="$("$CHAIN" recover --ledger "$locked_ledger" --stale-after-second
 assert_plan "rollback leaves a locked vanished registration" "$locked_output" \
   '{"recovered":0,"targets":[]}'
 if [ -e "$locked_ledger.pending" ]; then
-  err "rolling back a locked vanished reservation kept its pending record"
+  err "rolling back an interrupted transaction's locked, vanished worktree kept its pending record"
 fi
 git -C "$tmp_dir" worktree unlock "$locked_worktree"
 git -C "$tmp_dir" worktree remove "$locked_worktree"

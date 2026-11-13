@@ -571,7 +571,7 @@ rollback_pending_worktree() {
 
 # A clean status does not mean nothing would be lost: a commit no ref contains, an unfinished
 # rebase, a submodule's repository or a vanished worktree's staged index live elsewhere. The
-# sweeper owns that judgement, so recovery asks it rather than keep a second copy, and any
+# sweeper owns that judgement, so recovery also asks it rather than keep a second copy, and any
 # failure to judge keeps the worktree.
 worktree_contains_nothing_unique() {
   local worktree="$1" unique_work

@@ -19,6 +19,8 @@ import unittest
 
 # CI runners have no git identity, so every committing command passes this one.
 IDENTITY = ("-c", "user.name=test", "-c", "user.email=test@example.com")
+# Tests that read recovery's threshold set it themselves; an inherited one must not leak in.
+os.environ.pop("CHAIN_RESERVATION_STALE_SECONDS", None)
 
 # Stands in for gh: logs each call, then lists the merged pull requests recorded for --head.
 GH_STUB = r'''
@@ -63,9 +65,7 @@ class SweepCLI(unittest.TestCase):
         return ledger
 
     def sweep(self, *args, expected=0, env=None):
-        result = subprocess.run(["bash", os.environ["SWEEP"], "--repo",
-                                 str(self.repo), *args], cwd=self.root,
-                                capture_output=True, text=True, env=env)
+        result = self.sweep_result(*args, env=env)
         self.assertEqual(result.returncode, expected, result.stderr)
         return json.loads(result.stdout)
 
@@ -1056,9 +1056,7 @@ class SweepCLI(unittest.TestCase):
         finished = self.linked("finished")
         for path in (reserved, finished):
             self.dead_owner(path)
-        ledger = self.root / "subagents.jsonl"
-        ledger.write_text(json.dumps(row) + "\n"
-                          + json.dumps({"worktree": str(finished), "finish_time": "done"}) + "\n")
+        ledger = self.write_ledger(row, {"worktree": str(finished), "finish_time": "done"})
         report = self.sweep("--remove", "--ledger", str(ledger), env=self.stub_github())
         row = self.row(report, reserved)
         self.assertEqual((row["outcome"], row["reasons"]), ("declined", ["ledger-owned"]))
@@ -1222,9 +1220,8 @@ class SweepCLI(unittest.TestCase):
         self.assertNotIn(recover, self.bash_log.read_text().splitlines())
         self.assertNotIn("recovered", report)
         self.assertEqual(json.loads(ledger.read_text()), row)
-        env = {**self.stub_github(), **self.trace_bash()}
-        env.pop("CHAIN_RESERVATION_STALE_SECONDS", None)
-        report = self.sweep("--remove", "--ledger", str(ledger), env=env)
+        report = self.sweep("--remove", "--ledger", str(ledger),
+                            env={**self.stub_github(), **self.trace_bash()})
         self.assertEqual(self.bash_log.read_text().splitlines().count(recover), 1)
         reclaimed = json.loads(ledger.read_text())
         self.assertEqual(reclaimed["outcome"], "reclaimed")
@@ -1312,12 +1309,21 @@ class SweepCLI(unittest.TestCase):
     def test_a_sweep_still_finishes_when_recovery_removes_the_checkout_it_named(self):
         orphan, row = self.reservation("orphan", *self.ended_process())
         ledger = self.write_ledger(row)
-        result = subprocess.run(["bash", os.environ["SWEEP"], "--repo", str(orphan), "--remove",
-                                 "--ledger", str(ledger)], cwd=self.root, capture_output=True,
-                                text=True, env=self.stub_github())
+        # The last --repo wins, so the sweep runs from the checkout recovery is about to remove.
+        result = self.sweep_result("--repo", str(orphan), "--remove", "--ledger", str(ledger),
+                                   env=self.stub_github())
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual(json.loads(result.stdout)["recovered"]["targets"], ["issue-orphan"])
         self.assertFalse(orphan.exists())
+
+    def test_recovery_gets_the_reservation_threshold_plan_would_pass(self):
+        ledger = self.write_ledger()
+        self.sweep("--remove", "--ledger", str(ledger),
+                   env={**self.stub_github(), **self.trace_bash(),
+                        "CHAIN_RESERVATION_STALE_SECONDS": "7"})
+        chain = Path(os.environ["SWEEP"]).with_name("chain.sh")
+        self.assertIn(f"{chain} recover --ledger {ledger} --stale-after-seconds 7",
+                      self.bash_log.read_text().splitlines())
 
     def test_an_empty_reservation_threshold_means_the_default_as_it_does_for_plan(self):
         report = self.sweep("--remove", env={**self.stub_github(),

@@ -63,7 +63,8 @@ def rev_parse_path(repo, option):
     return os.path.realpath(os.path.join(repo, path))
 
 
-def worktrees(repo):
+def registrations(repo):
+    """Read git's worktree registrations, bare entry included."""
     rows = []
     for record in git(repo, "worktree", "list", "--porcelain", "-z").split(b"\0\0"):
         fields = dict(field.partition(b" ")[::2] for field in record.split(b"\0") if field)
@@ -249,20 +250,20 @@ def recover_reservations(root, ledger):
     return json.loads(result.stdout)
 
 
-Listing = namedtuple("Listing", "rows root main_path common")
+Worktrees = namedtuple("Worktrees", "rows root main_path common")
 
 
-def list_worktrees(repo):
-    """List every working tree, with the repository root, main worktree and common directory."""
-    rows = worktrees(repo)
+def worktrees(repo):
+    """Return the repository's working trees, with its root, main worktree and common directory."""
+    rows = registrations(repo)
     root = resolve_root(repo, rows)
     main_path = rows[0]["path"] if rows and not rows[0]["bare"] else None
-    return Listing([row for row in rows if not row.pop("bare")], root, main_path,
+    return Worktrees([row for row in rows if not row.pop("bare")], root, main_path,
                   rev_parse_path(repo, "--git-common-dir"))
 
 
-def ledger_owned(path):
-    """Name every worktree chain.sh owns: those of open rows, and of a pending transaction."""
+def ledger_owned(path, rows):
+    """Name every worktree chain.sh owns, as git registered it: open rows' and a pending one's."""
     owned = set(read_ledger(path).owned)
     # A reserve or claim interrupted before it finished leaves this record naming its worktree,
     # and the next chain.sh command rolls that transaction back.
@@ -270,12 +271,12 @@ def ledger_owned(path):
         with open(path + ".pending", encoding="utf-8") as record:
             transaction = json.load(record)
     except FileNotFoundError:
-        return owned
+        return set(map(as_registered(rows), owned))
     if not isinstance(transaction, dict) or not isinstance(transaction.get("worktree"), str) \
             or not transaction["worktree"]:
         raise ValueError(f"{path}.pending: pending worktree record requires a worktree path")
     owned.add(os.path.realpath(transaction["worktree"]))
-    return owned
+    return set(map(as_registered(rows), owned))
 
 
 def read_ledger(path):
@@ -481,7 +482,7 @@ def occupied_submodule(path):
 
 def changes_since_judged(root, row, records, main_path, common, ledger):
     """Re-read a candidate just before removal, naming anything that changed since it was judged."""
-    listing = worktrees(root)
+    listing = registrations(root)
     current = next((other for other in listing if other["_registered"] == row["_registered"]), None)
     if current is None:
         return ["registration-changed"]
@@ -489,8 +490,7 @@ def changes_since_judged(root, row, records, main_path, common, ledger):
     fresh = {**current, "exists": row["exists"], "holder_pids": [], "errors": [],
              "_marked": row["_marked"], "owner_alive": row["owner_alive"],
              "dirty": uncommitted(row["path"]) if row["exists"] else None,
-             "_ledger_owned": row["path"] in set(map(as_registered(listing),
-                                                       ledger_owned(ledger)))}
+             "_ledger_owned": row["path"] in ledger_owned(ledger, listing)}
     fresh["_record_refusals"] = record_refusals(root, fresh, records, main_path, common)
     reasons = []
     if (current["_head"], current["branch"]) != (row["_head"], row["branch"]):
@@ -545,23 +545,12 @@ def as_registered(rows):
     return spell
 
 
-def same_directory(path, identity):
-    try:
-        return os.path.samestat(os.stat(path), identity)
-    except OSError:
-        return False
-
-
 def judge(repo, path):
     """Name what removing one worktree would destroy that exists nowhere else, for chain.sh."""
-    rows, root, main_path, common = list_worktrees(repo)
-    # git matches a path given in another spelling, such as another Unicode normalization, so
-    # an existing directory is matched by identity; a vanished one only by its recorded path.
-    if os.path.isdir(path):
-        identity = os.stat(path)
-        row = next((row for row in rows if same_directory(row["path"], identity)), None)
-    else:
-        row = next((row for row in rows if row["path"] == os.path.realpath(path)), None)
+    rows, root, main_path, common = worktrees(repo)
+    # git matches a path given in another spelling, such as another Unicode normalization.
+    registered = as_registered(rows)(os.path.realpath(path))
+    row = next((row for row in rows if row["path"] == registered), None)
     if row is None:
         if os.path.lexists(path):
             raise RuntimeError(f"not a registered worktree of this repository: {path}")
@@ -638,7 +627,7 @@ def remove_worktree(root, row):
             except FileExistsError:
                 row["reasons"].append("marker-changed")
         # git deletes the registration even when it fails to delete the whole directory.
-        if row["_registered"] not in {other["_registered"] for other in worktrees(root)}:
+        if row["_registered"] not in {other["_registered"] for other in registrations(root)}:
             row["reasons"].append("registration-lost")
         elif uncommitted(row["path"]):
             row["reasons"].append("uncommitted-changes")
@@ -671,7 +660,7 @@ def in_another_worktree(root, common, branch):
     """Report whether a worktree has the branch checked out, or is rebasing or bisecting it."""
     # git branch -D refuses each of these, and update-ref -d checks none of them.
     records = worktree_records(common)
-    listing = worktrees(root)
+    listing = registrations(root)
     main_path = listing[0]["path"] if listing else None
     for other in listing:
         if other["branch"] == branch:
@@ -754,7 +743,7 @@ def reclaim_branch(root, row, rows, common):
 def reclaim(root, rows, kernel_paths, main_path, common, ledger):
     """Remove every vouched worktree and prune every vanished one, then decide freed branches."""
     records = worktree_records(common)
-    owned = set(map(as_registered(rows), ledger_owned(ledger)))
+    owned = ledger_owned(ledger, rows)
     for row in rows:
         row["_ledger_owned"] = row["path"] in owned
         row["_record_refusals"] = []
@@ -842,18 +831,19 @@ def main():
         if args.judge is not None:
             print(json.dumps(judge(repo, args.judge)))
             return 0
-        rows, root, main_path, common = list_worktrees(repo)
+        rows, root, main_path, common = worktrees(repo)
         ledger = os.path.abspath(args.ledger or os.path.join(root, ".git-loopy", "subagents.jsonl"))
         if args.remove:
             recovered = recover_reservations(root, ledger)
             # Recovery may have removed worktrees, even the checkout --repo named, so they are
             # listed again from the repository root, which it never removes.
-            rows, root, main_path, common = list_worktrees(root)
+            rows, root, main_path, common = worktrees(root)
         spawn_ledger = read_ledger(ledger)
         spell = as_registered(rows)
         ledger_rows = {}
         for path, count in spawn_ledger.counts.items():
-            ledger_rows[spell(path)] = ledger_rows.get(spell(path), 0) + count
+            registered = spell(path)
+            ledger_rows[registered] = ledger_rows.get(registered, 0) + count
         # Resolve pwd before entering any worktree, where a relative PATH entry could find another.
         pwd = shutil.which("pwd")
         if pwd is None:
