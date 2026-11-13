@@ -574,7 +574,7 @@ worktree_holds_nothing_unique() {
   local worktree="$1" refusals
 
   refusals="$(bash "$script_dir/sweep.sh" --repo "$(repository_root)" --judge "$worktree")" || {
-    echo "error: could not judge whether the worktree holds unique work; retaining it: $worktree" >&2
+    echo "warning: could not judge whether the worktree holds unique work; retaining it: $worktree" >&2
     return 1
   }
   [ "$refusals" = "[]" ] && return 0

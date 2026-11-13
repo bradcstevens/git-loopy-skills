@@ -1270,11 +1270,31 @@ class SweepCLI(unittest.TestCase):
         self.git("worktree", "add", "--quiet", "--detach", str(detached))
         self.commit("only copy", cwd=detached)
         for path, expected in ((clean, []), (dirty, ["uncommitted-changes"]),
-                               (detached, ["unreferenced-head"]),
-                               (self.root / "unregistered", [])):
+                               (detached, ["unreferenced-head"]), (self.repo, ["main-worktree"]),
+                               (self.root / "never-existed", [])):
             with self.subTest(path.name):
                 self.assertEqual(self.sweep("--judge", str(path)), expected)
         self.assertTrue(dirty.is_dir())
+        # An existing directory it cannot place, or cannot inspect, is never judged harmless.
+        (self.root / "unregistered").mkdir()
+        result = subprocess.run(["bash", os.environ["SWEEP"], "--repo", str(self.repo), "--judge",
+                                 str(self.root / "unregistered")], capture_output=True, text=True)
+        self.assertEqual((result.returncode, result.stdout), (1, ""))
+        self.assertIn("not a registered worktree", result.stderr)
+        for args in (("--judge", str(clean), "--remove"), ("--judge", "")):
+            with self.subTest(args):
+                result = subprocess.run(["bash", os.environ["SWEEP"], "--repo", str(self.repo), *args],
+                                        capture_output=True, text=True)
+                self.assertEqual((result.returncode, result.stdout), (2, ""))
+
+    def test_judge_finds_a_worktree_named_in_another_spelling(self):
+        composed = self.root / "caf\u00e9"
+        decomposed = self.root / "cafe\u0301"
+        self.git("worktree", "add", "--quiet", "--detach", str(composed))
+        if not decomposed.exists():
+            self.skipTest("this file system tells the two Unicode spellings apart")
+        self.commit("only copy", cwd=composed)
+        self.assertEqual(self.sweep("--judge", str(decomposed)), ["unreferenced-head"])
 
     def test_a_failed_sweep_still_says_what_recover_did(self):
         orphan, row = self.reservation("orphan", *self.ended_process())
@@ -1287,6 +1307,22 @@ class SweepCLI(unittest.TestCase):
         self.assertEqual((result.returncode, result.stdout), (1, ""))
         self.assertIn("chain.sh recover had already run", result.stderr)
         self.assertIn("issue-orphan", result.stderr)
+
+    def test_a_sweep_named_from_a_checkout_recovery_removes_still_finishes(self):
+        orphan, row = self.reservation("orphan", *self.ended_process())
+        ledger = self.root / "subagents.jsonl"
+        ledger.write_text(json.dumps(row) + "\n")
+        result = subprocess.run(["bash", os.environ["SWEEP"], "--repo", str(orphan), "--remove",
+                                 "--ledger", str(ledger)], cwd=self.root, capture_output=True,
+                                text=True, env=self.stub_github())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(json.loads(result.stdout)["recovered"]["targets"], ["issue-orphan"])
+        self.assertFalse(orphan.exists())
+
+    def test_an_empty_reservation_threshold_means_the_default_as_it_does_for_plan(self):
+        report = self.sweep("--remove", env={**self.stub_github(),
+                                             "CHAIN_RESERVATION_STALE_SECONDS": ""})
+        self.assertEqual(report["recovered"], {"recovered": 0, "targets": []})
 
     def test_a_live_bound_reservation_is_left_to_chain_sh(self):
         live, row = self.reservation("live", os.getpid(), self.process_start(os.getpid()),

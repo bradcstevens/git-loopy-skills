@@ -102,15 +102,20 @@ def kernel_spelling(pwd, row):
     return os.path.join(os.fsdecode(result.stdout).removesuffix("\n"), *tail)
 
 
+def run_chain(*args, cwd=None):
+    return subprocess.run(
+        ["bash", str(Path(__file__).with_name("chain.sh")), *args],
+        cwd=cwd, capture_output=True, text=True,
+        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+    )
+
+
 def marker_owner(path):
     marker = os.path.join(path, MARKER)
     if not os.path.lexists(marker):
         return None
-    result = subprocess.run(
-        ["bash", str(Path(__file__).with_name("chain.sh")), "owner", "--worktree", path],
-        check=True, capture_output=True, text=True,
-        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
-    )
+    result = run_chain("owner", "--worktree", path)
+    result.check_returncode()
     return json.loads(result.stdout)
 
 
@@ -233,28 +238,27 @@ Ledger = namedtuple("Ledger", "counts owned")
 
 def recover_reservations(root, ledger):
     """Hand orphaned reservations and abandoned runs to chain.sh recover, which owns them."""
-    # The same threshold chain.sh plan passes, so its age backstop has one setting.
-    stale_after = os.environ.get("CHAIN_RESERVATION_STALE_SECONDS", "300")
-    result = subprocess.run(
-        ["bash", str(Path(__file__).with_name("chain.sh")), "recover", "--ledger", ledger,
-         "--stale-after-seconds", stale_after],
-        cwd=root, capture_output=True, text=True,
-        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
-    )
-    # Recovery's warnings, such as a worktree it retained, are the sweep's to pass on.
-    sys.stderr.write(result.stderr)
+    # The threshold chain.sh plan passes, read the same way, so its age backstop has one setting.
+    stale_after = os.environ.get("CHAIN_RESERVATION_STALE_SECONDS") or "300"
+    result = run_chain("recover", "--ledger", ledger, "--stale-after-seconds", stale_after, cwd=root)
     if result.returncode:
         raise RuntimeError("chain.sh recover failed: "
                            + (result.stderr.strip() or f"exit status {result.returncode}"))
+    # Recovery's warnings, such as a worktree it retained, are the sweep's to pass on.
+    sys.stderr.write(result.stderr)
     return json.loads(result.stdout)
 
 
+Survey = namedtuple("Survey", "rows root main_path common")
+
+
 def survey(repo):
-    """List every working tree, with the repository root and the main worktree's path."""
+    """List every working tree, with the repository root, main worktree and common directory."""
     rows = worktrees(repo)
     root = resolve_root(repo, rows)
     main_path = rows[0]["path"] if rows and not rows[0]["bare"] else None
-    return [row for row in rows if not row.pop("bare")], root, main_path
+    return Survey([row for row in rows if not row.pop("bare")], root, main_path,
+                  rev_parse_path(repo, "--git-common-dir"))
 
 
 def ledger_owned(path):
@@ -516,16 +520,32 @@ def unique_work(row, rows, main_path, common):
     return reasons + [reason for reason in row["_record_refusals"] if reason not in reasons]
 
 
+def same_directory(path, identity):
+    try:
+        return os.path.samestat(os.stat(path), identity)
+    except OSError:
+        return False
+
+
 def judge(repo, path):
     """Name what removing one worktree would destroy that exists nowhere else, for chain.sh."""
-    rows, root, main_path = survey(repo)
-    common = rev_parse_path(repo, "--git-common-dir")
-    row = next((row for row in rows if row["path"] == os.path.realpath(path)), None)
+    rows, root, main_path, common = survey(repo)
+    # git matches a path given in another spelling, such as another Unicode normalization, so
+    # an existing directory is matched by identity; a vanished one only by its recorded path.
+    if os.path.isdir(path):
+        identity = os.stat(path)
+        row = next((row for row in rows if same_directory(row["path"], identity)), None)
+    else:
+        row = next((row for row in rows if row["path"] == os.path.realpath(path)), None)
     if row is None:
+        if os.path.lexists(path):
+            raise RuntimeError(f"not a registered worktree of this repository: {path}")
         return []
+    if row["path"] == main_path:
+        return ["main-worktree"]
     inspect_checkout(row, common)
     if row["errors"]:
-        return ["inspection-errors"]
+        raise RuntimeError("; ".join(row["errors"]))
     row["_record_refusals"] = record_refusals(root, row, worktree_records(common), main_path, common)
     return unique_work(row, rows, main_path, common)
 
@@ -782,31 +802,34 @@ def main():
     parser.add_argument("--repo", help="path inside the repository (default: current directory)")
     parser.add_argument("--ledger", default=os.environ.get("CHAIN_LEDGER"),
                         help="spawn ledger (default: repository .git-loopy/subagents.jsonl)")
-    parser.add_argument("--remove", action="store_true",
+    action = parser.add_mutually_exclusive_group()
+    action.add_argument("--remove", action="store_true",
                         help="remove vouched worktrees and the merged branches they free")
-    parser.add_argument("--judge", metavar="WORKTREE",
+    action.add_argument("--judge", metavar="WORKTREE",
                         help="print, as a JSON list, what removing one worktree would destroy")
     args = parser.parse_args()
+    if args.judge == "":
+        parser.error("--judge needs a worktree path")
     recovered = None
     try:
         ignore_exported_repository()
         repo = args.repo or os.getcwd()
-        if args.judge:
+        if args.judge is not None:
             print(json.dumps(judge(repo, args.judge)))
             return 0
-        rows, root, main_path = survey(repo)
+        rows, root, main_path, common = survey(repo)
         ledger = os.path.abspath(args.ledger or os.path.join(root, ".git-loopy", "subagents.jsonl"))
         if args.remove:
             recovered = recover_reservations(root, ledger)
-            # Recovery may have removed worktrees, so they are listed again.
-            rows, root, main_path = survey(repo)
+            # Recovery may have removed worktrees, even the checkout --repo named, so they are
+            # listed again from the repository root, which it never removes.
+            rows, root, main_path, common = survey(root)
         spawn_ledger = read_ledger(ledger)
         # Resolve pwd before entering any worktree, where a relative PATH entry could find another.
         pwd = shutil.which("pwd")
         if pwd is None:
             raise RuntimeError("pwd not found on PATH")
         pwd = os.path.abspath(pwd)
-        common = rev_parse_path(repo, "--git-common-dir")
         kernel_paths = {}
         for row in rows:
             inspect_checkout(row, common)

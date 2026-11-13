@@ -124,7 +124,8 @@ _Avoid_: Dead worktree, leftover
 
 **Retained worktree**:
 A worktree `chain.sh` left on disk when completing or reclaiming its row, because it has uncommitted
-changes, cannot be inspected, or cannot be removed. Its row is closed, so it holds no slot and is no
+changes, cannot be inspected, or cannot be removed, or, when reclaiming, because the sweeper judges
+that it holds work that exists nowhere else. Its row is closed, so it holds no slot and is no
 longer the chain's to reclaim.
 
 **Held**:
