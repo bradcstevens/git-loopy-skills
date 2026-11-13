@@ -139,8 +139,8 @@ Each entry includes `path`, `branch` (a full ref, or null when detached),
 and `errors`. Classification follows this precedence:
 
 - **Held:** `lsof` observes a process with its current directory or an open file
-  in the worktree. The sweep and its `lsof` child do not count. Nested paths
-  belong to the innermost registered worktree.
+  in the worktree. The sweep, its `lsof` child and the helpers that `lsof` forks
+  on Linux do not count. Nested paths belong to the innermost registered worktree.
 - **Marked:** a `.git-loopy/worktree-owner` marker exists. `chain.sh owner`
   supplies owner liveness, including its PID-reuse protection and conservative
   treatment of an unparseable start time. A live marker owner alone does not

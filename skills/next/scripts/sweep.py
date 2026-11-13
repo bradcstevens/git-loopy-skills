@@ -47,7 +47,7 @@ def marker_owner(path):
 
 def holders(rows):
     with subprocess.Popen(
-        ["lsof", "-nP", "-F0pn"], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        ["lsof", "-nP", "-F0pRn"], stdout=subprocess.PIPE, stderr=subprocess.PIPE,
     ) as process:
         try:
             stdout, stderr = process.communicate(timeout=30)
@@ -61,11 +61,16 @@ def holders(rows):
         raise RuntimeError("lsof inspection returned partial results")
     found = {row["path"]: set() for row in rows}
     pid = None
+    own = False
     for field in stdout.split(b"\0"):
         field = field.lstrip(b"\n")
         if field.startswith(b"p"):
             pid = int(field[1:])
-        elif field.startswith(b"n/") and pid is not None and pid not in (os.getpid(), process.pid):
+            own = pid in (os.getpid(), process.pid)
+        elif field.startswith(b"R"):
+            # Linux lsof forks helpers that inherit its working directory.
+            own = own or int(field[1:]) == process.pid
+        elif field.startswith(b"n/") and pid is not None and not own:
             # lsof escapes non-printing bytes even with NUL field separators.
             escapes = {b"a": b"\a", b"b": b"\b", b"f": b"\f", b"n": b"\n",
                        b"r": b"\r", b"t": b"\t", b"v": b"\v", b"\\": b"\\"}
