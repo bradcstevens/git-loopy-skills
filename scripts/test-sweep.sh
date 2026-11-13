@@ -4,6 +4,7 @@ set -euo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 export SWEEP="$REPO/skills/next/scripts/sweep.sh"
 python3 - "$@" <<'PY'
+import errno
 import json
 import hashlib
 import os
@@ -71,16 +72,7 @@ class SweepCLI(unittest.TestCase):
         self.mark(self.repo, 2147483647, "Mon Jan 1 00:00:00 2001")
         child_dir = self.repo / "subdirectory"
         child_dir.mkdir()
-        holder = subprocess.Popen(
-            [sys.executable, "-c", "import time; print('ready', flush=True); time.sleep(120)"],
-            cwd=child_dir, stdout=subprocess.PIPE, text=True,
-        )
-        def stop():
-            holder.terminate()
-            holder.wait()
-            holder.stdout.close()
-        self.addCleanup(stop)
-        self.assertEqual(holder.stdout.readline().strip(), "ready")
+        holder = self.hold(child_dir)
         row = self.sweep()["worktrees"][0]
         self.assertEqual(row["classification"], "held")
         self.assertIn(holder.pid, row["holder_pids"])
@@ -191,6 +183,32 @@ class SweepCLI(unittest.TestCase):
             self.assertIn(holder.pid, rows[str(path)]["holder_pids"])
         self.assertEqual(rows[str(self.repo)]["classification"], "unvouched")
 
+    def test_ambiguous_spelling_never_lets_one_worktree_hide_another(self):
+        control = self.root / "nest\a"
+        caret = self.root / "nest^G" / "inner"
+        for path in (control, caret):
+            self.git("worktree", "add", "--quiet", "--detach", str(path))
+        (control / "inner").mkdir()
+        holder = self.hold(control / "inner")
+        rows = {row["path"]: row for row in self.sweep()["worktrees"]}
+        for path in (control, caret):
+            self.assertEqual(rows[str(path)]["classification"], "held")
+            self.assertIn(holder.pid, rows[str(path)]["holder_pids"])
+
+    def test_byte_ff_is_held_whichever_way_lsof_spells_it(self):
+        linked = self.root / os.fsdecode(b"byte\xfftree")
+        try:
+            linked.mkdir()
+        except OSError as error:
+            if error.errno == errno.EILSEQ:
+                self.skipTest("this file system rejects byte 0xff in names")
+            raise
+        self.git("worktree", "add", "--quiet", "--detach", str(linked))
+        holder = self.hold(linked)
+        row = next(row for row in self.sweep()["worktrees"] if row["path"] == str(linked))
+        self.assertEqual(row["classification"], "held")
+        self.assertIn(holder.pid, row["holder_pids"])
+
     def test_empty_bare_repository_is_not_an_all_unvouched_report(self):
         bare = self.root / "bare.git"
         self.git("init", "--quiet", "--bare", str(bare))
@@ -224,6 +242,7 @@ class SweepCLI(unittest.TestCase):
     def test_explicit_and_environment_ledgers_are_read_without_changes(self):
         ledger = self.root / "ledger.jsonl"
         ledger.write_text(json.dumps({"worktree": str(self.repo), "finish_time": "finished"}) + "\n")
+        before = ledger.read_bytes()
         for args, env in [
             (("--ledger", str(ledger)), None),
             ((), {**os.environ, "CHAIN_LEDGER": str(ledger)}),
@@ -233,6 +252,13 @@ class SweepCLI(unittest.TestCase):
                 self.assertEqual(report["ledger"], str(ledger))
                 self.assertEqual(report["worktrees"][0]["ledger_rows"], 1)
                 self.assertEqual(report["worktrees"][0]["classification"], "unvouched")
+                self.assertEqual(ledger.read_bytes(), before)
+
+    def test_invalid_arguments_exit_two_without_a_report(self):
+        result = subprocess.run(["bash", os.environ["SWEEP"], "--no-such-option"],
+                                cwd=self.repo, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(result.stdout, "")
 
     def test_inspection_and_ledger_failures_are_not_empty_successes(self):
         fake_bin = self.root / "bin"

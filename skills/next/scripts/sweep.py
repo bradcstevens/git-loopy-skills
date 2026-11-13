@@ -8,10 +8,15 @@ from pathlib import Path
 import subprocess
 import sys
 
+if sys.version_info < (3, 9):
+    print("error: sweep.sh requires Python 3.9 or newer", file=sys.stderr)
+    sys.exit(2)
+
 sys.dont_write_bytecode = True
 from sessions import repository_root
 
 
+MARKER = ".git-loopy/worktree-owner"
 LSOF_ESCAPES = {0x08: b"\\b", 0x09: b"\\t", 0x0a: b"\\n", 0x0c: b"\\f", 0x0d: b"\\r",
                 0x5c: b"\\\\"}
 
@@ -21,6 +26,11 @@ def git(repo, *args):
         ["git", "--no-optional-locks", "-C", repo, *args],
         check=True, capture_output=True,
     ).stdout
+
+
+def rev_parse_path(repo, option):
+    path = os.fsdecode(git(repo, "rev-parse", option)).removesuffix("\n")
+    return os.path.realpath(os.path.join(repo, path))
 
 
 def worktrees(repo):
@@ -38,7 +48,7 @@ def worktrees(repo):
 
 
 def marker_owner(path):
-    marker = os.path.join(path, ".git-loopy", "worktree-owner")
+    marker = os.path.join(path, MARKER)
     if not os.path.lexists(marker):
         return None
     result = subprocess.run(
@@ -49,21 +59,22 @@ def marker_owner(path):
     return json.loads(result.stdout)
 
 
-def lsof_spelling(path):
-    """Spell a path the way lsof prints names under LC_ALL=C."""
-    spelled = bytearray()
+def lsof_spellings(path):
+    """Spell a path each way lsof may print it under LC_ALL=C."""
+    # lsof prints byte 0xff as \xff where char is signed (x86_64, macOS) and ^? elsewhere.
+    signed = unsigned = b""
     for byte in os.fsencode(path):
         if byte in LSOF_ESCAPES:
-            spelled += LSOF_ESCAPES[byte]
+            spelled = LSOF_ESCAPES[byte]
         elif 0x20 <= byte < 0x7f:
-            spelled.append(byte)
+            spelled = bytes([byte])
         elif byte < 0x20:
-            spelled += b"^" + bytes([byte + 0x40])
-        elif byte == 0xff:
-            spelled += b"^?"
+            spelled = b"^" + bytes([byte + 0x40])
         else:
-            spelled += b"\\x%02x" % byte
-    return bytes(spelled)
+            spelled = b"\\x%02x" % byte
+        signed += spelled
+        unsigned += b"^?" if byte == 0xff else spelled
+    return {signed, unsigned}
 
 
 def holders(rows):
@@ -82,50 +93,47 @@ def holders(rows):
         detail = os.fsdecode(stderr).strip() or (
             f"exit status {process.returncode} with {'partial' if stdout else 'no'} output")
         raise RuntimeError(f"lsof inspection failed: {detail}")
-    # A literal caret and a control byte can share one spelling; such a name holds both.
     spellings = {}
     for row in rows:
-        spellings.setdefault(lsof_spelling(row["path"]), []).append(row["path"])
+        for spelling in lsof_spellings(row["path"]):
+            spellings.setdefault(spelling, []).append(row["path"])
     found = {row["path"]: set() for row in rows}
     pid = None
-    own = False
+    excluded = False
     for field in stdout.split(b"\0"):
         field = field.lstrip(b"\n")
         if field.startswith(b"p"):
             pid = int(field[1:])
-            own = pid in (os.getpid(), process.pid)
+            excluded = pid in (os.getpid(), process.pid)
         elif field.startswith(b"R"):
             # Linux lsof forks helpers that inherit its working directory.
-            own = own or int(field[1:]) == process.pid
-        elif field.startswith(b"n/") and pid is not None and not own:
+            excluded = excluded or int(field[1:]) == process.pid
+        elif field.startswith(b"n/") and pid is not None and not excluded:
             name = field[1:]
-            matches = [spelling for spelling in spellings
-                       if name == spelling or name.startswith(spelling + b"/")]
-            if matches:
-                for path in spellings[max(matches, key=len)]:
+            matches = {path for spelling, paths in spellings.items()
+                       if name == spelling or name.startswith(spelling + b"/")
+                       for path in paths}
+            # A literal caret and a control byte can share a spelling, so the name may
+            # mean several worktrees; only a truly nested one outranks its parent.
+            for path in matches:
+                if not any(other.startswith(path + os.sep) for other in matches):
                     found[path].add(pid)
     return found
 
 
 def resolve_root(repo, rows):
-    common = os.path.realpath(os.path.join(
-        repo, os.fsdecode(git(repo, "rev-parse", "--git-common-dir")).removesuffix("\n"),
-    ))
+    """Return the repository root, re-pointing a separate-git-dir entry at its checkout."""
+    common = rev_parse_path(repo, "--git-common-dir")
     if rows and rows[0]["bare"]:
         root = common
     else:
-        git_dir = os.path.realpath(os.path.join(
-            repo, os.fsdecode(git(repo, "rev-parse", "--git-dir")).removesuffix("\n"),
-        ))
+        git_dir = rev_parse_path(repo, "--git-dir")
         if (rows and rows[0]["path"] == common and git_dir != common
                 and not os.path.islink(os.path.join(common, "git-loopy-worktree-root"))):
             raise RuntimeError("separate-git-dir repository root is unrecorded; run from its main checkout")
         root = repository_root(repo, rows)
         if rows and rows[0]["path"] == common:
-            root_common = os.path.realpath(os.path.join(
-                root, os.fsdecode(git(root, "rev-parse", "--git-common-dir")).removesuffix("\n"),
-            ))
-            if root_common != common:
+            if rev_parse_path(root, "--git-common-dir") != common:
                 raise RuntimeError("recorded repository root belongs to another repository")
             rows[0]["path"] = root
     return root
@@ -160,7 +168,7 @@ def inspect_worktree(row, pids, ledger_rows):
     path = row["path"]
     row.update(ledger_rows=ledger_rows, holder_pids=sorted(pids), errors=[],
                exists=os.path.isdir(path), dirty=None, owner_alive=None)
-    marked = os.path.lexists(os.path.join(path, ".git-loopy", "worktree-owner"))
+    marked = os.path.lexists(os.path.join(path, MARKER))
     row["classification"] = "held" if pids else "marked" if marked else "unvouched"
     if marked:
         try:
@@ -175,14 +183,11 @@ def inspect_worktree(row, pids, ledger_rows):
             row["errors"].append(error_message(error))
     if row["exists"]:
         try:
-            top = os.path.realpath(os.fsdecode(
-                git(path, "rev-parse", "--show-toplevel"),
-            ).removesuffix("\n"))
-            if top != path:
+            if rev_parse_path(path, "--show-toplevel") != path:
                 raise RuntimeError("directory no longer resolves to the registered worktree")
             row["dirty"] = bool(git(
                 path, "status", "--porcelain=v1", "-z", "--untracked-files=all",
-                "--ignore-submodules=none", "--", ".", ":(exclude).git-loopy/worktree-owner",
+                "--ignore-submodules=none", "--", ".", f":(exclude){MARKER}",
             ))
         except (OSError, RuntimeError, subprocess.SubprocessError) as error:
             row["errors"].append(error_message(error))
@@ -190,20 +195,21 @@ def inspect_worktree(row, pids, ledger_rows):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--repo", default=os.getcwd(), help="path inside the repository")
+    parser.add_argument("--repo", help="path inside the repository (default: current directory)")
     parser.add_argument("--ledger", default=os.environ.get("CHAIN_LEDGER"),
                         help="spawn ledger (default: repository .git-loopy/subagents.jsonl)")
     args = parser.parse_args()
     try:
-        rows = worktrees(args.repo)
-        root = resolve_root(args.repo, rows)
+        repo = args.repo or os.getcwd()
+        rows = worktrees(repo)
+        root = resolve_root(repo, rows)
         ledger = os.path.abspath(args.ledger or os.path.join(root, ".git-loopy", "subagents.jsonl"))
         rows = [row for row in rows if not row.pop("bare")]
-        rows_by_worktree = ledger_counts(ledger)
+        ledger_row_counts = ledger_counts(ledger)
         pids_by_worktree = holders(rows) if rows else {}
         for row in rows:
             inspect_worktree(row, pids_by_worktree[row["path"]],
-                             rows_by_worktree.get(row["path"], 0))
+                             ledger_row_counts.get(row["path"], 0))
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         print(f"error: {error_message(error)}", file=sys.stderr)
         return 1

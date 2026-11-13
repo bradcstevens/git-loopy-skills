@@ -119,65 +119,27 @@ Each run appends its scan to the **session log**, `.git-loopy/next/sessions.json
 
 ## Read-only worktree sweep
 
-`skills/next/scripts/sweep.sh` reports every registered working tree without
-writing markers, taking ledger locks, recovering reservations, pruning Git
-metadata, or removing anything. Run it from any checkout, or specify a repository:
+`skills/next/scripts/sweep.sh` reports every registered working tree without writing markers, taking ledger locks, recovering reservations, pruning Git metadata, or removing anything. Run it from any checkout, or specify a repository:
 
 ```bash
 bash skills/next/scripts/sweep.sh --repo /path/to/repository
 ```
 
-It requires Git, Python 3.9 or newer and `lsof` on `PATH` and makes no network
-requests. `CHAIN_PYTHON` selects the interpreter, as it does for `chain.sh`.
-It prints one JSON object with `worktrees`, `counts` (held, marked and unvouched),
-and the resolved spawn `ledger` path. A bare repository entry is not a working
-tree and is excluded; with no working trees the array is empty and every count
-is zero. An all-unvouched result instead has entries and a positive unvouched
-count.
+It requires Git, Python 3.9 or newer and `lsof` on `PATH`, and makes no network requests. `CHAIN_PYTHON` selects the interpreter, as it does for `chain.sh`. It prints one JSON object with `worktrees`, `counts` (held, marked and unvouched), and the resolved spawn `ledger` path. A bare repository entry is not a working tree and is excluded; with no working trees the array is empty and every count is zero. An all-unvouched result instead has entries and a positive unvouched count.
 
-Each entry includes `path`, `branch` (a full ref, or null when detached),
-`classification`, `holder_pids`, `owner_alive`, `ledger_rows`, `exists`, `dirty`
-and `errors`. Classification follows this precedence:
+Each entry includes `path`, `branch` (a full ref, or null when detached), `classification`, `holder_pids`, `owner_alive`, `ledger_rows`, `exists`, `dirty` and `errors`. Classification follows this precedence:
 
-- **Held:** `lsof` observes a process with its current directory or an open file
-  in the worktree. The sweep, its `lsof` child and the helpers that `lsof` forks
-  on Linux do not count. Nested paths belong to the innermost registered worktree.
-  Paths are compared as `lsof` spells them, which writes a control byte such as
-  BEL as `^G`; a worktree named with a literal `^G` shares that spelling, so a
-  holder of either holds both.
-- **Marked:** a `.git-loopy/worktree-owner` marker exists. `chain.sh owner`
-  supplies owner liveness, including its PID-reuse protection and conservative
-  treatment of an unparseable start time. A live marker owner alone does not
-  mean the directory is currently held.
-- **Unvouched:** neither of those signals exists. A ledger-only worktree remains
-  unvouched: `ledger_rows` separately counts all matching spawn-ledger rows,
-  including closed ones; the sweep never manufactures a marker from a row.
+- **Held:** `lsof` observes a process with its current directory or an open file in the worktree. The sweep, its `lsof` child and the helpers that `lsof` forks on Linux do not count. Nested paths belong to the innermost registered worktree. Paths are compared as `lsof` spells them under `LC_ALL=C`, where a control byte such as BEL prints as `^G` and byte 0xff prints as `\xff` or `^?` depending on the platform. A literal `^G` shares that spelling, so a name that could mean several worktrees holds all of them.
+- **Marked:** a `.git-loopy/worktree-owner` marker exists. `chain.sh owner` supplies owner liveness, including its PID-reuse protection and conservative treatment of an unparseable start time. A live marker owner alone does not mean the directory is currently held.
+- **Unvouched:** neither of those signals exists. A ledger-only worktree remains unvouched: `ledger_rows` separately counts all matching spawn-ledger rows, including closed ones; the sweep never manufactures a marker from a row.
 
-The default ledger is the main repository's `.git-loopy/subagents.jsonl`,
-including when invoked from a linked checkout. `--ledger PATH` overrides
-`CHAIN_LEDGER` and the default. A separate-git-dir checkout uses the chain's
-existing root anchor; without that anchor, invoke the sweep from the main
-checkout so its location is known. The sweep never creates an anchor.
+The default ledger is the main repository's `.git-loopy/subagents.jsonl`, including when invoked from a linked checkout. `--ledger PATH` overrides `CHAIN_LEDGER` and the default. A separate-git-dir checkout uses the chain's existing root anchor; without that anchor, invoke the sweep from the main checkout so its location is known. The sweep never creates an anchor.
 
-`dirty` includes staged, unstaged, untracked and submodule changes, excluding
-only `.git-loopy/worktree-owner`. A vanished directory still gets an entry with
-`exists: false` and `dirty: null`; it is not pruned. An unreadable or invalid
-marker leaves `owner_alive: null` and an error rather than claiming its owner
-is dead. An uninspectable checkout similarly leaves `dirty: null`; other
-worktrees are still reported.
+`dirty` includes staged, unstaged, untracked and submodule changes, excluding only `.git-loopy/worktree-owner`. A vanished directory still gets an entry with `exists: false` and `dirty: null`; it is not pruned. An unreadable or invalid marker leaves `owner_alive: null` and an error rather than claiming its owner is dead. An uninspectable checkout similarly leaves `dirty: null`; other worktrees are still reported.
 
-Exit status is **0** for a complete report (including missing directories),
-**1** for inspection errors and **2** for invalid arguments. Per-worktree errors
-appear in the JSON entry; repository, ledger and process-enumeration failures
-emit an `error:` diagnostic on stderr and no success-shaped report. Any `lsof`
-diagnostic, non-zero exit or empty listing is such a failure, since `lsof`
-always lists at least itself. `lsof`
-visibility is limited to what the invoking account can inspect, and the report
-is a point-in-time observation, never proof that removal is safe.
+Exit status is **0** for a complete report (including missing directories), **1** for inspection errors and **2** for invalid arguments or an interpreter older than Python 3.9. Per-worktree errors appear in the JSON entry; repository, ledger and process-enumeration failures emit an `error:` diagnostic on stderr and no success-shaped report. Any `lsof` diagnostic, non-zero exit or empty listing is such a failure, since `lsof` always lists at least itself. `lsof` visibility is limited to what the invoking account can inspect, and the report is a point-in-time observation, never proof that removal is safe.
 
-The offline CLI suite is `bash scripts/test-sweep.sh`, also run by
-`scripts/validate-skills.sh`. It uses temporary repositories and real holders,
-not the repository's own worktree registry.
+The offline CLI suite is `bash scripts/test-sweep.sh`, also run by `scripts/validate-skills.sh`. It uses temporary repositories and real holders, not the repository's own worktree registry.
 
 ## The runtime it names
 
