@@ -22,8 +22,9 @@ import json
 import os
 import sys
 
+watched = json.loads(os.environ.get("GH_STUB_WATCH", "[]"))
 with open(os.environ["GH_STUB_LOG"], "a") as log:
-    log.write(json.dumps(sys.argv[1:]) + "\n")
+    log.write(json.dumps(sys.argv[1:] + [[os.path.exists(path) for path in watched]]) + "\n")
 if os.environ.get("GH_STUB_FAIL"):
     sys.exit("HTTP 502: Bad Gateway")
 head = sys.argv[sys.argv.index("--head") + 1]
@@ -556,7 +557,7 @@ class SweepCLI(unittest.TestCase):
     def row(self, report, path):
         return next(row for row in report["worktrees"] if row["path"] == str(path))
 
-    def github(self, pulls=None, fail=False, path=()):
+    def github(self, pulls=None, fail=False, path=(), watch=()):
         """Stub gh on PATH; pulls maps a branch to the merged pull requests GitHub lists for it."""
         stub = self.root / "gh-bin"
         stub.mkdir(exist_ok=True)
@@ -565,7 +566,8 @@ class SweepCLI(unittest.TestCase):
         (stub / "pulls.json").write_text(json.dumps(pulls or {}))
         self.gh_log = stub / "calls.jsonl"
         env = {**os.environ, "PATH": os.pathsep.join([*path, str(stub), os.environ["PATH"]]),
-               "GH_STUB_PULLS": str(stub / "pulls.json"), "GH_STUB_LOG": str(self.gh_log)}
+               "GH_STUB_PULLS": str(stub / "pulls.json"), "GH_STUB_LOG": str(self.gh_log),
+               "GH_STUB_WATCH": json.dumps([str(watched) for watched in watch])}
         if fail:
             env["GH_STUB_FAIL"] = "1"
         return env
@@ -575,6 +577,9 @@ class SweepCLI(unittest.TestCase):
             return []
         calls = [json.loads(line) for line in self.gh_log.read_text().splitlines()]
         return [call[call.index("--head") + 1] for call in calls]
+
+    def present_at_each_github_call(self):
+        return [json.loads(line)[-1] for line in self.gh_log.read_text().splitlines()]
 
     def before_second_look(self, script):
         """Stub lsof to run a shell snippet before its second listing, the look before removal."""
@@ -675,7 +680,9 @@ class SweepCLI(unittest.TestCase):
         self.addCleanup(sealed.chmod, 0o755)
         row = self.row(self.sweep("--remove", expected=1, env=env), stuck)
         self.assertEqual(row["outcome"], "declined")
-        self.assertIn("removal-failed", row["reasons"])
+        # git deleted the registration and the directory's contents before failing on it.
+        self.assertEqual(row["reasons"], ["removal-failed", "registration-lost"])
+        self.assertNotIn(str(stuck), self.registered())
         self.assertTrue(row["errors"])
         self.assertIsNone(row["branch_outcome"])
         self.assertTrue(self.has_branch("stuck"))
@@ -719,13 +726,13 @@ class SweepCLI(unittest.TestCase):
         self.assertEqual(self.asked_github_about(), [])
 
     def test_held_worktree_is_never_removed(self):
-        busy = self.linked("busy")
-        self.dead_owner(busy)
-        holder = self.hold(busy)
-        row = self.row(self.sweep("--remove", env=self.github()), busy)
+        occupied = self.linked("occupied")
+        self.dead_owner(occupied)
+        holder = self.hold(occupied)
+        row = self.row(self.sweep("--remove", env=self.github()), occupied)
         self.assertEqual((row["outcome"], row["reasons"]), ("declined", ["held"]))
         self.assertIn(holder.pid, row["holder_pids"])
-        self.assertTrue(busy.is_dir())
+        self.assertTrue(occupied.is_dir())
 
     def test_a_holder_seen_on_the_second_look_still_refuses_removal(self):
         late = self.linked("late")
@@ -757,6 +764,80 @@ class SweepCLI(unittest.TestCase):
         self.assertEqual((late / ".git-loopy" / "worktree-owner").read_bytes(), marker)
         self.assertIn(str(late), self.registered())
         self.assertTrue(self.has_branch("late"))
+
+    def test_every_removal_finishes_before_github_is_asked_about_a_branch(self):
+        first, second = self.linked("first"), self.linked("second")
+        for path in (first, second):
+            self.dead_owner(path)
+        report = self.sweep("--remove", env=self.github(watch=(first, second)))
+        self.assertEqual(report["counts"]["removed"], 2)
+        self.assertEqual(self.present_at_each_github_call(), [[False, False], [False, False]])
+
+    def test_detached_commits_no_ref_contains_refuse_removal(self):
+        scratch = self.root / "scratch"
+        self.git("worktree", "add", "--quiet", "--detach", str(scratch))
+        self.commit("only copy", cwd=scratch)
+        head = os.fsdecode(self.git("rev-parse", "HEAD", cwd=scratch)).strip()
+        self.dead_owner(scratch)
+        row = self.row(self.sweep("--remove", env=self.github()), scratch)
+        self.assertEqual((row["outcome"], row["reasons"]), ("declined", ["unreferenced-head"]))
+        self.assertEqual(os.fsdecode(self.git("rev-parse", "HEAD", cwd=scratch)).strip(), head)
+
+    def test_an_unfinished_operation_refuses_removal(self):
+        rebasing = self.linked("rebasing")
+        self.commit("one", cwd=rebasing)
+        self.commit("two", cwd=rebasing)
+        subprocess.run(["git", "-C", str(rebasing), "-c", "user.name=test",
+                        "-c", "user.email=test@example.com", "rebase", "--quiet", "-i", "HEAD~1"],
+                       env={**os.environ, "GIT_SEQUENCE_EDITOR": "sed -i.bak -e s/^pick/edit/"},
+                       check=True, capture_output=True)
+        self.dead_owner(rebasing)
+        row = self.row(self.sweep("--remove", env=self.github()), rebasing)
+        self.assertIs(row["dirty"], False)
+        self.assertEqual((row["outcome"], row["reasons"]), ("declined", ["operation-in-progress"]))
+        self.assertTrue(rebasing.is_dir())
+
+    def test_nested_worktree_registered_under_another_spelling_still_protects_its_work(self):
+        outer = self.linked("outer")
+        if not (self.root / "OUTER").exists():
+            self.skipTest("this file system is case-sensitive")
+        (outer / ".gitignore").write_text("inner/\n")
+        self.git("add", ".gitignore", cwd=outer)
+        self.commit("ignore inner", cwd=outer)
+        inner = self.linked("inner", base=self.root / "OUTER")
+        (inner / "unsaved").write_text("work\n")
+        self.dead_owner(outer)
+        row = self.row(self.sweep("--remove", env=self.github()), outer)
+        self.assertEqual(row["reasons"], ["contains-worktree"])
+        self.assertEqual((outer / "inner" / "unsaved").read_text(), "work\n")
+
+    def test_a_worktree_holding_the_repository_itself_is_never_removed(self):
+        holder = self.root / "holder"
+        bare = self.root / "bare.git"
+        self.git("clone", "--quiet", "--bare", str(self.repo), str(bare))
+        self.git("--git-dir", str(bare), "worktree", "add", "--quiet", "-b", "holder", str(holder))
+        bare.rename(holder / "bare.git")
+        bare = holder / "bare.git"
+        self.git("--git-dir", str(bare), "worktree", "repair", str(holder))
+        with (bare / "info" / "exclude").open("a") as exclude:
+            exclude.write("bare.git/\n")
+        self.dead_owner(holder)
+        env = {**self.github(), "GIT_CONFIG_COUNT": "1",
+               "GIT_CONFIG_KEY_0": "safe.bareRepository", "GIT_CONFIG_VALUE_0": "all"}
+        report = self.sweep("--remove", "--repo", str(bare), env=env)
+        row = self.row(report, holder)
+        self.assertIs(row["dirty"], False)
+        self.assertEqual(row["reasons"], ["contains-repository"])
+        self.assertTrue((bare / "HEAD").is_file())
+
+    def test_late_untracked_work_is_refused_even_where_status_hides_untracked_files(self):
+        self.git("config", "status.showUntrackedFiles", "no")
+        late = self.linked("late")
+        self.dead_owner(late)
+        lsof = self.before_second_look(f"echo unsaved > '{late}/notes'")
+        row = self.row(self.sweep("--remove", expected=1, env=self.github(path=[lsof])), late)
+        self.assertEqual((row["outcome"], row["reasons"]), ("declined", ["removal-failed"]))
+        self.assertEqual((late / "notes").read_text(), "unsaved\n")
 
     def test_unvouched_worktree_is_reported_and_not_removed(self):
         stray = self.linked("stray")

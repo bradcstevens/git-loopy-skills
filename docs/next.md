@@ -126,7 +126,7 @@ bash skills/next/scripts/sweep.sh --repo /path/to/repository
 bash skills/next/scripts/sweep.sh --repo /path/to/repository --remove
 ```
 
-It requires Git, Python 3.9 or newer, `lsof` and `pwd` on `PATH`. It makes no network requests unless `--remove` frees a branch, which needs `gh`. `CHAIN_PYTHON` selects the interpreter, as it does for `chain.sh`. It prints one JSON object with `worktrees`, `counts` (held, marked and unvouched), and the resolved spawn `ledger` path. A bare repository entry is not a working tree and is excluded; with no working trees the array is empty and every count is zero. An all-unvouched result instead has entries and a positive unvouched count.
+It requires Git, Python 3.9 or newer, `lsof` and `pwd` on `PATH`. It makes no network requests unless `--remove` frees a branch, which needs `gh`. `CHAIN_PYTHON` selects the interpreter, as it does for `chain.sh`. It drops the repository variables `git rev-parse --local-env-vars` names, such as the `GIT_DIR` a git hook exports, while keeping `-c` configuration as git itself does, so it always sweeps the repository `--repo` names or the current directory. It prints one JSON object with `worktrees`, `counts` (held, marked and unvouched), and the resolved spawn `ledger` path. A bare repository entry is not a working tree and is excluded; with no working trees the array is empty and every count is zero. An all-unvouched result instead has entries and a positive unvouched count.
 
 Each entry includes `path`, `branch` (a full ref, or null when detached), `locked`, `classification`, `holder_pids`, `owner_alive`, `ledger_rows`, `exists`, `dirty` and `errors`. Classification follows this precedence:
 
@@ -146,22 +146,26 @@ With `--remove`, the sweep acts on what it classified. It removes a worktree onl
 
 - `main-worktree`: the main checkout is never removed.
 - `inspection-errors`: the entry has errors, so its classification is unreliable.
-- `held`: a process holds it, either in the classifying look or in a second `lsof` look taken just before anything is removed.
+- `held`: a process holds it, either in the classifying look or in a second `lsof` look taken just before the removals begin.
 - `locked`: `git worktree lock` protects it.
-- `contains-worktree`: another registered worktree lies inside it, and removing it would delete that worktree's files too.
+- `contains-worktree`: another registered worktree lies inside it, compared by filesystem identity rather than spelling, and removing it would delete that worktree's files too.
+- `contains-repository`: the repository's own git directory lies inside it.
 - `uncommitted-changes`: it is dirty. This refuses removal whatever else is true, because that work exists nowhere else.
+- `operation-in-progress`: its git directory holds an unfinished rebase, merge, cherry-pick, revert, sequence or bisect.
+- `unreferenced-head`: it is detached at a commit no ref contains, so its commits may exist nowhere else.
 - `unvouched`: it has no marker, so it is reported and never removed.
 - `owner-alive` or `owner-liveness-unknown`: the marker's owner is alive, or its liveness could not be read.
 - `not-prunable`: its directory vanished, but git does not report the registration as prunable.
 - `marker-changed`: the marker's bytes changed after the worktree was judged, so someone may have claimed it.
 - `reappeared`: a vanished directory exists again.
 - `removal-failed`: git refused or failed the removal, and the error is in `errors`.
+- `registration-lost`: git deleted the registration before failing, so the directory left behind is no longer a worktree any later sweep can see.
 
-The sweep sets the marker aside and runs `git worktree remove` without `--force`, so git itself refuses work that appeared after the worktree was judged clean. If the worktree stays on disk, its marker is restored byte for byte. Ignored files are deleted with the worktree, as they are when `chain.sh complete` removes one. A vanished worktree is `pruned`: only its own registration is removed, never through `git worktree prune`, so no other worktree is touched. Its branch is left alone, because nothing vouches for a directory that is gone.
+The sweep sets the marker aside and runs `git worktree remove` without `--force`, under `status.showUntrackedFiles=all`, so git itself refuses work that appeared after the worktree was judged clean whatever the repository configures. If the worktree stays on disk, its marker is restored byte for byte. Ignored files are deleted with the worktree, as they are when `chain.sh complete` removes one, and so is any unregistered repository nested inside an ignored directory. A vanished worktree is `pruned`: only its own registration is removed, never through `git worktree prune`, so no other worktree is touched. Its branch is left alone, because nothing vouches for a directory that is gone.
 
-A branch is decided only after its worktree is removed, so a worktree that stays keeps its branch untouched. A detached worktree has no branch, and its `branch_outcome` is null. Otherwise the branch is `deleted` only when `gh pr list --head <branch> --state merged`, run from the repository root, shows a merged pull request from this repository whose head commit is the branch's local tip, and the tip has not moved since. Merge status comes from GitHub and never from local ancestry, because a squash merge leaves a merged branch outside the default branch's ancestry. Any other branch is `kept` with one reason: `checked-out-elsewhere`, `not-merged`, `merged-at-another-commit`, `branch-moved`, `merge-status-unknown` (the lookup failed, and the error is in `errors`) or `deletion-failed`. A removal or branch failure is an error, so the sweep exits **1** after reporting it.
+Branches are decided only after every removal is done, so a worktree that stays keeps its branch untouched and no GitHub lookup delays a removal. A detached worktree has no branch, and its `branch_outcome` is null. Otherwise the branch is `deleted` only when `gh pr list --head <branch> --state merged`, run from the repository root, shows a merged pull request from this repository whose head commit is the branch's local tip, and the tip has not moved since. Merge status comes from GitHub and never from local ancestry, because a squash merge leaves a merged branch outside the default branch's ancestry. Any other branch is `kept` with one reason: `checked-out-elsewhere`, `branch-unreadable`, `not-merged`, `merged-at-another-commit`, `branch-moved`, `merge-status-unknown` (the lookup failed, and the error is in `errors`) or `deletion-failed`. A removal or branch failure is an error, so the sweep exits **1** after reporting it.
 
-The sweep does not yet consult the spawn ledger before removing, so a marked reservation whose owner died is removed like any other marked worktree.
+The sweep does not yet consult the spawn ledger before removing, so a marked reservation whose owner died is removed like any other marked worktree. _Contradicts ADR-0007, which leaves completed and orphaned reservations to `chain.sh complete` and `chain.sh recover`; #56 restores that boundary._
 
 The offline CLI suite is `bash scripts/test-sweep.sh`, also run by `scripts/validate-skills.sh`. It uses temporary repositories, real holders and a stubbed `gh`, never the repository's own worktree registry or the network.
 

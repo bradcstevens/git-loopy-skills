@@ -23,6 +23,9 @@ LSOF_ESCAPES = {0x08: b"\\b", 0x09: b"\\t", 0x0a: b"\\n", 0x0c: b"\\f", 0x0d: b"
 LSOF_AMBIGUOUS = b"^"
 # lsof may append an annotation such as " (deleted)", which a literal " (" can mimic.
 LSOF_ANNOTATION = b" ("
+# What a worktree's own git directory holds while an operation is unfinished.
+OPERATION_STATE = ("rebase-merge", "rebase-apply", "MERGE_HEAD", "CHERRY_PICK_HEAD", "REVERT_HEAD",
+                   "BISECT_LOG", "sequencer")
 
 
 def git_run(repo, *args):
@@ -65,6 +68,7 @@ def worktrees(repo):
                 "classification": "unvouched",
                 "errors": [],
                 "_registered": os.fsdecode(fields[b"worktree"]),
+                "_head": os.fsdecode(fields.get(b"HEAD", b"")),
                 "_prunable": b"prunable" in fields,
             })
     return rows
@@ -311,7 +315,36 @@ def classify(row, pids, ledger_rows):
             row["errors"].append(error_message(error))
 
 
-def refusals(row, rows, main_path):
+def encloses(directory, path):
+    """Report whether path lies inside directory by filesystem identity, whatever its spelling."""
+    try:
+        inside = os.stat(directory)
+    except OSError:
+        return True
+    while path != os.path.dirname(path):
+        path = os.path.dirname(path)
+        try:
+            ancestor = os.stat(path)
+        except OSError:
+            continue
+        if (ancestor.st_dev, ancestor.st_ino) == (inside.st_dev, inside.st_ino):
+            return True
+    return False
+
+
+def unfinished_work(root, row):
+    """Name work a worktree's git directory holds beyond its files, which removal would destroy."""
+    reasons = []
+    git_dir = os.fsdecode(git(row["path"], "rev-parse", "--absolute-git-dir")).removesuffix("\n")
+    if any(os.path.lexists(os.path.join(git_dir, name)) for name in OPERATION_STATE):
+        reasons.append("operation-in-progress")
+    # A detached HEAD's commits may be on no branch, and its reflog goes with the worktree.
+    if row["branch"] is None and not git(root, "for-each-ref", "--count=1", "--contains", row["_head"]):
+        reasons.append("unreferenced-head")
+    return reasons
+
+
+def refusals(row, rows, main_path, common):
     """Name every reason a sweep may not remove a worktree."""
     reasons = []
     if row["path"] == main_path:
@@ -328,10 +361,14 @@ def refusals(row, rows, main_path):
             reasons.append("not-prunable")
         return reasons
     # git worktree remove deletes nested repositories, a nested worktree's unsaved work included.
-    if any(other["path"].startswith(row["path"] + os.sep) for other in rows):
+    if any(other["path"].startswith(row["path"] + os.sep) or encloses(row["path"], other["path"])
+           for other in rows if other is not row):
         reasons.append("contains-worktree")
+    if row["path"] != main_path and encloses(row["path"], common):
+        reasons.append("contains-repository")
     if row["dirty"]:
         reasons.append("uncommitted-changes")
+    reasons.extend(row["_unfinished"])
     if not row["_marked"]:
         reasons.append("unvouched")
     elif row["owner_alive"]:
@@ -341,8 +378,21 @@ def refusals(row, rows, main_path):
     return reasons
 
 
+def unregister(root, row):
+    """Run git's own unforced removal, which refuses a worktree holding uncommitted changes."""
+    # That refusal follows status.showUntrackedFiles, so make it see every untracked file.
+    git_run(root, "-c", "status.showUntrackedFiles=all", "worktree", "remove", row["_registered"])
+
+
+def registered_paths(root):
+    listing = git(root, "worktree", "list", "--porcelain", "-z")
+    return {os.fsdecode(field[len(b"worktree "):])
+            for field in listing.split(b"\0") if field.startswith(b"worktree ")}
+
+
 def remove_worktree(root, row):
     """Remove a vouched worktree, restoring its marker if the worktree stays on disk."""
+    # Mirrors chain.sh's remove_worktree, which handles the marker the same way.
     marker = os.path.join(row["path"], MARKER)
     if read_marker(row["path"]) != row["_marker"]:
         row["reasons"].append("marker-changed")
@@ -355,10 +405,13 @@ def remove_worktree(root, row):
     except OSError:
         pass
     try:
-        git_run(root, "worktree", "remove", row["_registered"])
+        unregister(root, row)
     except subprocess.CalledProcessError as error:
         row["reasons"].append("removal-failed")
         row["errors"].append(error_message(error))
+        # git deletes the registration even when it fails to delete the whole directory.
+        if row["_registered"] not in registered_paths(root):
+            row["reasons"].append("registration-lost")
         if os.path.isdir(row["path"]):
             os.makedirs(os.path.dirname(marker), exist_ok=True)
             with open(marker, "wb") as restored:
@@ -384,6 +437,10 @@ def merge_status(root, name, tip):
     return "merged-at-another-commit" if ours else "not-merged"
 
 
+def branch_tip(root, branch):
+    return os.fsdecode(git(root, "rev-parse", "--verify", branch)).strip()
+
+
 def reclaim_branch(root, row, rows):
     """Delete the branch a removed worktree freed, once GitHub shows it merged at its tip."""
     branch = row["branch"]
@@ -396,11 +453,12 @@ def reclaim_branch(root, row, rows):
         if error is not None:
             row["errors"].append(error_message(error))
 
-    if any(other is not row and other["branch"] == branch for other in rows):
+    if any(other is not row and other["branch"] == branch
+           and other["outcome"] not in ("removed", "pruned") for other in rows):
         return keep("checked-out-elsewhere")
     name = branch[len("refs/heads/"):]
     try:
-        tip = os.fsdecode(git(root, "rev-parse", "--verify", branch)).strip()
+        tip = branch_tip(root, branch)
     except subprocess.CalledProcessError as error:
         return keep("branch-unreadable", error)
     try:
@@ -410,7 +468,7 @@ def reclaim_branch(root, row, rows):
     if verdict != "merged":
         return keep(verdict)
     try:
-        if os.fsdecode(git(root, "rev-parse", "--verify", branch)).strip() != tip:
+        if branch_tip(root, branch) != tip:
             return keep("branch-moved")
         git_run(root, "branch", "-D", "--", name)
     except subprocess.CalledProcessError as error:
@@ -418,19 +476,27 @@ def reclaim_branch(root, row, rows):
     row["branch_outcome"] = "deleted"
 
 
-def act(root, rows, kernel_paths, main_path):
-    """Remove every vouched worktree and prune every vanished one, then reclaim freed branches."""
+def reclaim(root, rows, kernel_paths, main_path, common):
+    """Remove every vouched worktree and prune every vanished one, then decide freed branches."""
     for row in rows:
-        row.update(outcome="declined", reasons=refusals(row, rows, main_path),
+        row["_unfinished"] = []
+        if row["exists"] and not row["errors"]:
+            try:
+                row["_unfinished"] = unfinished_work(root, row)
+            except (OSError, subprocess.SubprocessError) as error:
+                row["errors"].append(error_message(error))
+    for row in rows:
+        row.update(outcome="declined", reasons=refusals(row, rows, main_path, common),
                    branch_outcome=None, branch_reasons=[])
     candidates = [row for row in rows if not row["reasons"]]
     if not candidates:
         return
-    # A second look narrows the window in which a process can enter a worktree before it goes.
-    again = holders(rows, kernel_paths)
+    # A second look, just before the removals begin, narrows the window in which a process can
+    # enter a worktree it is about to lose.
+    second_look = holders(rows, kernel_paths)
     for row in candidates:
-        if again[row["path"]]:
-            row["holder_pids"] = sorted(set(row["holder_pids"]) | again[row["path"]])
+        if second_look[row["path"]]:
+            row["holder_pids"] = sorted(set(row["holder_pids"]) | second_look[row["path"]])
             row["classification"] = "held"
             row["reasons"].append("held")
             continue
@@ -439,15 +505,21 @@ def act(root, rows, kernel_paths, main_path):
                 if os.path.lexists(row["path"]):
                     row["reasons"].append("reappeared")
                 else:
-                    git_run(root, "worktree", "remove", row["_registered"])
+                    unregister(root, row)
                     row["outcome"] = "pruned"
             elif remove_worktree(root, row):
                 row["outcome"] = "removed"
-                reclaim_branch(root, row, rows)
         except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
             row["errors"].append(error_message(error))
-            if row["outcome"] == "declined" and "removal-failed" not in row["reasons"]:
+            if "removal-failed" not in row["reasons"]:
                 row["reasons"].append("removal-failed")
+    # Branches wait for every removal, so slow GitHub lookups never widen the window above.
+    for row in candidates:
+        if row["outcome"] == "removed":
+            try:
+                reclaim_branch(root, row, rows)
+            except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
+                row["errors"].append(error_message(error))
 
 
 def main():
@@ -482,7 +554,7 @@ def main():
         for row in rows:
             classify(row, pids_by_worktree[row["path"]], ledger_row_counts.get(row["path"], 0))
         if args.remove and rows:
-            act(root, rows, kernel_paths, main_path)
+            reclaim(root, rows, kernel_paths, main_path, common)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
         print(f"error: {error_message(error)}", file=sys.stderr)
         return 1
