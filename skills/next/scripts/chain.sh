@@ -33,13 +33,11 @@ usage:
     --agent-type TYPE --agent-name NAME [--ledger PATH]
   chain.sh complete [--ledger PATH] < subagent-stop-payload.json
   chain.sh reenter < agent-stop-payload.json
-  chain.sh recover [--stale-after-seconds N] [--now TIMESTAMP] [--ledger PATH]
+  chain.sh recover --stale-after-seconds N [--now TIMESTAMP] [--ledger PATH]
   chain.sh owner --worktree PATH
   chain.sh claim --worktree PATH --owner-pid PID [--create-branch BRANCH] [--ledger PATH]
 
 A PID-less ledger lock is recoverable after CHAIN_LOCK_STALE_SECONDS (default: 300).
-recover reclaims an unbound reservation after --stale-after-seconds, which defaults to
-CHAIN_RESERVATION_STALE_SECONDS (default: 300).
 ROUTE is a slash-command name and carries its leading slash. The allowlist is
 /implement, /code-review, /research, and /push; a bare
 name such as "implement" is not a route and plan declines it as
@@ -568,6 +566,22 @@ rollback_pending_worktree() {
   rm -f "$pending_path"
 }
 
+# A clean status does not mean nothing would be lost: a commit no ref contains, an unfinished
+# rebase, a submodule's repository or a vanished worktree's staged index live elsewhere. The
+# sweeper owns that judgement, so recovery asks it rather than keep a second copy, and any
+# failure to judge keeps the worktree.
+worktree_holds_nothing_unique() {
+  local worktree="$1" refusals
+
+  refusals="$(bash "$script_dir/sweep.sh" --repo "$(repository_root)" --judge "$worktree")" || {
+    echo "error: could not judge whether the worktree holds unique work; retaining it: $worktree" >&2
+    return 1
+  }
+  [ "$refusals" = "[]" ] && return 0
+  echo "warning: worktree holds work that exists nowhere else ($refusals) and was retained: $worktree" >&2
+  return 1
+}
+
 worktree_can_be_removed() {
   local worktree="$1" status
 
@@ -830,7 +844,8 @@ plan() {
     ledger="$repo_root/.git-loopy/subagents.jsonl"
   fi
 
-  recover --ledger "$ledger" >/dev/null
+  recover --ledger "$ledger" \
+    --stale-after-seconds "${CHAIN_RESERVATION_STALE_SECONDS:-300}" >/dev/null
 
   local worktree_held=0 collision_status max_concurrency guard="" route_allowed=0
   local target_context=""
@@ -1968,7 +1983,7 @@ recover() {
     esac
   done
 
-  [ -n "$stale_after" ] || stale_after="${CHAIN_RESERVATION_STALE_SECONDS:-300}"
+  [ -n "$stale_after" ] || usage
   [[ "$stale_after" =~ ^[0-9]+$ ]] || {
     echo "error: --stale-after-seconds must be a non-negative integer" >&2
     exit 2
@@ -2113,7 +2128,7 @@ print(json.dumps({
   local worktree
   local -a retained_worktrees=()
   while IFS= read -r worktree; do
-    if worktree_can_be_removed "$worktree"; then
+    if worktree_can_be_removed "$worktree" && worktree_holds_nothing_unique "$worktree"; then
       if ! remove_worktree "$worktree"; then
         echo "warning: could not remove clean worktree; retaining it: $worktree" >&2
         retained_worktrees+=("$worktree")

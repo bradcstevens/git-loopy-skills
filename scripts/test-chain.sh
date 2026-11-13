@@ -4133,19 +4133,27 @@ if ! grep -qxF "worktree $vanished_bystander" <<< "$vanished_registrations"; the
 fi
 git -C "$tmp_dir" worktree remove "$vanished_bystander"
 
-# Without --stale-after-seconds, recover uses the chain's own CHAIN_RESERVATION_STALE_SECONDS.
-default_stale_ledger="$tmp_dir/.git-loopy/default-stale-subagents.jsonl"
-default_stale_worktree="$tmp_dir/worktree-default-stale"
-"$CHAIN" reserve --ledger "$default_stale_ledger" --route implement --target issue-default-stale \
-  --spawn-time 2026-08-22T00:00:00Z --worktree "$default_stale_worktree" --chain-depth 1 \
-  --parent-pid "$$" >/dev/null
-default_stale_early="$("$CHAIN" recover --ledger "$default_stale_ledger" --now 2026-08-22T00:04:59Z)"
-assert_plan "default reservation threshold not yet reached" "$default_stale_early" \
-  '{"recovered":0,"targets":[]}'
-default_stale_short="$(CHAIN_RESERVATION_STALE_SECONDS=60 "$CHAIN" recover \
-  --ledger "$default_stale_ledger" --now 2026-08-22T00:01:00Z)"
-assert_plan "reservation threshold from the environment" "$default_stale_short" \
-  '{"recovered":1,"targets":["issue-default-stale"]}'
+# Recovery keeps a reclaimed worktree whose clean status hides work found nowhere else: here a
+# commit on a detached HEAD that no ref contains, which removal would leave unreachable.
+unique_ledger="$tmp_dir/.git-loopy/unique-work-subagents.jsonl"
+unique_worktree="$tmp_dir/worktree-unique-work"
+bash -c '
+  "$1" reserve --ledger "$2" --route implement --target issue-unique-work \
+    --spawn-time 2026-08-22T00:00:00Z --worktree "$3" --chain-depth 1 --parent-pid "$$"
+  :
+' bash "$CHAIN" "$unique_ledger" "$unique_worktree"
+git -C "$unique_worktree" checkout --quiet --detach
+git -C "$unique_worktree" -c user.name=test -c user.email=test@example.com \
+  commit --quiet --allow-empty -m "only copy"
+unique_head="$(git -C "$unique_worktree" rev-parse HEAD)"
+unique_output="$("$CHAIN" recover --ledger "$unique_ledger" --stale-after-seconds 3600 \
+  --now 2026-08-22T00:00:01Z 2>/dev/null)"
+assert_plan "recovery retains unique work" "$unique_output" \
+  '{"recovered":1,"targets":["issue-unique-work"],"retained_worktrees":["'"$unique_worktree"'"]}'
+if [ "$(git -C "$unique_worktree" rev-parse HEAD 2>/dev/null)" != "$unique_head" ]; then
+  err "recovery removed a reclaimed worktree whose detached commit no ref contains"
+fi
+git -C "$tmp_dir" worktree remove --force "$unique_worktree"
 
 # The routing agent reaches `reserve` through a shell that exits with the command,
 # so the invoking process is never the one whose death orphans the reservation.

@@ -232,16 +232,29 @@ Ledger = namedtuple("Ledger", "counts owned")
 
 
 def recover_reservations(root, ledger):
-    """Hand orphaned reservations to chain.sh recover, which owns their liveness and backstop."""
+    """Hand orphaned reservations and abandoned runs to chain.sh recover, which owns them."""
+    # The same threshold chain.sh plan passes, so its age backstop has one setting.
+    stale_after = os.environ.get("CHAIN_RESERVATION_STALE_SECONDS", "300")
     result = subprocess.run(
-        ["bash", str(Path(__file__).with_name("chain.sh")), "recover", "--ledger", ledger],
+        ["bash", str(Path(__file__).with_name("chain.sh")), "recover", "--ledger", ledger,
+         "--stale-after-seconds", stale_after],
         cwd=root, capture_output=True, text=True,
         env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
     )
+    # Recovery's warnings, such as a worktree it retained, are the sweep's to pass on.
+    sys.stderr.write(result.stderr)
     if result.returncode:
         raise RuntimeError("chain.sh recover failed: "
                            + (result.stderr.strip() or f"exit status {result.returncode}"))
     return json.loads(result.stdout)
+
+
+def survey(repo):
+    """List every working tree, with the repository root and the main worktree's path."""
+    rows = worktrees(repo)
+    root = resolve_root(repo, rows)
+    main_path = rows[0]["path"] if rows and not rows[0]["bare"] else None
+    return [row for row in rows if not row.pop("bare")], root, main_path
 
 
 def ledger_owned(path):
@@ -493,6 +506,30 @@ def containment(row, rows, main_path, common):
     return reasons
 
 
+def unique_work(row, rows, main_path, common):
+    """Name what removing a worktree would destroy that exists nowhere else."""
+    reasons = []
+    if row["exists"]:
+        reasons.extend(containment(row, rows, main_path, common))
+        if row["dirty"]:
+            reasons.append("uncommitted-changes")
+    return reasons + [reason for reason in row["_record_refusals"] if reason not in reasons]
+
+
+def judge(repo, path):
+    """Name what removing one worktree would destroy that exists nowhere else, for chain.sh."""
+    rows, root, main_path = survey(repo)
+    common = rev_parse_path(repo, "--git-common-dir")
+    row = next((row for row in rows if row["path"] == os.path.realpath(path)), None)
+    if row is None:
+        return []
+    inspect_checkout(row, common)
+    if row["errors"]:
+        return ["inspection-errors"]
+    row["_record_refusals"] = record_refusals(root, row, worktree_records(common), main_path, common)
+    return unique_work(row, rows, main_path, common)
+
+
 def refusals(row, rows, main_path, common):
     """Name every reason a sweep may not remove a worktree."""
     reasons = []
@@ -507,15 +544,11 @@ def refusals(row, rows, main_path, common):
     # chain.sh owns the worktree an open spawn-ledger row or a pending transaction names.
     if row["_ledger_owned"]:
         reasons.append("ledger-owned")
-    if row["exists"] is False:
-        # Only git's record is left, so pruning it needs git to report it prunable.
-        if not row["_prunable"]:
-            reasons.append("not-prunable")
-    elif row["exists"]:
-        reasons.extend(containment(row, rows, main_path, common))
-        if row["dirty"]:
-            reasons.append("uncommitted-changes")
-    reasons.extend(reason for reason in row["_record_refusals"] if reason not in reasons)
+    # Only git's record of a vanished worktree is left, so pruning it needs git to call it prunable.
+    if row["exists"] is False and not row["_prunable"]:
+        reasons.append("not-prunable")
+    reasons.extend(reason for reason in unique_work(row, rows, main_path, common)
+                   if reason not in reasons)
     if row["exists"] and row["_marked"] is not None:
         if not row["_marked"]:
             reasons.append("unvouched")
@@ -535,7 +568,7 @@ def git_worktree_remove(root, row):
 def remove_worktree(root, row):
     """Remove a vouched worktree, restoring its marker if the worktree stays on disk."""
     # Like chain.sh's remove_worktree, it sets the marker aside, but it never restores one over a
-    # newer claim and never prunes other registrations.
+    # newer claim.
     marker = os.path.join(row["path"], MARKER)
     if read_marker(row["path"]) != row["_marker"]:
         row["reasons"].append("marker-changed")
@@ -751,22 +784,22 @@ def main():
                         help="spawn ledger (default: repository .git-loopy/subagents.jsonl)")
     parser.add_argument("--remove", action="store_true",
                         help="remove vouched worktrees and the merged branches they free")
+    parser.add_argument("--judge", metavar="WORKTREE",
+                        help="print, as a JSON list, what removing one worktree would destroy")
     args = parser.parse_args()
+    recovered = None
     try:
         ignore_exported_repository()
         repo = args.repo or os.getcwd()
-        rows = worktrees(repo)
-        root = resolve_root(repo, rows)
-        main_path = rows[0]["path"] if rows and not rows[0]["bare"] else None
+        if args.judge:
+            print(json.dumps(judge(repo, args.judge)))
+            return 0
+        rows, root, main_path = survey(repo)
         ledger = os.path.abspath(args.ledger or os.path.join(root, ".git-loopy", "subagents.jsonl"))
-        rows = [row for row in rows if not row.pop("bare")]
-        recovered = None
         if args.remove:
             recovered = recover_reservations(root, ledger)
             # Recovery may have removed worktrees, so they are listed again.
-            rows = worktrees(repo)
-            resolve_root(repo, rows)
-            rows = [row for row in rows if not row.pop("bare")]
+            rows, root, main_path = survey(repo)
         spawn_ledger = read_ledger(ledger)
         # Resolve pwd before entering any worktree, where a relative PATH entry could find another.
         pwd = shutil.which("pwd")
@@ -786,6 +819,10 @@ def main():
             reclaim(root, rows, kernel_paths, main_path, common, ledger)
     except EXPECTED_FAILURES as error:
         print(f"error: {error_message(error)}", file=sys.stderr)
+        if recovered is not None:
+            # No report follows, so say what chain.sh recover had already done.
+            print(f"error: chain.sh recover had already run: {json.dumps(recovered)}",
+                  file=sys.stderr)
         return 1
     for row in rows:
         for key in [key for key in row if key.startswith("_")]:

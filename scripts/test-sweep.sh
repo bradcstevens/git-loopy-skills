@@ -564,9 +564,7 @@ class SweepCLI(unittest.TestCase):
         return path
 
     def dead_owner(self, path):
-        ended = subprocess.Popen(["true"])
-        ended.wait()
-        self.mark(path, ended.pid, "Mon Jan 1 00:00:00 2001")
+        self.mark(path, *self.ended_process())
 
     def tip(self, branch):
         return os.fsdecode(self.git("rev-parse", f"refs/heads/{branch}")).strip()
@@ -1058,8 +1056,8 @@ class SweepCLI(unittest.TestCase):
         self.assertTrue(reserved.is_dir())
         self.assertEqual(self.row(report, finished)["outcome"], "removed")
 
-    def interrupted_transaction(self, ledger, name):
-        """Leave the worktree and pending record of a reserve killed before its row landed."""
+    def interrupted_transaction(self, name):
+        """Make the worktree of a reserve killed before its row landed, and its pending record."""
         branch = f"git-loopy/reservation-{name}"
         path = self.linked(name, branch=branch)
         self.dead_owner(path)
@@ -1069,7 +1067,7 @@ class SweepCLI(unittest.TestCase):
 
     def test_chain_recover_rolls_back_an_interrupted_transaction_first(self):
         ledger = self.root / "subagents.jsonl"
-        pending, branch, record = self.interrupted_transaction(ledger, "pending")
+        pending, branch, record = self.interrupted_transaction("pending")
         Path(str(ledger) + ".pending").write_text(record + "\n")
         report = self.sweep("--remove", "--ledger", str(ledger), env=self.stub_github())
         # chain.sh undid its own transaction, so the sweep never saw the worktree.
@@ -1081,7 +1079,7 @@ class SweepCLI(unittest.TestCase):
 
     def test_a_transaction_interrupted_mid_sweep_leaves_its_worktree_to_chain_sh(self):
         ledger = self.root / "subagents.jsonl"
-        pending, _, record = self.interrupted_transaction(ledger, "pending")
+        pending, _, record = self.interrupted_transaction("pending")
         lsof = self.before_look(1, f"echo '{record}' > '{ledger}.pending'")
         row = self.row(self.sweep("--remove", "--ledger", str(ledger),
                                   env=self.stub_github(path=[lsof])), pending)
@@ -1210,7 +1208,7 @@ class SweepCLI(unittest.TestCase):
         ledger = self.root / "subagents.jsonl"
         ledger.write_text(json.dumps(row) + "\n")
         chain = Path(os.environ["SWEEP"]).with_name("chain.sh")
-        recover = f"{chain} recover --ledger {ledger}"
+        recover = f"{chain} recover --ledger {ledger} --stale-after-seconds 300"
         # A report recovers nothing.
         report = self.sweep("--ledger", str(ledger), env={**os.environ, **self.trace_bash()})
         self.assertNotIn(recover, self.bash_log.read_text().splitlines())
@@ -1239,6 +1237,56 @@ class SweepCLI(unittest.TestCase):
         self.assertEqual((listed["outcome"], listed["reasons"]),
                          ("declined", ["uncommitted-changes"]))
         self.assertEqual((orphan / "notes").read_text(), "work\n")
+
+    def test_recover_keeps_reclaimed_worktrees_holding_unique_work(self):
+        detached, detached_row = self.reservation("detached", *self.ended_process())
+        self.git("checkout", "--quiet", "--detach", cwd=detached)
+        self.commit("only copy", cwd=detached)
+        head = os.fsdecode(self.git("rev-parse", "HEAD", cwd=detached)).strip()
+        vanished, vanished_row = self.reservation("vanished", *self.ended_process())
+        (vanished / "notes").write_text("staged\n")
+        self.git("add", "notes", cwd=vanished)
+        shutil.rmtree(vanished)
+        ledger = self.root / "subagents.jsonl"
+        ledger.write_text(json.dumps(detached_row) + "\n" + json.dumps(vanished_row) + "\n")
+        result = subprocess.run(["bash", os.environ["SWEEP"], "--repo", str(self.repo), "--remove",
+                                 "--ledger", str(ledger)], cwd=self.root, capture_output=True,
+                                text=True, env=self.stub_github())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        report = json.loads(result.stdout)
+        self.assertEqual(report["recovered"]["recovered"], 2)
+        self.assertEqual(sorted(report["recovered"]["retained_worktrees"]),
+                         sorted([str(detached), str(vanished)]))
+        self.assertIn("holds work that exists nowhere else", result.stderr)
+        self.assertEqual(self.row(report, detached)["reasons"], ["unreferenced-head"])
+        self.assertEqual(self.row(report, vanished)["reasons"], ["uncommitted-changes"])
+        self.assertEqual(os.fsdecode(self.git("rev-parse", "HEAD", cwd=detached)).strip(), head)
+        self.assertIn(str(vanished), self.registered())
+
+    def test_judge_names_what_removal_would_destroy(self):
+        clean, dirty = self.linked("clean"), self.linked("dirty")
+        (dirty / "notes").write_text("work\n")
+        detached = self.root / "detached"
+        self.git("worktree", "add", "--quiet", "--detach", str(detached))
+        self.commit("only copy", cwd=detached)
+        for path, expected in ((clean, []), (dirty, ["uncommitted-changes"]),
+                               (detached, ["unreferenced-head"]),
+                               (self.root / "unregistered", [])):
+            with self.subTest(path.name):
+                self.assertEqual(self.sweep("--judge", str(path)), expected)
+        self.assertTrue(dirty.is_dir())
+
+    def test_a_failed_sweep_still_says_what_recover_did(self):
+        orphan, row = self.reservation("orphan", *self.ended_process())
+        ledger = self.root / "subagents.jsonl"
+        ledger.write_text(json.dumps(row) + "\n")
+        lsof = self.before_look(1, "echo 'lsof: cannot inspect' >&2")
+        result = subprocess.run(["bash", os.environ["SWEEP"], "--repo", str(self.repo), "--remove",
+                                 "--ledger", str(ledger)], cwd=self.root, capture_output=True,
+                                text=True, env=self.stub_github(path=[lsof]))
+        self.assertEqual((result.returncode, result.stdout), (1, ""))
+        self.assertIn("chain.sh recover had already run", result.stderr)
+        self.assertIn("issue-orphan", result.stderr)
 
     def test_a_live_bound_reservation_is_left_to_chain_sh(self):
         live, row = self.reservation("live", os.getpid(), self.process_start(os.getpid()),
