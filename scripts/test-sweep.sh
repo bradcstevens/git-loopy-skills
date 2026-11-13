@@ -235,6 +235,27 @@ class SweepCLI(unittest.TestCase):
         self.assertIn(holder.pid, row["holder_pids"])
         self.assertEqual(row["errors"], [])
 
+    def test_case_differing_worktree_stays_held_when_git_cannot_inspect_it(self):
+        (self.root / "brokenbase").mkdir()
+        if not (self.root / "BROKENBASE").exists():
+            self.skipTest("this file system is case-sensitive")
+        for breakage in ("index", "gitfile"):
+            with self.subTest(breakage):
+                linked = self.root / "BROKENBASE" / breakage
+                self.git("worktree", "add", "--quiet", "--detach", str(linked))
+                if breakage == "index":
+                    index = self.git("rev-parse", "--path-format=absolute", "--git-path",
+                                     "index", cwd=linked)
+                    Path(os.fsdecode(index).removesuffix("\n")).write_text("corrupt\n")
+                else:
+                    (linked / ".git").write_text("gitdir: /nonexistent/sweep-test-gitdir\n")
+                holder = self.hold(linked)
+                row = next(row for row in self.sweep(expected=1)["worktrees"]
+                           if row["path"] == str(linked))
+                self.assertEqual(row["classification"], "held")
+                self.assertIn(holder.pid, row["holder_pids"])
+                self.assertTrue(row["errors"])
+
     def test_empty_bare_repository_is_not_an_all_unvouched_report(self):
         bare = self.root / "bare.git"
         self.git("init", "--quiet", "--bare", str(bare))
@@ -286,16 +307,19 @@ class SweepCLI(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertEqual(result.stdout, "")
 
-    def test_interpreter_older_than_three_nine_exits_two_without_a_report(self):
+    def test_missing_or_old_interpreter_exits_two_without_a_report(self):
         old = self.root / "old-python"
         old.write_text("#!/bin/sh\nexit 1\n")
         old.chmod(0o755)
-        result = subprocess.run(["bash", os.environ["SWEEP"]], cwd=self.repo,
-                                capture_output=True, text=True,
-                                env={**os.environ, "CHAIN_PYTHON": str(old)})
-        self.assertEqual(result.returncode, 2)
-        self.assertEqual(result.stdout, "")
-        self.assertIn("requires Python 3.9 or newer", result.stderr)
+        for python, reason in ((old, "is older"), (self.root / "no-python", "not found")):
+            with self.subTest(reason):
+                result = subprocess.run(["bash", os.environ["SWEEP"]], cwd=self.repo,
+                                        capture_output=True, text=True,
+                                        env={**os.environ, "CHAIN_PYTHON": str(python)})
+                self.assertEqual(result.returncode, 2)
+                self.assertEqual(result.stdout, "")
+                self.assertIn("requires Python 3.9 or newer", result.stderr)
+                self.assertIn(reason, result.stderr)
 
     def test_inspection_and_ledger_failures_are_not_empty_successes(self):
         def lsof_that(label, body):

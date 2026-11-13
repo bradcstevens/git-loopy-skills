@@ -42,8 +42,19 @@ def worktrees(repo):
                 "branch": os.fsdecode(fields.get(b"branch", b"")) or None,
                 "bare": b"bare" in fields,
                 "classification": "unvouched",
+                "errors": [],
             })
     return rows
+
+
+def kernel_spelling(path):
+    """Return a directory's path as the kernel, and so lsof, spells it, or None."""
+    # git's record can differ in case or Unicode normalization on macOS file systems.
+    try:
+        result = subprocess.run(["pwd", "-P"], cwd=path, check=True, capture_output=True)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return os.fsdecode(result.stdout).removesuffix("\n")
 
 
 def marker_owner(path):
@@ -68,11 +79,11 @@ def lsof_spellings(path):
         elif 0x20 <= byte < 0x7f:
             spelled = bytes([byte])
         elif byte < 0x20:
-            spelled = b"^" + bytes([byte + 0x40])
+            spelled = LSOF_AMBIGUOUS + bytes([byte + 0x40])
         else:
             spelled = b"\\x%02x" % byte
         signed += spelled
-        unsigned += b"^?" if byte == 0xff else spelled
+        unsigned += LSOF_AMBIGUOUS + b"?" if byte == 0xff else spelled
     return {signed, unsigned}
 
 
@@ -113,7 +124,6 @@ def holders(rows, kernel_paths):
     stdout, lsof_pid = lsof_listing()
     spellings = {}
     for row in rows:
-        # A case-insensitive file system lets git record a spelling the kernel never prints.
         for name in {row["path"], kernel_paths.get(row["path"])} - {None}:
             for spelling in lsof_spellings(name):
                 spellings.setdefault(spelling, []).append(row["path"])
@@ -178,11 +188,11 @@ def error_message(error):
 
 
 def inspect_checkout(row):
-    """Record a worktree's directory state, returning its top level as the kernel spells it."""
+    """Record whether a worktree's directory exists and holds uncommitted changes."""
     path = row["path"]
-    row.update(errors=[], exists=os.path.isdir(path), dirty=None)
+    row.update(exists=os.path.isdir(path), dirty=None)
     if not row["exists"]:
-        return None
+        return
     try:
         top = rev_parse_path(path, "--show-toplevel")
         if top != path and not os.path.samefile(top, path):
@@ -191,10 +201,8 @@ def inspect_checkout(row):
             path, "status", "--porcelain=v1", "-z", "--untracked-files=all",
             "--ignore-submodules=none", "--", ".", f":(exclude){MARKER}",
         ))
-        return top
     except (OSError, RuntimeError, subprocess.SubprocessError) as error:
         row["errors"].append(error_message(error))
-        return None
 
 
 def classify(row, pids, ledger_rows):
@@ -228,7 +236,9 @@ def main():
         ledger = os.path.abspath(args.ledger or os.path.join(root, ".git-loopy", "subagents.jsonl"))
         rows = [row for row in rows if not row.pop("bare")]
         ledger_row_counts = ledger_counts(ledger)
-        kernel_paths = {row["path"]: inspect_checkout(row) for row in rows}
+        for row in rows:
+            inspect_checkout(row)
+        kernel_paths = {row["path"]: kernel_spelling(row["path"]) for row in rows}
         pids_by_worktree = holders(rows, kernel_paths) if rows else {}
         for row in rows:
             classify(row, pids_by_worktree[row["path"]], ledger_row_counts.get(row["path"], 0))
