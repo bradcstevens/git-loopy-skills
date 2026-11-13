@@ -498,12 +498,21 @@ class SweepCLI(unittest.TestCase):
         ledger.write_text("not json\n")
         pending = self.root / "pending.jsonl"
         Path(str(pending) + ".pending").write_text("not json\n")
+        empty = self.root / "empty.jsonl"
+        Path(str(empty) + ".pending").write_text(json.dumps({"worktree": ""}) + "\n")
+        unreadable = self.root / "unreadable.jsonl"
+        Path(str(unreadable) + ".pending").write_text(json.dumps({"worktree": str(self.repo)}))
+        if os.geteuid() != 0:
+            Path(str(unreadable) + ".pending").chmod(0)
         for label, args, environment in [
             ("denied", (), lsof_that("denied", "echo 'inspection denied' >&2\nexit 1")),
             ("silent", (), lsof_that("silent", "exit 1")),
             ("empty", (), lsof_that("empty", "exit 0")),
             ("ledger", ("--ledger", str(ledger)), os.environ),
             ("pending", ("--ledger", str(pending)), os.environ),
+            ("empty pending", ("--ledger", str(empty)), os.environ),
+            *((("unreadable pending", ("--ledger", str(unreadable)), os.environ),)
+              if os.geteuid() != 0 else ()),
         ]:
             with self.subTest(label):
                 result = subprocess.run(
@@ -988,9 +997,9 @@ class SweepCLI(unittest.TestCase):
         late = self.root / "late"
         self.git("worktree", "add", "--quiet", "--detach", str(late))
         self.dead_owner(late)
-        lsof = self.before_look(2, 
-            f"git -C '{late}' -c user.name=test -c user.email=test@example.com "
-            "commit --quiet --allow-empty -m late")
+        lsof = self.before_look(
+            2, f"git -C '{late}' -c user.name=test -c user.email=test@example.com "
+               "commit --quiet --allow-empty -m late")
         row = self.row(self.sweep("--remove", env=self.stub_github(path=[lsof])), late)
         self.assertEqual((row["outcome"], row["reasons"]),
                          ("declined", ["head-moved", "unreferenced-head"]))
@@ -1025,8 +1034,8 @@ class SweepCLI(unittest.TestCase):
         self.ignore(outer, ".worktrees/")
         self.dead_owner(outer)
         inner = outer / ".worktrees" / "inner"
-        lsof = self.before_look(2, 
-            f"git -C '{outer}' worktree add --quiet -b inner '{inner}' && echo work > '{inner}/notes'")
+        lsof = self.before_look(
+            2, f"git -C '{outer}' worktree add --quiet -b inner '{inner}' && echo work > '{inner}/notes'")
         row = self.row(self.sweep("--remove", env=self.stub_github(path=[lsof])), outer)
         self.assertEqual((row["outcome"], row["reasons"]), ("declined", ["contains-worktree"]))
         self.assertEqual((inner / "notes").read_text(), "work\n")
@@ -1062,7 +1071,7 @@ class SweepCLI(unittest.TestCase):
         ledger = self.root / "subagents.jsonl"
         row = json.dumps({"worktree": str(reserved), "finish_time": ""})
         lsof = self.before_look(2, f"git -C '{self.repo}' worktree lock '{locked}' && "
-                                   f"echo '{row}' > '{ledger}'")
+                                f"echo '{row}' > '{ledger}'")
         report = self.sweep("--remove", "--ledger", str(ledger), env=self.stub_github(path=[lsof]))
         self.assertEqual(self.row(report, locked)["reasons"], ["locked"])
         self.assertEqual(self.row(report, reserved)["reasons"], ["ledger-owned"])
@@ -1081,6 +1090,48 @@ class SweepCLI(unittest.TestCase):
         declined = next(row for row in rows if row["outcome"] == "declined")
         self.assertEqual((declined["reasons"], declined["holder_pids"]), (["held"], [1]))
         self.assertTrue(Path(declined["path"]).is_dir())
+
+    def test_files_in_an_uninitialised_submodule_directory_refuse_removal(self):
+        library = self.root / "library"
+        self.git("init", "--quiet", str(library), cwd=self.root)
+        self.commit("library", cwd=library)
+        self.git("-c", "protocol.file.allow=always", "submodule", "--quiet", "add",
+                 str(library), "library")
+        self.commit("add library")
+        written, empty = self.linked("written"), self.linked("empty")
+        (written / "library" / "notes").write_text("work\n")
+        for path in (written, empty):
+            self.dead_owner(path)
+        report = self.sweep("--remove", env=self.stub_github())
+        row = self.row(report, written)
+        self.assertIs(row["dirty"], False)
+        self.assertEqual((row["outcome"], row["reasons"]), ("declined", ["contains-submodule"]))
+        self.assertEqual((written / "library" / "notes").read_text(), "work\n")
+        self.assertEqual(self.row(report, empty)["outcome"], "removed")
+
+    def test_a_look_that_fails_after_a_removal_still_reports_it(self):
+        first, second = self.linked("first"), self.linked("second")
+        for path in (first, second):
+            self.dead_owner(path)
+        lsof = self.before_look(3, "echo 'lsof: cannot inspect' >&2")
+        report = self.sweep("--remove", expected=1, env=self.stub_github(path=[lsof]))
+        rows = [self.row(report, path) for path in (first, second)]
+        self.assertEqual(sorted(row["outcome"] for row in rows), ["declined", "removed"])
+        declined = next(row for row in rows if row["outcome"] == "declined")
+        self.assertEqual(declined["reasons"], ["inspection-errors"])
+        self.assertTrue(Path(declined["path"]).is_dir())
+        removed = next(row for row in rows if row["outcome"] == "removed")
+        self.assertEqual(removed["branch_reasons"], ["not-merged"])
+
+    def test_a_marker_claimed_during_removal_is_never_overwritten(self):
+        late = self.linked("late")
+        self.dead_owner(late)
+        marker = late / ".git-loopy" / "worktree-owner"
+        git = self.during_worktree_remove(f"mkdir -p '{marker.parent}' && printf 'claimed' > '{marker}'")
+        row = self.row(self.sweep("--remove", expected=1, env=self.stub_github(path=[git])), late)
+        self.assertEqual((row["outcome"], row["reasons"]),
+                         ("declined", ["removal-failed", "marker-changed"]))
+        self.assertEqual(marker.read_text(), "claimed")
 
     def test_a_registration_that_moves_before_removal_is_left_alone(self):
         late = self.linked("late")

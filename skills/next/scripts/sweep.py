@@ -2,6 +2,7 @@
 """Report worktree ownership and, with --remove, reclaim the worktrees something vouches for."""
 
 import argparse
+from collections import namedtuple
 import json
 import os
 from pathlib import Path
@@ -223,21 +224,28 @@ def resolve_root(repo, rows):
     return root
 
 
+Ledger = namedtuple("Ledger", "counts owned")
+
+
 def read_ledger(path):
     """Count each worktree's spawn-ledger rows, and name the worktrees the ledger owns."""
     counts, owned = {}, set()
-    # A reserve or claim interrupted before its row landed leaves only this record naming its
-    # worktree, and the next chain.sh command rolls that transaction back.
-    pending = read_bytes(path + ".pending")
-    if pending is not None:
-        record = json.loads(pending)
-        if not isinstance(record, dict) or not isinstance(record.get("worktree"), str):
+    # A reserve or claim interrupted before it finished leaves this record naming its worktree,
+    # and the next chain.sh command rolls that transaction back.
+    try:
+        with open(path + ".pending", encoding="utf-8") as pending:
+            record = json.load(pending)
+    except FileNotFoundError:
+        record = None
+    if record is not None:
+        if not isinstance(record, dict) or not isinstance(record.get("worktree"), str) \
+                or not record["worktree"]:
             raise ValueError(f"{path}.pending: pending worktree record requires a worktree path")
         owned.add(os.path.realpath(record["worktree"]))
     try:
         ledger = open(path, encoding="utf-8")
     except FileNotFoundError:
-        return counts, owned
+        return Ledger(counts, owned)
     with ledger:
         for number, line in enumerate(ledger, 1):
             if not line.strip():
@@ -250,7 +258,7 @@ def read_ledger(path):
             # chain.sh treats a row without a finish time as open, and owns its worktree.
             if not row.get("finish_time"):
                 owned.add(worktree)
-    return counts, owned
+    return Ledger(counts, owned)
 
 
 def error_message(error):
@@ -396,7 +404,7 @@ def record_refusals(root, row, record, head):
         reasons.append("operation-in-progress")
     # A linked worktree keeps its submodules' repositories in its own record.
     if os.path.lexists(os.path.join(record, "modules")) or (
-            row["exists"] and populated_submodule(row["path"])):
+            row["exists"] and occupied_submodule(row["path"])):
         reasons.append("contains-submodule")
     if git(root, "--git-dir", record, "for-each-ref", "--count=1", *WORKTREE_REFS):
         reasons.append("worktree-refs")
@@ -415,13 +423,19 @@ def record_refusals(root, row, record, head):
     return reasons
 
 
-def populated_submodule(path):
-    """Report whether a worktree holds a checked-out submodule, which git refuses to remove."""
+def occupied_submodule(path):
+    """Report whether any submodule directory in a worktree holds anything at all."""
+    # A checked-out submodule makes git refuse removal, and git status never looks inside an
+    # uninitialised one, so a file written there would be deleted unseen.
     for entry in git(path, "ls-files", "--stage", "-z").split(b"\0"):
         mode, _, name = entry.partition(b"\t")
-        if mode.startswith(b"160000 ") and os.path.lexists(
-                os.path.join(path, os.fsdecode(name), ".git")):
-            return True
+        if not mode.startswith(b"160000 "):
+            continue
+        try:
+            if os.listdir(os.path.join(path, os.fsdecode(name))):
+                return True
+        except (FileNotFoundError, NotADirectoryError):
+            continue
     return False
 
 
@@ -431,20 +445,18 @@ def changes_since_judged(root, row, records, main_path, common, ledger):
     current = next((other for other in listing if other["_registered"] == row["_registered"]), None)
     if current is None:
         return ["registration-changed"]
+    # Ownership, holders and errors are looked at separately, so only what can change is re-read.
+    fresh = {**current, "exists": row["exists"], "holder_pids": [], "errors": [],
+             "_marked": row["_marked"], "owner_alive": row["owner_alive"],
+             "dirty": uncommitted(row["path"]) if row["exists"] else None,
+             "_ledger_owned": row["path"] in read_ledger(ledger).owned}
+    fresh["_record_refusals"] = record_refusals(root, fresh, find_record(fresh, records),
+                                                current["_head"])
     reasons = []
-    if current["locked"]:
-        reasons.append("locked")
-    if row["path"] in read_ledger(ledger)[1]:
-        reasons.append("ledger-owned")
     if (current["_head"], current["branch"]) != (row["_head"], row["branch"]):
         reasons.append("head-moved")
-    if row["exists"]:
-        reasons.extend(containment(row, listing, main_path, common))
-        if uncommitted(row["path"]):
-            reasons.append("uncommitted-changes")
-    reasons.extend(reason for reason in record_refusals(root, row, find_record(row, records),
-                                                       current["_head"]) if reason not in reasons)
-    return reasons
+    return reasons + [reason for reason in refusals(fresh, listing, main_path, common)
+                      if reason not in reasons]
 
 
 def containment(row, rows, main_path, common):
@@ -519,8 +531,11 @@ def remove_worktree(root, row):
         row["errors"].append(error_message(error))
         if os.path.isdir(row["path"]):
             os.makedirs(os.path.dirname(marker), exist_ok=True)
-            with open(marker, "wb") as restored:
-                restored.write(row["_marker"])
+            try:
+                with open(marker, "xb") as restored:
+                    restored.write(row["_marker"])
+            except FileExistsError:
+                row["reasons"].append("marker-changed")
         # git deletes the registration even when it fails to delete the whole directory.
         if row["_registered"] not in {other["_registered"] for other in worktrees(root)}:
             row["reasons"].append("registration-lost")
@@ -585,8 +600,8 @@ def reclaim_branch(root, row, common):
         if error is not None:
             row["errors"].append(error_message(error))
 
-    def taken():
-        """Name why a worktree's claim on the branch keeps it, or None when nothing claims it."""
+    def reason_to_keep():
+        """Name why another worktree's claim keeps the branch, or None when nothing claims it."""
         try:
             return "in-another-worktree" if in_another_worktree(root, common, branch) else None
         except (RuntimeError, subprocess.CalledProcessError) as error:
@@ -594,7 +609,7 @@ def reclaim_branch(root, row, common):
             return "branch-check-failed"
 
     name = branch.removeprefix(HEADS)
-    reason = taken()
+    reason = reason_to_keep()
     if reason:
         return keep(reason)
     try:
@@ -608,7 +623,7 @@ def reclaim_branch(root, row, common):
     if verdict != "merged":
         return keep(verdict)
     # Look again, because a worktree may have taken the branch up during the lookup.
-    reason = taken()
+    reason = reason_to_keep()
     if reason:
         return keep(reason)
     try:
@@ -641,19 +656,20 @@ def reclaim(root, rows, kernel_paths, main_path, common, ledger):
                    branch_outcome=None, branch_reasons=[])
     candidates = [row for row in rows if not row["reasons"]]
     for row in candidates:
-        # Another look just before each removal narrows the window in which a process can enter
-        # a worktree it is about to lose.
-        look = holders(rows, kernel_paths)[row["path"]]
-        if look:
-            row["holder_pids"] = sorted(set(row["holder_pids"]) | look)
-            row["classification"] = "held"
-            row["reasons"].append("held")
-            continue
         try:
-            changed = changes_since_judged(root, row, records, main_path, common, ledger)
-        except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+            # Another look just before each removal narrows the window in which a process can
+            # enter a worktree it is about to lose.
+            holder_pids = holders(rows, kernel_paths)[row["path"]]
+            changed = [] if holder_pids else changes_since_judged(root, row, records, main_path,
+                                                                  common, ledger)
+        except (OSError, RuntimeError, ValueError, subprocess.SubprocessError) as error:
             row["errors"].append(error_message(error))
             row["reasons"].append("inspection-errors")
+            continue
+        if holder_pids:
+            row["holder_pids"] = sorted(set(row["holder_pids"]) | holder_pids)
+            row["classification"] = "held"
+            row["reasons"].append("held")
             continue
         try:
             if changed:
@@ -703,7 +719,7 @@ def main():
         main_path = rows[0]["path"] if rows and not rows[0]["bare"] else None
         ledger = os.path.abspath(args.ledger or os.path.join(root, ".git-loopy", "subagents.jsonl"))
         rows = [row for row in rows if not row.pop("bare")]
-        ledger_row_counts, ledger_owned = read_ledger(ledger)
+        ledger_rows = read_ledger(ledger)
         # Resolve pwd before entering any worktree, where a relative PATH entry could find another.
         pwd = shutil.which("pwd")
         if pwd is None:
@@ -717,8 +733,8 @@ def main():
                 kernel_paths[row["path"]] = kernel_spelling(pwd, row)
         pids_by_worktree = holders(rows, kernel_paths) if rows else {}
         for row in rows:
-            classify(row, pids_by_worktree[row["path"]], ledger_row_counts.get(row["path"], 0))
-            row["_ledger_owned"] = row["path"] in ledger_owned
+            classify(row, pids_by_worktree[row["path"]], ledger_rows.counts.get(row["path"], 0))
+            row["_ledger_owned"] = row["path"] in ledger_rows.owned
         if args.remove and rows:
             reclaim(root, rows, kernel_paths, main_path, common, ledger)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
