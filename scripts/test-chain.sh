@@ -4108,6 +4108,45 @@ if [ -e "$dead_parent_worktree" ]; then
   err "recovery did not release a dead parent's reservation worktree"
 fi
 
+# Reclaiming a reservation whose directory vanished prunes only that registration. A
+# repository-wide prune would also drop another vanished worktree's record, staged work and all.
+vanished_ledger="$tmp_dir/.git-loopy/vanished-reservation-subagents.jsonl"
+vanished_reservation="$tmp_dir/worktree-vanished-reservation"
+vanished_bystander="$tmp_dir/worktree-vanished-bystander"
+bash -c '
+  "$1" reserve --ledger "$2" --route implement --target issue-vanished \
+    --spawn-time 2026-08-22T00:00:00Z --worktree "$3" --chain-depth 1 --parent-pid "$$"
+  :
+' bash "$CHAIN" "$vanished_ledger" "$vanished_reservation"
+git -C "$tmp_dir" worktree add --quiet --detach "$vanished_bystander"
+rm -rf "$vanished_reservation" "$vanished_bystander"
+vanished_output="$("$CHAIN" recover --ledger "$vanished_ledger" --stale-after-seconds 3600 \
+  --now 2026-08-22T00:00:01Z)"
+assert_plan "vanished reservation recovery" "$vanished_output" \
+  '{"recovered":1,"targets":["issue-vanished"]}'
+vanished_registrations="$(git -C "$tmp_dir" worktree list --porcelain)"
+if grep -qxF "worktree $vanished_reservation" <<< "$vanished_registrations"; then
+  err "recovery left a vanished reservation's registration behind"
+fi
+if ! grep -qxF "worktree $vanished_bystander" <<< "$vanished_registrations"; then
+  err "recovering one vanished reservation pruned another worktree's registration"
+fi
+git -C "$tmp_dir" worktree remove "$vanished_bystander"
+
+# Without --stale-after-seconds, recover uses the chain's own CHAIN_RESERVATION_STALE_SECONDS.
+default_stale_ledger="$tmp_dir/.git-loopy/default-stale-subagents.jsonl"
+default_stale_worktree="$tmp_dir/worktree-default-stale"
+"$CHAIN" reserve --ledger "$default_stale_ledger" --route implement --target issue-default-stale \
+  --spawn-time 2026-08-22T00:00:00Z --worktree "$default_stale_worktree" --chain-depth 1 \
+  --parent-pid "$$" >/dev/null
+default_stale_early="$("$CHAIN" recover --ledger "$default_stale_ledger" --now 2026-08-22T00:04:59Z)"
+assert_plan "default reservation threshold not yet reached" "$default_stale_early" \
+  '{"recovered":0,"targets":[]}'
+default_stale_short="$(CHAIN_RESERVATION_STALE_SECONDS=60 "$CHAIN" recover \
+  --ledger "$default_stale_ledger" --now 2026-08-22T00:01:00Z)"
+assert_plan "reservation threshold from the environment" "$default_stale_short" \
+  '{"recovered":1,"targets":["issue-default-stale"]}'
+
 # The routing agent reaches `reserve` through a shell that exits with the command,
 # so the invoking process is never the one whose death orphans the reservation.
 # The reserving parent is the session that will bind the run, and only the caller

@@ -33,11 +33,13 @@ usage:
     --agent-type TYPE --agent-name NAME [--ledger PATH]
   chain.sh complete [--ledger PATH] < subagent-stop-payload.json
   chain.sh reenter < agent-stop-payload.json
-  chain.sh recover --stale-after-seconds N [--now TIMESTAMP] [--ledger PATH]
+  chain.sh recover [--stale-after-seconds N] [--now TIMESTAMP] [--ledger PATH]
   chain.sh owner --worktree PATH
   chain.sh claim --worktree PATH --owner-pid PID [--create-branch BRANCH] [--ledger PATH]
 
 A PID-less ledger lock is recoverable after CHAIN_LOCK_STALE_SECONDS (default: 300).
+recover reclaims an unbound reservation after --stale-after-seconds, which defaults to
+CHAIN_RESERVATION_STALE_SECONDS (default: 300).
 ROUTE is a slash-command name and carries its leading slash. The allowlist is
 /implement, /code-review, /research, and /push; a bare
 name such as "implement" is not a route and plan declines it as
@@ -343,8 +345,41 @@ remove_worktree() {
     fi
     rm -f "$marker_backup"
   else
-    git -C "$ledger_root" worktree prune
+    # Prune only this worktree's registration. `git worktree prune` would also drop every
+    # other vanished worktree's record, which can hold the only copy of its work.
+    local registered=0
+    worktree_registered "$ledger_root" "$worktree" || registered=$?
+    case "$registered" in
+      0) git -C "$ledger_root" worktree remove "$worktree" || return 1 ;;
+      1) ;;
+      *) return 1 ;;
+    esac
   fi
+}
+
+# Exit 0 when git registers a worktree at the path, 1 when it does not, and 2 when the
+# listing cannot be read, so a failed lookup is never mistaken for an absent registration.
+worktree_registered() {
+  python3 - "$1" "$2" <<'PY'
+import os
+import subprocess
+import sys
+
+repo_root, path = sys.argv[1:]
+path = os.path.realpath(os.path.abspath(path))
+listing = subprocess.run(
+    ["git", "-C", repo_root, "worktree", "list", "--porcelain", "-z"],
+    capture_output=True,
+)
+if listing.returncode != 0:
+    sys.stderr.write(os.fsdecode(listing.stderr))
+    raise SystemExit(2)
+for field in listing.stdout.split(b"\0"):
+    if field.startswith(b"worktree ") and os.path.realpath(
+            os.fsdecode(field[len(b"worktree "):])) == path:
+        raise SystemExit(0)
+raise SystemExit(1)
+PY
 }
 
 write_marker() {
@@ -795,8 +830,7 @@ plan() {
     ledger="$repo_root/.git-loopy/subagents.jsonl"
   fi
 
-  recover --ledger "$ledger" \
-    --stale-after-seconds "${CHAIN_RESERVATION_STALE_SECONDS:-300}" >/dev/null
+  recover --ledger "$ledger" >/dev/null
 
   local worktree_held=0 collision_status max_concurrency guard="" route_allowed=0
   local target_context=""
@@ -1934,7 +1968,7 @@ recover() {
     esac
   done
 
-  [ -n "$stale_after" ] || usage
+  [ -n "$stale_after" ] || stale_after="${CHAIN_RESERVATION_STALE_SECONDS:-300}"
   [[ "$stale_after" =~ ^[0-9]+$ ]] || {
     echo "error: --stale-after-seconds must be a non-negative integer" >&2
     exit 2
