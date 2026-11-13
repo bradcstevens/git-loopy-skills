@@ -57,6 +57,14 @@ class SweepCLI(unittest.TestCase):
         self.assertEqual(result.returncode, expected, result.stderr)
         return json.loads(result.stdout)
 
+    def stub_command(self, name, script, shebang="/bin/sh", directory=None):
+        """Write an executable stand-in for a command into its own directory, and return that."""
+        directory = self.root / (directory or f"{name}-bin")
+        directory.mkdir(exist_ok=True)
+        (directory / name).write_text(f"#!{shebang}\n{script}\n")
+        (directory / name).chmod(0o755)
+        return directory
+
     def mark(self, path, pid, start=None):
         if start is None:
             start = subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)],
@@ -489,11 +497,8 @@ class SweepCLI(unittest.TestCase):
 
     def test_inspection_and_ledger_failures_are_not_empty_successes(self):
         def lsof_that(label, body):
-            directory = self.root / f"{label}-bin"
-            directory.mkdir()
-            (directory / "lsof").write_text(f"#!/bin/sh\n{body}\n")
-            (directory / "lsof").chmod(0o755)
-            return {**os.environ, "PATH": str(directory) + os.pathsep + os.environ["PATH"]}
+            directory = self.stub_command("lsof", body, directory=f"{label}-bin")
+            return {**os.environ, "PATH": f"{directory}{os.pathsep}{os.environ['PATH']}"}
         ledger = self.root / "malformed.jsonl"
         ledger.write_text("not json\n")
         pending = self.root / "pending.jsonl"
@@ -509,9 +514,9 @@ class SweepCLI(unittest.TestCase):
             ("silent", (), lsof_that("silent", "exit 1")),
             ("empty", (), lsof_that("empty", "exit 0")),
             ("ledger", ("--ledger", str(ledger)), os.environ),
-            ("pending", ("--ledger", str(pending)), os.environ),
-            ("empty pending", ("--ledger", str(empty)), os.environ),
-            *((("unreadable pending", ("--ledger", str(unreadable)), os.environ),)
+            ("pending", ("--remove", "--ledger", str(pending)), os.environ),
+            ("empty pending", ("--remove", "--ledger", str(empty)), os.environ),
+            *((("unreadable pending", ("--remove", "--ledger", str(unreadable)), os.environ),)
               if os.geteuid() != 0 else ()),
         ]:
             with self.subTest(label):
@@ -522,6 +527,7 @@ class SweepCLI(unittest.TestCase):
                 self.assertEqual(result.returncode, 1)
                 self.assertEqual(result.stdout, "")
                 self.assertIn("error:", result.stderr)
+        self.assertEqual(self.sweep("--ledger", str(pending))["counts"]["unvouched"], 1)
 
     def test_live_pid_with_reused_start_is_dead_but_unknown_start_is_conservative(self):
         self.mark(self.repo, os.getpid(), "Mon Jan 1 00:00:00 2001")
@@ -574,10 +580,7 @@ class SweepCLI(unittest.TestCase):
 
     def stub_github(self, pulls=None, fail=False, path=(), watch=(), run=None):
         """Return an environment whose gh lists, per branch, the merged pull requests in pulls."""
-        stub = self.root / "gh-bin"
-        stub.mkdir(exist_ok=True)
-        (stub / "gh").write_text(f"#!{sys.executable}\n{GH_STUB}")
-        (stub / "gh").chmod(0o755)
+        stub = self.stub_command("gh", GH_STUB, shebang=sys.executable)
         (stub / "pulls.json").write_text(json.dumps(pulls or {}))
         self.gh_log = stub / "calls.jsonl"
         env = {**os.environ, "PATH": os.pathsep.join([*path, str(stub), os.environ["PATH"]]),
@@ -615,17 +618,12 @@ class SweepCLI(unittest.TestCase):
 
     def before_look(self, number, script):
         """Stub lsof to run a shell snippet before its numbered listing; the second precedes removal."""
-        stub = self.root / "lsof-bin"
-        stub.mkdir()
-        count = stub / "calls"
-        (stub / "lsof").write_text(
-            "#!/bin/sh\n"
+        count = self.root / "lsof-calls"
+        return str(self.stub_command("lsof", (
             f'n=$(cat "{count}" 2>/dev/null || echo 0)\n'
             f'echo $((n + 1)) > "{count}"\n'
             f'if [ "$n" -eq {number - 1} ]; then\n{script}\nfi\n'
-            f'exec "{shutil.which("lsof")}" "$@"\n')
-        (stub / "lsof").chmod(0o755)
-        return str(stub)
+            f'exec "{shutil.which("lsof")}" "$@"')))
 
     def test_without_remove_a_vouched_worktree_is_only_reported(self):
         done = self.linked("done")
@@ -801,14 +799,9 @@ class SweepCLI(unittest.TestCase):
 
     def during_worktree_remove(self, script):
         """Stub git to run a shell snippet as git worktree remove starts, after every sweep check."""
-        stub = self.root / "git-bin"
-        stub.mkdir()
-        (stub / "git").write_text(
-            "#!/bin/sh\n"
+        return str(self.stub_command("git", (
             f'case " $* " in *" worktree remove "*) {script} ;; esac\n'
-            f'exec "{shutil.which("git")}" "$@"\n')
-        (stub / "git").chmod(0o755)
-        return str(stub)
+            f'exec "{shutil.which("git")}" "$@"')))
 
     def test_every_removal_finishes_before_github_is_asked_about_a_branch(self):
         first, second = self.linked("first"), self.linked("second")
@@ -1025,9 +1018,14 @@ class SweepCLI(unittest.TestCase):
         hidden = self.linked("hidden", base=parent)
         parent.chmod(0)
         self.addCleanup(parent.chmod, 0o755)
-        row = self.row(self.sweep("--remove", expected=1, env=self.stub_github()), hidden)
+        guarded = self.linked("guarded")
+        self.dead_owner(guarded)
+        self.lock(guarded / ".git-loopy")
+        report = self.sweep("--remove", expected=1, env=self.stub_github())
+        row = self.row(report, hidden)
         self.assertIsNone(row["exists"])
         self.assertEqual(row["reasons"], ["inspection-errors"])
+        self.assertEqual(self.row(report, guarded)["reasons"], ["inspection-errors"])
 
     def test_a_worktree_registered_inside_a_candidate_mid_sweep_is_not_deleted(self):
         outer = self.linked("outer")
@@ -1133,6 +1131,28 @@ class SweepCLI(unittest.TestCase):
                          ("declined", ["removal-failed", "marker-changed"]))
         self.assertEqual(marker.read_text(), "claimed")
 
+    def test_an_unfinished_notes_merge_refuses_removal(self):
+        self.git("notes", "add", "-m", "ours")
+        self.git("notes", "--ref", "other", "add", "-m", "theirs")
+        noting = self.linked("noting")
+        merge = subprocess.run(["git", "-C", str(noting), "notes", "merge", "other"],
+                               capture_output=True)
+        self.assertNotEqual(merge.returncode, 0, "the notes merge should stop on its conflict")
+        self.dead_owner(noting)
+        row = self.row(self.sweep("--remove", env=self.stub_github()), noting)
+        self.assertEqual((row["outcome"], row["reasons"]), ("declined", ["operation-in-progress"]))
+
+    def test_an_orphan_worktrees_unborn_branch_needs_no_decision(self):
+        fresh = self.root / "fresh"
+        added = subprocess.run(["git", "-C", str(self.repo), "worktree", "add", "--quiet",
+                                "--orphan", "-b", "fresh", str(fresh)], capture_output=True)
+        if added.returncode:
+            self.skipTest("this git cannot add an orphan worktree")
+        self.dead_owner(fresh)
+        row = self.row(self.sweep("--remove", env=self.stub_github()), fresh)
+        self.assertEqual((row["outcome"], row["branch_outcome"], row["errors"]), ("removed", None, []))
+        self.assertEqual(self.asked_github_about(), [])
+
     def test_a_registration_that_moves_before_removal_is_left_alone(self):
         late = self.linked("late")
         self.dead_owner(late)
@@ -1224,14 +1244,20 @@ class SweepCLI(unittest.TestCase):
         self.assertEqual(self.asked_github_about(), [])
 
     def test_unanswered_merge_question_keeps_the_branch_and_fails_the_sweep(self):
-        orphan = self.linked("orphan")
-        self.dead_owner(orphan)
-        row = self.row(self.sweep("--remove", expected=1, env=self.stub_github(fail=True)), orphan)
-        self.assertEqual(row["outcome"], "removed")
-        self.assertEqual((row["branch_outcome"], row["branch_reasons"]),
-                         ("kept", ["merge-status-unknown"]))
-        self.assertTrue(any("Bad Gateway" in error for error in row["errors"]))
-        self.assertTrue(self.has_branch("orphan"))
+        lonely = self.linked("lonely")
+        twin = self.root / "twin"
+        self.git("worktree", "add", "--quiet", "--force", str(twin), "lonely")
+        for path in (lonely, twin):
+            self.dead_owner(path)
+        report = self.sweep("--remove", expected=1, env=self.stub_github(fail=True))
+        for path in (lonely, twin):
+            with self.subTest(path.name):
+                row = self.row(report, path)
+                self.assertEqual(row["outcome"], "removed")
+                self.assertEqual((row["branch_outcome"], row["branch_reasons"]),
+                                 ("kept", ["merge-status-unknown"]))
+                self.assertTrue(any("Bad Gateway" in error for error in row["errors"]))
+        self.assertTrue(self.has_branch("lonely"))
 
     def test_a_hooks_exported_repository_never_redirects_the_sweep(self):
         other = self.root / "other"
