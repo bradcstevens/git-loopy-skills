@@ -16,6 +16,7 @@ from tracker_failure import run_tracker
 
 
 MARKER = ".git-loopy/worktree-owner"
+HEADS = "refs/heads/"
 LSOF_ESCAPES = {0x08: b"\\b", 0x09: b"\\t", 0x0a: b"\\n", 0x0c: b"\\f", 0x0d: b"\\r",
                 0x5c: b"\\\\"}
 # lsof leads other control bytes, and 0xff where char is unsigned, with a caret, so a
@@ -223,11 +224,12 @@ def resolve_root(repo, rows):
 
 
 def ledger_counts(path):
-    counts = {}
+    """Count each worktree's spawn-ledger rows, and name the worktrees an open row owns."""
+    counts, owned = {}, set()
     try:
         ledger = open(path, encoding="utf-8")
     except FileNotFoundError:
-        return counts
+        return counts, owned
     with ledger:
         for number, line in enumerate(ledger, 1):
             if not line.strip():
@@ -237,7 +239,10 @@ def ledger_counts(path):
                 raise ValueError(f"{path}:{number}: ledger row requires a worktree path")
             worktree = os.path.realpath(row["worktree"])
             counts[worktree] = counts.get(worktree, 0) + 1
-    return counts
+            # chain.sh treats a row without a finish time as open, and owns its worktree.
+            if not row.get("finish_time"):
+                owned.add(worktree)
+    return counts, owned
 
 
 def error_message(error):
@@ -266,14 +271,19 @@ def inspect_checkout(row, common):
             raise RuntimeError("directory no longer resolves to the registered worktree")
         if not os.path.samefile(rev_parse_path(path, "--git-common-dir"), common):
             raise RuntimeError("directory belongs to another repository")
-        status = git_run(path, "status", "--porcelain=v1", "-z", "--untracked-files=all",
-                         "--ignore-submodules=none", "--", ".", f":(exclude){MARKER}")
-        # git warns about a directory it cannot read and still exits 0.
-        if status.stderr:
-            raise RuntimeError(os.fsdecode(status.stderr).strip())
-        row["dirty"] = bool(status.stdout)
+        row["dirty"] = uncommitted(path)
     except (OSError, RuntimeError, subprocess.SubprocessError) as error:
         row["errors"].append(error_message(error))
+
+
+def uncommitted(path):
+    """Report whether a worktree holds staged, unstaged, untracked or submodule changes."""
+    status = git_run(path, "status", "--porcelain=v1", "-z", "--untracked-files=all",
+                     "--ignore-submodules=none", "--", ".", f":(exclude){MARKER}")
+    # git warns about a directory it cannot read and still exits 0.
+    if status.stderr:
+        raise RuntimeError(os.fsdecode(status.stderr).strip())
+    return bool(status.stdout)
 
 
 def marker_present(row):
@@ -288,13 +298,17 @@ def marker_present(row):
         return False
 
 
-def read_marker(path):
-    """Return a worktree's marker bytes, or None when they cannot be read."""
+def read_bytes(path):
+    """Return a file's bytes, or None when they cannot be read."""
     try:
-        with open(os.path.join(path, MARKER), "rb") as marker:
-            return marker.read()
+        with open(path, "rb") as file:
+            return file.read()
     except OSError:
         return None
+
+
+def read_marker(path):
+    return read_bytes(os.path.join(path, MARKER))
 
 
 def classify(row, pids, ledger_rows):
@@ -334,7 +348,7 @@ def encloses(directory, path):
     return False
 
 
-def administrative_directories(common):
+def worktree_records(common):
     """Map each linked worktree's path to git's record of it under the common directory."""
     found = {}
     base = os.path.join(common, "worktrees")
@@ -344,22 +358,18 @@ def administrative_directories(common):
         return found
     for entry in entries:
         record = os.path.join(base, entry)
-        try:
-            with open(os.path.join(record, "gitdir"), "rb") as gitdir:
-                target = os.fsdecode(gitdir.read()).removesuffix("\n")
-        except OSError:
+        gitdir = read_bytes(os.path.join(record, "gitdir"))
+        if gitdir is None:
             continue
+        target = os.fsdecode(gitdir).removesuffix("\n")
         # gitdir names the worktree's .git file, absolute or relative to the record itself.
         found[os.path.dirname(os.path.realpath(os.path.join(record, target)))] = record
     return found
 
 
 def read_text(path):
-    try:
-        with open(path, "rb") as text:
-            return os.fsdecode(text.read()).strip()
-    except OSError:
-        return None
+    content = read_bytes(path)
+    return None if content is None else os.fsdecode(content).strip()
 
 
 def find_record(row, records):
@@ -407,17 +417,33 @@ def populated_submodule(path):
     return False
 
 
-def changes_since_judged(root, row, records):
+def changes_since_judged(root, row, records, main_path, common):
     """Re-read a candidate just before removal, naming anything that changed since it was judged."""
-    current = next((other for other in worktrees(root) if other["_registered"] == row["_registered"]),
-                   None)
+    listing = worktrees(root)
+    current = next((other for other in listing if other["_registered"] == row["_registered"]), None)
     if current is None:
         return ["registration-changed"]
     reasons = []
     if (current["_head"], current["branch"]) != (row["_head"], row["branch"]):
         reasons.append("head-moved")
+    if row["exists"]:
+        reasons.extend(containment(row, listing, main_path, common))
+        if uncommitted(row["path"]):
+            reasons.append("uncommitted-changes")
     reasons.extend(reason for reason in record_refusals(root, row, find_record(row, records),
                                                        current["_head"]) if reason not in reasons)
+    return reasons
+
+
+def containment(row, rows, main_path, common):
+    """Name what lies inside a worktree that removing it would delete with it."""
+    reasons = []
+    # git worktree remove deletes nested repositories, a nested worktree's unsaved work included.
+    if any(other["path"].startswith(row["path"] + os.sep) or encloses(row["path"], other["path"])
+           for other in rows if other["_registered"] != row["_registered"]):
+        reasons.append("contains-worktree")
+    if row["path"] != main_path and encloses(row["path"], common):
+        reasons.append("contains-repository")
     return reasons
 
 
@@ -432,21 +458,19 @@ def refusals(row, rows, main_path, common):
         reasons.append("held")
     if row["locked"]:
         reasons.append("locked")
+    # chain.sh complete and chain.sh recover own the worktree an open spawn-ledger row names.
+    if row["_ledger_owned"]:
+        reasons.append("ledger-owned")
     if row["exists"] is False:
         # Only git's record is left, so pruning it needs git to report it prunable.
         if not row["_prunable"]:
             reasons.append("not-prunable")
     elif row["exists"]:
-        # git worktree remove deletes nested repositories, a nested worktree's unsaved work included.
-        if any(other["path"].startswith(row["path"] + os.sep) or encloses(row["path"], other["path"])
-               for other in rows if other is not row):
-            reasons.append("contains-worktree")
-        if row["path"] != main_path and encloses(row["path"], common):
-            reasons.append("contains-repository")
+        reasons.extend(containment(row, rows, main_path, common))
         if row["dirty"]:
             reasons.append("uncommitted-changes")
     reasons.extend(reason for reason in row["_record_refusals"] if reason not in reasons)
-    if row["exists"] is not False:
+    if row["exists"]:
         if not row["_marked"]:
             reasons.append("unvouched")
         elif row["owner_alive"]:
@@ -481,13 +505,13 @@ def remove_worktree(root, row):
     except subprocess.CalledProcessError as error:
         row["reasons"].append("removal-failed")
         row["errors"].append(error_message(error))
-        # git deletes the registration even when it fails to delete the whole directory.
-        if row["_registered"] not in {other["_registered"] for other in worktrees(root)}:
-            row["reasons"].append("registration-lost")
         if os.path.isdir(row["path"]):
             os.makedirs(os.path.dirname(marker), exist_ok=True)
             with open(marker, "wb") as restored:
                 restored.write(row["_marker"])
+        # git deletes the registration even when it fails to delete the whole directory.
+        if row["_registered"] not in {other["_registered"] for other in worktrees(root)}:
+            row["reasons"].append("registration-lost")
         return False
     return True
 
@@ -513,20 +537,26 @@ def branch_tip(root, branch):
     return os.fsdecode(git(root, "rev-parse", "--verify", branch)).strip()
 
 
-def branch_in_use(root, common, branch):
+def in_another_worktree(root, common, branch):
     """Report whether a worktree has the branch checked out, or is rebasing or bisecting it."""
-    # git branch -D refuses all three, and update-ref -d checks none of them.
-    records = administrative_directories(common)
-    for index, other in enumerate(worktrees(root)):
+    # git branch -D refuses each of these, and update-ref -d checks none of them.
+    records = worktree_records(common)
+    listing = worktrees(root)
+    main = listing[0]["path"] if listing else None
+    for other in listing:
         if other["branch"] == branch:
             return True
-        record = common if index == 0 else records.get(other["path"])
+        # The main worktree's record is the common directory itself.
+        record = common if other["path"] == main else records.get(other["path"])
         if record is None:
+            raise RuntimeError(f"cannot find git's record of the worktree at {other['path']}")
+        rebasing = [read_text(os.path.join(record, "rebase-merge", "head-name")),
+                    read_text(os.path.join(record, "rebase-apply", "head-name"))]
+        # rebase --update-refs also rewrites every branch it lists here.
+        rebasing += (read_text(os.path.join(record, "rebase-merge", "update-refs")) or "").split()
+        if branch in rebasing:
             return True
-        if branch in (read_text(os.path.join(record, "rebase-merge", "head-name")),
-                      read_text(os.path.join(record, "rebase-apply", "head-name"))):
-            return True
-        if read_text(os.path.join(record, "BISECT_START")) == branch[len("refs/heads/"):]:
+        if read_text(os.path.join(record, "BISECT_START")) == branch.removeprefix(HEADS):
             return True
     return False
 
@@ -534,7 +564,7 @@ def branch_in_use(root, common, branch):
 def reclaim_branch(root, row, common):
     """Delete the branch a removed worktree freed, once GitHub shows it merged at its tip."""
     branch = row["branch"]
-    if not branch or not branch.startswith("refs/heads/"):
+    if not branch or not branch.startswith(HEADS):
         return
     row["branch_outcome"] = "kept"
 
@@ -543,13 +573,13 @@ def reclaim_branch(root, row, common):
         if error is not None:
             row["errors"].append(error_message(error))
 
-    name = branch[len("refs/heads/"):]
+    name = branch.removeprefix(HEADS)
     try:
-        if branch_in_use(root, common, branch):
-            return keep("in-use-elsewhere")
+        if in_another_worktree(root, common, branch):
+            return keep("in-another-worktree")
         tip = branch_tip(root, branch)
-    except subprocess.CalledProcessError as error:
-        return keep("branch-unreadable", error)
+    except (RuntimeError, subprocess.CalledProcessError) as error:
+        return keep("branch-check-failed", error)
     try:
         verdict = merge_status(root, name, tip)
     except (RuntimeError, ValueError) as error:
@@ -558,8 +588,11 @@ def reclaim_branch(root, row, common):
         return keep(verdict)
     try:
         # Look again, because a worktree may have taken the branch up during the lookup.
-        if branch_in_use(root, common, branch):
-            return keep("in-use-elsewhere")
+        if in_another_worktree(root, common, branch):
+            return keep("in-another-worktree")
+    except (RuntimeError, subprocess.CalledProcessError) as error:
+        return keep("branch-check-failed", error)
+    try:
         # Deleting against the tip GitHub vouched for refuses a branch that moved since.
         git_run(root, "update-ref", "-d", branch, tip)
     except subprocess.CalledProcessError as error:
@@ -575,7 +608,7 @@ def reclaim_branch(root, row, common):
 
 def reclaim(root, rows, kernel_paths, main_path, common):
     """Remove every vouched worktree and prune every vanished one, then decide freed branches."""
-    records = administrative_directories(common)
+    records = worktree_records(common)
     for row in rows:
         row["_record_refusals"] = []
         if row["exists"] is not None and not row["errors"] and row["path"] != main_path:
@@ -600,7 +633,12 @@ def reclaim(root, rows, kernel_paths, main_path, common):
             row["reasons"].append("held")
             continue
         try:
-            changed = changes_since_judged(root, row, records)
+            changed = changes_since_judged(root, row, records, main_path, common)
+        except (OSError, RuntimeError, subprocess.SubprocessError) as error:
+            row["errors"].append(error_message(error))
+            row["reasons"].append("inspection-errors")
+            continue
+        try:
             if changed:
                 row["reasons"].extend(changed)
             elif row["exists"] is False:
@@ -648,7 +686,7 @@ def main():
         main_path = rows[0]["path"] if rows and not rows[0]["bare"] else None
         ledger = os.path.abspath(args.ledger or os.path.join(root, ".git-loopy", "subagents.jsonl"))
         rows = [row for row in rows if not row.pop("bare")]
-        ledger_row_counts = ledger_counts(ledger)
+        ledger_row_counts, ledger_owned = ledger_counts(ledger)
         # Resolve pwd before entering any worktree, where a relative PATH entry could find another.
         pwd = shutil.which("pwd")
         if pwd is None:
@@ -663,6 +701,7 @@ def main():
         pids_by_worktree = holders(rows, kernel_paths) if rows else {}
         for row in rows:
             classify(row, pids_by_worktree[row["path"]], ledger_row_counts.get(row["path"], 0))
+            row["_ledger_owned"] = row["path"] in ledger_owned
         if args.remove and rows:
             reclaim(root, rows, kernel_paths, main_path, common)
     except (OSError, ValueError, RuntimeError, subprocess.SubprocessError) as error:
