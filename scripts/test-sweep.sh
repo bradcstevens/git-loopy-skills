@@ -720,13 +720,15 @@ class SweepCLI(unittest.TestCase):
             self.dead_owner(path)
             change(path)
         unvouched = self.linked("unvouched")
+        alive = self.linked("alive")
+        self.mark(alive, os.getpid())
         held = self.linked("held")
         self.dead_owner(held)
-        for path in (unvouched, held):
+        for path in (unvouched, alive, held):
             (path / "notes").write_text("unsaved\n")
         self.hold(held)
         report = self.sweep("--remove", env=self.github())
-        for name in (*changes, "unvouched", "held"):
+        for name in (*changes, "unvouched", "alive", "held"):
             with self.subTest(name):
                 path = self.root / name
                 row = self.row(report, path)
@@ -736,6 +738,7 @@ class SweepCLI(unittest.TestCase):
                 self.assertTrue(self.has_branch(name))
         self.assertEqual((self.root / "modified" / "tracked").read_text(), "changed\n")
         self.assertEqual(self.row(report, unvouched)["reasons"], ["uncommitted-changes", "unvouched"])
+        self.assertEqual(self.row(report, alive)["reasons"], ["uncommitted-changes", "owner-alive"])
         self.assertIn("held", self.row(report, held)["reasons"])
         self.assertEqual(self.asked_github_about(), [])
 
@@ -930,6 +933,76 @@ class SweepCLI(unittest.TestCase):
                 self.assertIn(str(path), self.registered())
         self.assertEqual(report["counts"]["pruned"], 0)
 
+    def submodule_host(self, name):
+        """A worktree with a checked-out submodule holding a commit its upstream never had."""
+        library = self.root / f"{name}-library"
+        self.git("init", "--quiet", str(library), cwd=self.root)
+        self.commit("library", cwd=library)
+        host = self.linked(name)
+        self.git("-c", "protocol.file.allow=always", "submodule", "--quiet", "add",
+                 str(library), "library", cwd=host)
+        self.commit("only copy", cwd=host / "library")
+        self.git("add", "library", cwd=host)
+        self.commit("add library", cwd=host)
+        return host
+
+    def test_a_vanished_worktree_keeps_its_submodule_repositories(self):
+        host = self.submodule_host("host")
+        record = os.fsdecode(self.git("rev-parse", "--absolute-git-dir", cwd=host)).strip()
+        shutil.rmtree(host)
+        row = self.row(self.sweep("--remove", env=self.github()), host)
+        self.assertEqual((row["outcome"], row["reasons"]), ("declined", ["contains-submodule"]))
+        self.assertTrue(os.path.isdir(os.path.join(record, "modules", "library")))
+
+    def test_refs_kept_in_a_worktrees_record_refuse_removal(self):
+        kept, gone = self.linked("kept"), self.linked("gone")
+        for path in (kept, gone):
+            self.git("update-ref", "refs/worktree/saved", "HEAD", cwd=path)
+        self.dead_owner(kept)
+        shutil.rmtree(gone)
+        report = self.sweep("--remove", env=self.github())
+        for path in (kept, gone):
+            with self.subTest(path.name):
+                row = self.row(report, path)
+                self.assertEqual((row["outcome"], row["reasons"]), ("declined", ["worktree-refs"]))
+                self.assertIn(str(path), self.registered())
+
+    def test_a_commit_made_before_the_second_look_refuses_removal(self):
+        late = self.root / "late"
+        self.git("worktree", "add", "--quiet", "--detach", str(late))
+        self.dead_owner(late)
+        lsof = self.before_second_look(
+            f"git -C '{late}' -c user.name=test -c user.email=test@example.com "
+            "commit --quiet --allow-empty -m late")
+        row = self.row(self.sweep("--remove", env=self.github(path=[lsof])), late)
+        self.assertEqual((row["outcome"], row["reasons"]),
+                         ("declined", ["head-moved", "unreferenced-head"]))
+        self.assertEqual(os.fsdecode(self.git("log", "-1", "--format=%s", cwd=late)).strip(), "late")
+
+    def test_a_branch_being_rebased_elsewhere_is_not_deleted(self):
+        rebasing = self.linked("rebasing", branch="topic")
+        self.rebase_to_edit(rebasing)
+        forced = self.root / "forced"
+        self.git("worktree", "add", "--quiet", "--force", str(forced), "topic")
+        self.dead_owner(forced)
+        tip = self.tip("topic")
+        env = self.github({"topic": [{"headRefOid": tip, "isCrossRepository": False}]})
+        row = self.row(self.sweep("--remove", env=env), forced)
+        self.assertEqual((row["outcome"], row["branch_outcome"], row["branch_reasons"]),
+                         ("removed", "kept", ["in-use-elsewhere"]))
+        self.assertEqual(self.tip("topic"), tip)
+
+    def test_an_uninspectable_worktree_lists_no_guessed_refusals(self):
+        if os.geteuid() == 0:
+            self.skipTest("permission checks do not bind root")
+        parent = self.root / "sealed"
+        hidden = self.linked("hidden", base=parent)
+        parent.chmod(0)
+        self.addCleanup(parent.chmod, 0o755)
+        row = self.row(self.sweep("--remove", expected=1, env=self.github()), hidden)
+        self.assertIsNone(row["exists"])
+        self.assertEqual(row["reasons"], ["inspection-errors", "unvouched"])
+
     def test_a_vanished_worktree_registered_by_relative_path_is_pruned(self):
         relative = self.root / "relative"
         self.git("-c", "worktree.useRelativePaths=true", "worktree", "add", "--quiet",
@@ -967,13 +1040,7 @@ class SweepCLI(unittest.TestCase):
         self.assertNotEqual(self.tip("moving"), tip)
 
     def test_a_checked_out_submodule_is_a_named_refusal(self):
-        library = self.root / "library"
-        self.git("init", "--quiet", str(library), cwd=self.root)
-        self.commit("library", cwd=library)
-        host = self.linked("host")
-        self.git("-c", "protocol.file.allow=always", "submodule", "--quiet", "add",
-                 str(library), "library", cwd=host)
-        self.commit("add library", cwd=host)
+        host = self.submodule_host("host")
         self.dead_owner(host)
         row = self.row(self.sweep("--remove", env=self.github()), host)
         self.assertIs(row["dirty"], False)
@@ -988,7 +1055,7 @@ class SweepCLI(unittest.TestCase):
         row = self.row(self.sweep("--remove", env=self.github()), shared)
         self.assertEqual(row["outcome"], "removed")
         self.assertEqual((row["branch_outcome"], row["branch_reasons"]),
-                         ("kept", ["checked-out-elsewhere"]))
+                         ("kept", ["in-use-elsewhere"]))
         self.assertTrue(self.has_branch("shared"))
         self.assertTrue(twin.is_dir())
         self.assertEqual(self.asked_github_about(), [])
@@ -1003,7 +1070,7 @@ class SweepCLI(unittest.TestCase):
         self.assertTrue(any("Bad Gateway" in error for error in row["errors"]))
         self.assertTrue(self.has_branch("orphan"))
 
-    def test_a_callers_exported_repository_never_redirects_the_sweep(self):
+    def test_a_hooks_exported_repository_never_redirects_the_sweep(self):
         other = self.root / "other"
         self.git("init", "--quiet", str(other), cwd=self.root)
         self.commit("other", cwd=other)
