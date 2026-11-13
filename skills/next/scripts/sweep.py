@@ -110,15 +110,16 @@ def lsof_listing():
     return stdout, process.pid
 
 
-def worktrees_named(name, spellings):
+def worktrees_named(name, spellings, unreliable):
     """Return every worktree an lsof name may lie in, innermost wherever that is certain."""
     matches = [(path, spelling) for spelling, paths in spellings.items()
                if name == spelling or name.startswith(spelling + b"/")
                for path in paths]
-    # A nested worktree outranks its parent only when nothing ambiguous lies between
-    # their spellings, so the name cannot be read as some other directory there.
+    # A nested worktree outranks its parent only when its own row is reliable and nothing
+    # ambiguous lies between their spellings, so the name cannot mean another directory.
     return {path for path, spelling in matches
             if not any(inner.startswith(path + os.sep)
+                       and inner not in unreliable
                        and LSOF_AMBIGUOUS not in inner_spelling[len(spelling):]
                        for inner, inner_spelling in matches)}
 
@@ -126,10 +127,15 @@ def worktrees_named(name, spellings):
 def holders(rows, kernel_paths):
     stdout, lsof_pid = lsof_listing()
     spellings = {}
+    folded = {}
     for row in rows:
         for name in {row["path"], kernel_paths.get(row["path"])} - {None}:
             for spelling in lsof_spellings(name):
                 spellings.setdefault(spelling, []).append(row["path"])
+                if row["exists"] is False:
+                    # A vanished directory has no kernel spelling to read, so fold its case.
+                    folded.setdefault(spelling.lower(), []).append(row["path"])
+    unreliable = {row["path"] for row in rows if row["errors"]}
     found = {row["path"]: set() for row in rows}
     pid = None
     excluded = False
@@ -142,8 +148,14 @@ def holders(rows, kernel_paths):
             # Linux lsof forks helpers that inherit its working directory.
             excluded = excluded or int(field[1:]) == lsof_pid
         elif field.startswith(b"n/") and pid is not None and not excluded:
-            for path in worktrees_named(field[1:], spellings):
+            name = field[1:]
+            for path in worktrees_named(name, spellings, unreliable):
                 found[path].add(pid)
+            lowered = name.lower()
+            for spelling, paths in folded.items():
+                if lowered == spelling or lowered.startswith(spelling + b"/"):
+                    for path in paths:
+                        found[path].add(pid)
     return found
 
 
@@ -196,7 +208,7 @@ def inspect_checkout(row):
     row["dirty"] = None
     try:
         row["exists"] = stat.S_ISDIR(os.stat(path).st_mode)
-    except FileNotFoundError:
+    except (FileNotFoundError, NotADirectoryError):
         row["exists"] = False
     except OSError as error:
         row["exists"] = None
@@ -207,18 +219,36 @@ def inspect_checkout(row):
         top = rev_parse_path(path, "--show-toplevel")
         if top != path and not os.path.samefile(top, path):
             raise RuntimeError("directory no longer resolves to the registered worktree")
-        row["dirty"] = bool(git(
-            path, "status", "--porcelain=v1", "-z", "--untracked-files=all",
-            "--ignore-submodules=none", "--", ".", f":(exclude){MARKER}",
-        ))
+        status = subprocess.run(
+            ["git", "--no-optional-locks", "-C", path, "status", "--porcelain=v1", "-z",
+             "--untracked-files=all", "--ignore-submodules=none", "--", ".",
+             f":(exclude){MARKER}"],
+            check=True, capture_output=True,
+        )
+        # git warns about a directory it cannot read and still exits 0.
+        if status.stderr:
+            raise RuntimeError(os.fsdecode(status.stderr).strip())
+        row["dirty"] = bool(status.stdout)
     except (OSError, RuntimeError, subprocess.SubprocessError) as error:
         row["errors"].append(error_message(error))
+
+
+def marker_present(row):
+    """Report whether a worktree carries a marker, recording why when it cannot tell."""
+    try:
+        os.lstat(os.path.join(row["path"], MARKER))
+        return True
+    except (FileNotFoundError, NotADirectoryError):
+        return False
+    except OSError as error:
+        row["errors"].append(error_message(error))
+        return False
 
 
 def classify(row, pids, ledger_rows):
     path = row["path"]
     row.update(ledger_rows=ledger_rows, holder_pids=sorted(pids), owner_alive=None)
-    marked = os.path.lexists(os.path.join(path, MARKER))
+    marked = marker_present(row)
     row["classification"] = "held" if pids else "marked" if marked else "unvouched"
     if marked:
         try:

@@ -323,20 +323,74 @@ class SweepCLI(unittest.TestCase):
         self.assertIn("pwd not found", result.stderr)
 
     def test_uninspectable_directories_are_flagged_not_misread(self):
-        if os.geteuid() == 0:
-            self.skipTest("permission checks do not bind root")
         leaf = self.root / "locked-leaf"
         parent = self.root / "locked-parent"
         nested = parent / "linked"
         for path in (leaf, nested):
             self.git("worktree", "add", "--quiet", "--detach", str(path))
         for path in (leaf, parent):
-            path.chmod(0)
-            self.addCleanup(path.chmod, 0o755)
+            self.lock(path)
         rows = {row["path"]: row for row in self.sweep(expected=1)["worktrees"]}
         self.assertTrue(any("kernel's spelling" in error for error in rows[str(leaf)]["errors"]))
         self.assertIsNone(rows[str(nested)]["exists"])
         self.assertTrue(rows[str(nested)]["errors"])
+
+    def lock(self, path):
+        if os.geteuid() == 0:
+            self.skipTest("permission checks do not bind root")
+        path.chmod(0)
+        self.addCleanup(path.chmod, 0o755)
+
+    def test_marker_behind_an_unsearchable_directory_is_flagged(self):
+        linked = self.root / "marked"
+        self.git("worktree", "add", "--quiet", "--detach", str(linked))
+        self.mark(linked, os.getpid())
+        self.lock(linked / ".git-loopy")
+        row = next(row for row in self.sweep(expected=1)["worktrees"]
+                   if row["path"] == str(linked))
+        self.assertTrue(any("worktree-owner" in error for error in row["errors"]))
+
+    def test_unreadable_untracked_directory_is_flagged_not_clean(self):
+        wip = self.repo / "wip"
+        wip.mkdir()
+        (wip / "notes").write_text("unsaved\n")
+        self.lock(wip)
+        row = self.sweep(expected=1)["worktrees"][0]
+        self.assertIsNone(row["dirty"])
+        self.assertTrue(row["errors"])
+
+    def test_parent_replaced_by_a_file_reads_as_vanished(self):
+        linked = self.root / "replaced" / "linked"
+        self.git("worktree", "add", "--quiet", "--detach", str(linked))
+        shutil.rmtree(self.root / "replaced")
+        (self.root / "replaced").write_text("now a file\n")
+        row = next(row for row in self.sweep()["worktrees"] if row["path"] == str(linked))
+        self.assertIs(row["exists"], False)
+        self.assertEqual(row["errors"], [])
+
+    def test_unreliable_nested_registration_does_not_hide_its_parent(self):
+        outer = self.root / "outer"
+        nested = outer / "nested"
+        for path in (outer, nested):
+            self.git("worktree", "add", "--quiet", "--detach", str(path))
+        (nested / ".git").write_text("gitdir: /nonexistent/sweep-test-gitdir\n")
+        holder = self.hold(nested)
+        rows = {row["path"]: row for row in self.sweep(expected=1)["worktrees"]}
+        self.assertEqual(rows[str(outer)]["classification"], "held")
+        self.assertIn(holder.pid, rows[str(outer)]["holder_pids"])
+
+    def test_vanished_case_differing_worktree_is_still_held(self):
+        (self.root / "gonebase").mkdir()
+        if not (self.root / "GONEBASE").exists():
+            self.skipTest("this file system is case-sensitive")
+        linked = self.root / "GONEBASE" / "linked"
+        self.git("worktree", "add", "--quiet", "--detach", str(linked))
+        holder = self.hold(linked)
+        shutil.rmtree(linked)
+        row = next(row for row in self.sweep()["worktrees"] if row["path"] == str(linked))
+        self.assertIs(row["exists"], False)
+        self.assertEqual(row["classification"], "held")
+        self.assertIn(holder.pid, row["holder_pids"])
 
     def test_missing_or_old_interpreter_exits_two_without_a_report(self):
         old = self.root / "old-python"
